@@ -292,4 +292,75 @@ export class TmdbEnrichmentService {
     await this.cacheService.saveSeasonDetail(parsed);
     return parsed;
   }
+
+  private trendingMoviesCache?: { data: any[]; timestamp: number };
+  private trendingTvCache?: { data: any[]; timestamp: number };
+  private readonly TRENDING_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+  /**
+   * Fetches trending movies from TMDB with memory cache to avoid repeated requests.
+   */
+  async getTrendingMovies(timeWindow: 'day' | 'week' = 'week'): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    const now = Date.now();
+    if (this.trendingMoviesCache && now - this.trendingMoviesCache.timestamp < this.TRENDING_CACHE_TTL) {
+      return this.trendingMoviesCache.data;
+    }
+    const results = await this.tmdbService.getTrendingMovies(timeWindow);
+    if (results && results.length > 0) {
+      this.trendingMoviesCache = { data: results, timestamp: now };
+    }
+    return results || [];
+  }
+
+  /**
+   * Fetches trending TV shows from TMDB with memory cache to avoid repeated requests.
+   */
+  async getTrendingTv(timeWindow: 'day' | 'week' = 'week'): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    const now = Date.now();
+    if (this.trendingTvCache && now - this.trendingTvCache.timestamp < this.TRENDING_CACHE_TTL) {
+      return this.trendingTvCache.data;
+    }
+    const results = await this.tmdbService.getTrendingTv(timeWindow);
+    if (results && results.length > 0) {
+      this.trendingTvCache = { data: results, timestamp: now };
+    }
+    return results || [];
+  }
+
+  /**
+   * Seeds the enrichment cache with TMDB trending metadata for a matched channel.
+   */
+  async seedEnrichmentFromTrending(channel: Channel, item: any): Promise<void> {
+    if (!channel?.id || !this.configService.isEnabled()) return;
+    const existing = this.getEnrichmentSync(channel);
+    if (existing) return;
+
+    const isSeries = item.media_type === 'tv' || Number(channel.media_type) === MediaType.serie;
+    const dateStr = item.release_date || item.first_air_date || '';
+    const releaseYear = dateStr.length >= 4 ? dateStr.substring(0, 4) : undefined;
+    const enrichment: TmdbMediaEnrichment = {
+      providerItemId: channel.id,
+      tmdbId: item.id,
+      mediaType: isSeries ? 'tv' : 'movie',
+      normalizedTitle: cleanMediaTitle(channel.name),
+      matchedTitle: item.title || item.name || cleanMediaTitle(channel.name),
+      originalTitle: item.original_title || item.original_name,
+      matchConfidence: 0.95,
+      overview: item.overview?.trim() || undefined,
+      posterPath: item.poster_path || undefined,
+      backdropPath: item.backdrop_path || undefined,
+      releaseDate: dateStr || undefined,
+      releaseYear,
+      rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : undefined,
+      voteCount: item.vote_count,
+      originalLanguage: item.original_language || undefined,
+      lastUpdated: Date.now(),
+    };
+
+    await this.cacheService.saveEnrichment(enrichment);
+    this.enrichmentUpdated$.next(enrichment);
+  }
 }
+

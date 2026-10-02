@@ -4,4 +4,6 @@ export enum NavTab {
   Movies = "movies",
   TVShows = "series",
   Profile = "profile",
+  Settings = "settings",
 }
+

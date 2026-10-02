@@ -17,6 +17,7 @@ export interface HeroItem {
   mediaTypeLabel: string;
   description?: string;
   imageUrl?: string;
+  logoUrl?: string;
   favorite?: boolean;
   rating?: number;
 }

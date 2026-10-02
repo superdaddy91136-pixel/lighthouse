@@ -32,6 +32,11 @@ export class NavBarComponent implements OnInit, OnDestroy {
   selectTab(tab: NavTab): void {
     if (tab === NavTab.Profile) {
       this.memory.activeNavTab.next(NavTab.Profile);
+      this.router.navigateByUrl("profile");
+      return;
+    }
+    if (tab === NavTab.Settings) {
+      this.memory.activeNavTab.next(NavTab.Settings);
       this.router.navigateByUrl("settings");
       return;
     }

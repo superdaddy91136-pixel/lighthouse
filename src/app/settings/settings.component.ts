@@ -25,13 +25,7 @@ import { TmdbCacheService } from "../services/tmdb-cache.service";
 })
 export class SettingsComponent {
   subscriptions: Subscription[] = [];
-  activeSection: 'favorites' | 'settings' = 'favorites';
-  favoriteChannels: Channel[] = [];
-  filteredFavorites: Channel[] = [];
-  favSearchQuery: string = "";
-  favMediaType: number = -1;
-  loadingFavorites: boolean = false;
-  mediaTypeEnum = MediaType;
+  homeContentPref: string = "all";
 
   // TMDB configuration state
   tmdbEnabled: boolean = false;
@@ -100,80 +94,22 @@ export class SettingsComponent {
   }
 
   ngOnInit(): void {
-    this.memory.activeNavTab.next(NavTab.Profile);
+    this.memory.activeNavTab.next(NavTab.Settings);
     this.getSettings();
     this.getSources();
-    this.loadFavorites();
+    this.loadHomeContentPref();
     this.loadTmdbSettings();
     this.loadTmdbCacheStats();
     if (this.memory.XtreamSourceIds.size > 0)
       this.getExpiries();
   }
 
-  setSection(section: 'favorites' | 'settings') {
-    this.activeSection = section;
-    if (section === 'favorites') {
-      this.loadFavorites();
-    }
+  loadHomeContentPref() {
+    this.homeContentPref = localStorage.getItem("fred_tv_home_content_pref") || "all";
   }
 
-  setFavMediaType(type: number) {
-    this.favMediaType = type;
-    this.filterFavorites();
-  }
-
-  filterFavorites() {
-    let list = this.favoriteChannels;
-    if (this.favMediaType !== -1) {
-      list = list.filter(c => c.media_type === this.favMediaType);
-    }
-    if (this.favSearchQuery && this.favSearchQuery.trim() !== '') {
-      const q = this.favSearchQuery.toLowerCase().trim();
-      list = list.filter(c => (c.name || '').toLowerCase().includes(q));
-    }
-    this.filteredFavorites = list;
-  }
-
-  async loadFavorites() {
-    this.loadingFavorites = true;
-    try {
-      const sources = (await invoke("get_sources")) as Source[];
-      const enabledSources = sources.filter(s => s.enabled);
-      if (enabledSources.length === 0) {
-        this.favoriteChannels = [];
-        this.filteredFavorites = [];
-        this.loadingFavorites = false;
-        return;
-      }
-      const sourceIds = enabledSources.map(s => s.id!);
-      const filters: Filters = {
-        source_ids: sourceIds,
-        view_type: ViewMode.Favorites,
-        media_types: [MediaType.livestream, MediaType.movie, MediaType.serie],
-        page: 1,
-        use_keywords: false,
-        sort: SortType.alphabeticalAscending,
-      };
-      let allFavs: Channel[] = [];
-      let page = 1;
-      let hasMore = true;
-      while (hasMore && page <= 25) {
-        filters.page = page;
-        const res = (await invoke("search", { filters })) as Channel[];
-        if (res && res.length > 0) {
-          allFavs = allFavs.concat(res);
-          hasMore = res.length === 36;
-          page++;
-        } else {
-          hasMore = false;
-        }
-      }
-      this.favoriteChannels = allFavs;
-      this.filterFavorites();
-    } catch (e) {
-      console.error("Failed to load favorites", e);
-    }
-    this.loadingFavorites = false;
+  onHomeContentPrefChange() {
+    localStorage.setItem("fred_tv_home_content_pref", this.homeContentPref);
   }
 
   getSettings() {

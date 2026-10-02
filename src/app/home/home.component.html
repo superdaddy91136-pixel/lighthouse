@@ -1,50 +1,85 @@
 <ng-keyboard-shortcuts [shortcuts]="shortcuts"></ng-keyboard-shortcuts>
 <ng-keyboard-shortcuts-help [key]="'f1'" [closeKey]="'escape'" [title]="'Help'" />
 <div class="mb-5">
-  <div class="container-lg reserve-settings-space">
-    <div class="row mb-3">
-      <div class="mx-auto col-md-8 col-12">
-        <div class="search-box">
-          <input autocomplete="off" type="text" id="search" #search style="width: 100%" class="form-control"
-            placeholder="Type to search..." />
-          <svg (click)="toggleKeywords()" *ngIf="!filters?.use_keywords" class="keyword-search-icon"
-            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-            <title>Search By Keywords</title>
-            <path
-              d="M22 13C22 13.53 21.79 14.04 21.41 14.41L21 14.83C20.91 11.97 18.84 9.62 16.11 9.11L11 4H4V11L9.11 16.11C9.62 18.84 11.97 20.91 14.83 21L14.41 21.41C14.04 21.79 13.53 22 13 22C12.47 22 11.97 21.79 11.59 21.42L2.59 12.42C2.21 12.04 2 11.53 2 11V4C2 2.9 2.9 2 4 2H11C11.53 2 12.04 2.21 12.41 2.58L21.41 11.58C21.79 11.96 22 12.47 22 13M5 6.5C5 7.33 5.67 8 6.5 8S8 7.33 8 6.5 7.33 5 6.5 5 5 5.67 5 6.5M15.11 10.61C12.61 10.61 10.61 12.61 10.61 15.11S12.61 19.61 15.11 19.61C16 19.61 16.8 19.36 17.5 18.93L20.61 22L22 20.61L18.92 17.5C19.36 16.82 19.61 16 19.61 15.11C19.61 12.61 17.61 10.61 15.11 10.61M15.11 12.61C16.5 12.61 17.61 13.73 17.61 15.11S16.5 17.61 15.11 17.61 12.61 16.5 12.61 15.11 13.73 12.61 15.11 12.61" />
+  <div [class.container-lg]="!isHomeDiscoveryMode" [class.reserve-settings-space]="!isHomeDiscoveryMode" [class.home-discovery-layout]="isHomeDiscoveryMode">
+    <!-- EXPANDABLE FROSTED GLASS SEARCH CONTROL -->
+    <div class="home-search-control-wrap" [class.expanded]="isSearchExpanded || isSearching">
+      <div class="search-glass-pill" (click)="expandSearch($event)">
+        <button 
+          type="button" 
+          class="search-lens-btn" 
+          (click)="toggleSearchExpand($event)" 
+          [attr.aria-label]="isSearchExpanded ? 'Collapse search' : 'Expand search'"
+          title="Search (Ctrl+K)">
+          <svg class="search-lens-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.3-4.3"/>
           </svg>
-          <svg (click)="toggleKeywords()" *ngIf="filters?.use_keywords" class="keyword-search-icon"
-            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-            <title>Search By Keywords</title>
-            <path
-              d="M21.41 11.58L12.41 2.58C12.05 2.22 11.55 2 11 2H4C2.89 2 2 2.89 2 4V11C2 11.55 2.22 12.05 2.59 12.41L11.58 21.41C11.95 21.77 12.45 22 13 22S14.05 21.77 14.41 21.41L14.83 21C11.6 20.9 9 18.26 9 15C9 11.69 11.69 9 15 9C18.26 9 20.9 11.6 21 14.83L21.41 14.41C21.78 14.05 22 13.55 22 13C22 12.44 21.77 11.94 21.41 11.58M5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7M15.11 10.61C17.61 10.61 19.61 12.61 19.61 15.11C19.61 16 19.36 16.82 18.92 17.5L22 20.61L20.61 22L17.5 18.93C16.8 19.36 16 19.61 15.11 19.61C12.61 19.61 10.61 17.61 10.61 15.11S12.61 10.61 15.11 10.61M15.11 12.61C13.73 12.61 12.61 13.73 12.61 15.11S13.73 17.61 15.11 17.61 17.61 16.5 17.61 15.11 16.5 12.61 15.11 12.61" />
+        </button>
+
+        <input 
+          #search 
+          id="search" 
+          type="text" 
+          autocomplete="off" 
+          class="search-glass-input" 
+          placeholder="Search movies, shows & channels..." 
+          (keydown)="onSearchKeydown($event)" 
+          (blur)="onSearchBlur()" />
+
+        <button 
+          *ngIf="search.value || filters?.query" 
+          type="button" 
+          class="search-clear-btn" 
+          (click)="collapseAndClearSearch($event)" 
+          title="Clear & close search (Esc)">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="search-clear-svg">
+            <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
           </svg>
-          <svg (click)="reload()" class="reload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-            <title>Reload View</title>
-            <path
-              d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
-          </svg>
-          <svg class="bulk-action-icon" [matMenuTriggerFor]="bulkMenu"
-            [class.disabled]="filters?.series_id && !filters?.season" xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24">
-            <title>Bulk Actions</title>
-            <path
-              d="M6,2A4,4 0 0,1 10,6V8H14V6A4,4 0 0,1 18,2A4,4 0 0,1 22,6A4,4 0 0,1 18,10H16V14H18A4,4 0 0,1 22,18A4,4 0 0,1 18,22A4,4 0 0,1 14,18V16H10V18A4,4 0 0,1 6,22A4,4 0 0,1 2,18A4,4 0 0,1 6,14H8V10H6A4,4 0 0,1 2,6A4,4 0 0,1 6,2M16,18A2,2 0 0,0 18,20A2,2 0 0,0 20,18A2,2 0 0,0 18,16H16V18M14,10H10V14H14V10M6,16A2,2 0 0,0 4,18A2,2 0 0,0 6,20A2,2 0 0,0 8,18V16H6M8,6A2,2 0 0,0 6,4A2,2 0 0,0 4,6A2,2 0 0,0 6,8H8V6M18,8A2,2 0 0,0 20,6A2,2 0 0,0 18,4A2,2 0 0,0 16,6V8H18Z" />
-          </svg>
-          <mat-menu #bulkMenu="matMenu">
-            <button mat-menu-item (click)="bulkAction(bulkActionType.Hide)">Hide all</button>
-            <button mat-menu-item (click)="bulkAction(bulkActionType.Unhide)">Unhide all</button>
-            <button mat-menu-item (click)="bulkAction(bulkActionType.Favorite)"
-              [disabled]="filters?.view_type == viewModeEnum.Categories">Favorite all</button>
-            <button mat-menu-item (click)="bulkAction(bulkActionType.Unfavorite)"
-              [disabled]="filters?.view_type == viewModeEnum.Categories">Unfavorite all</button>
-          </mat-menu>
-          <app-sort-button></app-sort-button>
-        </div>
+        </button>
       </div>
     </div>
 
 
+
+    <!-- Category / View Mode Switcher (Live TV, Movies, TV Shows) -->
+    <div class="view-mode-bar mx-auto d-flex justify-content-center mb-3" *ngIf="isCatalogTab && !isHomeDiscoveryMode && !isSearching">
+      <div class="view-mode-pill-group">
+        <button 
+          type="button" 
+          class="view-mode-pill" 
+          [class.active]="filters?.view_type == viewModeEnum.Categories"
+          (click)="switchMode(viewModeEnum.Categories)"
+          title="Browse folders / categories">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="view-pill-icon">
+            <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"/>
+          </svg>
+          <span>Categories</span>
+        </button>
+        <button 
+          type="button" 
+          class="view-mode-pill" 
+          [class.active]="filters?.view_type == viewModeEnum.All"
+          (click)="switchMode(viewModeEnum.All)"
+          title="View all items">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="view-pill-icon">
+            <path d="M3,5H21V7H3V5M3,11H21V13H3V11M3,17H21V19H3V17Z"/>
+          </svg>
+          <span>All</span>
+        </button>
+        <button 
+          type="button" 
+          class="view-mode-pill" 
+          [class.active]="filters?.view_type == viewModeEnum.Favorites"
+          (click)="switchMode(viewModeEnum.Favorites)"
+          title="View favorites">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="view-pill-icon">
+            <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z"/>
+          </svg>
+          <span>Favorites</span>
+        </button>
+      </div>
+    </div>
 
     <!-- HOME DISCOVERY MODE (Streaming Discovery Experience) -->
     <app-home-discovery 
@@ -54,26 +89,106 @@
       (navigateTab)="navigateToTab($event)">
     </app-home-discovery>
 
-    <!-- DRILLDOWN / SEARCH RESULTS / CATALOG GRID -->
-    <ng-container *ngIf="!isHomeDiscoveryMode">
-      <div class="mb-3 d-flex align-items-center" *ngIf="
+    <!-- UNIVERSAL SEARCH RESULTS MODE -->
+    <ng-container *ngIf="isSearching">
+      <div class="search-results-container" [@fade]="channelsVisible ? 'visible' : 'hidden'">
+        <!-- Channels Section -->
+        <div class="search-group-section mb-4" *ngIf="searchResults.channels.length > 0">
+          <div class="search-group-header mb-3">
+            <h4 class="search-group-title mb-0">Channels</h4>
+            <span class="search-group-badge">{{ searchResults.channels.length }}</span>
+          </div>
+          <div class="row gy-3">
+            <app-channel-tile *ngFor="let channel of searchResults.channels; let i = index"
+              class="col-lg-4 col-md-4" [id]="i" [channel]="channel" [viewMode]="viewModeEnum.All"></app-channel-tile>
+          </div>
+        </div>
+
+        <!-- Movies Section -->
+        <div class="search-group-section mb-4" *ngIf="searchResults.movies.length > 0">
+          <div class="search-group-header mb-3">
+            <h4 class="search-group-title mb-0">Movies</h4>
+            <span class="search-group-badge">{{ searchResults.movies.length }}</span>
+          </div>
+          <div class="row gy-3">
+            <app-channel-tile *ngFor="let movie of searchResults.movies; let i = index"
+              class="col-lg-4 col-md-4" [id]="i + 1000" [channel]="movie" [viewMode]="viewModeEnum.All"></app-channel-tile>
+          </div>
+        </div>
+
+        <!-- TV Shows Section -->
+        <div class="search-group-section mb-4" *ngIf="searchResults.tvShows.length > 0">
+          <div class="search-group-header mb-3">
+            <h4 class="search-group-title mb-0">TV Shows</h4>
+            <span class="search-group-badge">{{ searchResults.tvShows.length }}</span>
+          </div>
+          <div class="row gy-3">
+            <app-channel-tile *ngFor="let show of searchResults.tvShows; let i = index"
+              class="col-lg-4 col-md-4" [id]="i + 2000" [channel]="show" [viewMode]="viewModeEnum.All"></app-channel-tile>
+          </div>
+        </div>
+
+        <!-- Categories / Folders Section -->
+        <div class="search-group-section mb-4" *ngIf="searchResults.categories.length > 0">
+          <div class="search-group-header mb-3">
+            <h4 class="search-group-title mb-0">Categories / Folders</h4>
+            <span class="search-group-badge">{{ searchResults.categories.length }}</span>
+          </div>
+          <div class="row gy-3">
+            <app-channel-tile *ngFor="let group of searchResults.categories; let i = index"
+              class="col-lg-4 col-md-4" [id]="i + 3000" [channel]="group" [viewMode]="viewModeEnum.Categories"></app-channel-tile>
+          </div>
+        </div>
+
+        <!-- Empty state when no matches in any group -->
+        <div *ngIf="!loading && totalSearchResultsCount === 0" class="text-center py-5 text-muted">
+          <p class="fs-5">No items found for "{{ searchKeyword }}"</p>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- DRILLDOWN / CATALOG GRID (When not in Discovery and not searching) -->
+    <ng-container *ngIf="!isHomeDiscoveryMode && !isSearching">
+      <div class="category-breadcrumb-bar mb-3 d-flex align-items-center" *ngIf="
           (filters?.view_type == viewModeEnum.Categories && filters?.group_id) || filters?.series_id
         ">
-        <svg (click)="goBack()" fill="currentColor" class="go-back-arrow clickable" xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24">
-          <path
-            d="M2,12A10,10 0 0,1 12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12M18,11H10L13.5,7.5L12.08,6.08L6.16,12L12.08,17.92L13.5,16.5L10,13H18V11Z" />
-        </svg>
-        <h4 *ngIf="this.nodeStack.hasNodes()" class="ms-2 mb-0">
-          {{ this.nodeStack.get()?.toString() }}
+        <button type="button" class="btn-breadcrumb-back" (click)="goBack()" title="Back to categories">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z" />
+          </svg>
+          <span>Categories</span>
+        </button>
+        <span class="breadcrumb-separator" *ngIf="getActiveCategoryName()">/</span>
+        <h4 class="category-active-title mb-0" *ngIf="getActiveCategoryName()">
+          {{ getActiveCategoryName() }}
         </h4>
       </div>
+      <!-- PINNED SECTION -->
+      <div class="pinned-section mb-4" *ngIf="currentPinnedItems.length > 0">
+        <div class="pinned-header d-flex align-items-center gap-2 mb-3">
+          <svg class="pinned-header-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+          </svg>
+          <h4 class="pinned-section-title mb-0">Pinned</h4>
+          <span class="pinned-count-badge">{{ currentPinnedItems.length }}</span>
+        </div>
+        <div class="row gy-3">
+          <app-channel-tile *ngFor="let item of currentPinnedItems; let i = index"
+            class="col-lg-4 col-md-4" [id]="i + 50000" [channel]="item" [viewMode]="viewType">
+          </app-channel-tile>
+        </div>
+      </div>
+
       <div class="row gy-3" [@fade]="channelsVisible ? 'visible' : 'hidden'">
-        <app-channel-tile [attr.id]="i == 0 ? 'first' : null" *ngFor="let channel of channels; let i = index"
+        <app-channel-tile [attr.id]="i == 0 ? 'first' : null" *ngFor="let channel of regularChannels; let i = index"
           class="col-lg-4 col-md-4" [id]="i" [channel]="channel" [viewMode]="viewType"></app-channel-tile>
       </div>
 
-      <button [@fade]="channelsVisible ? 'visible' : 'hidden'" *ngIf="reachedMax === false" (click)="loadMore()"
+      <div *ngIf="!loading && regularChannels.length === 0 && currentPinnedItems.length === 0" class="text-center py-5 text-muted">
+        <p class="fs-5">No items found</p>
+      </div>
+
+      <button [@fade]="channelsVisible ? 'visible' : 'hidden'" *ngIf="reachedMax === false && channels.length > 0" (click)="loadMore()"
         class="btn btn-outline-primary mx-auto d-block mt-3">
         Load More
       </button>

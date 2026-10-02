@@ -1,12 +1,4 @@
 <nav class="floating-nav" aria-label="Main Navigation">
-  <div class="nav-brand" title="Fred TV">
-    <svg class="nav-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2" y="6" width="20" height="15" rx="3"/>
-      <path d="m16 2-4 4-4-4"/>
-      <circle cx="12" cy="13.5" r="2.5" fill="currentColor"/>
-    </svg>
-  </div>
-
   <div class="nav-tabs-group">
     <!-- 1. Home -->
     <button
@@ -14,14 +6,14 @@
       class="nav-tab-btn"
       [class.active]="activeTab === navTabEnum.Home"
       (click)="selectTab(navTabEnum.Home)"
-      title="Home"
+      aria-label="Home"
       id="nav-tab-home"
     >
       <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 10.5 12 3l9 7.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
         <path d="M9 22V12h6v10"/>
       </svg>
-      <span class="tab-label">Home</span>
+      <span class="nav-tooltip" role="tooltip">Home</span>
     </button>
 
     <!-- 2. Live TV -->
@@ -30,7 +22,7 @@
       class="nav-tab-btn"
       [class.active]="activeTab === navTabEnum.LiveTV"
       (click)="selectTab(navTabEnum.LiveTV)"
-      title="Live TV"
+      aria-label="Live TV"
       id="nav-tab-live"
     >
       <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -38,7 +30,7 @@
         <path d="M17 2l-5 5-5-5"/>
         <circle cx="17" cy="11.5" r="1.5" fill="currentColor"/>
       </svg>
-      <span class="tab-label">Live TV</span>
+      <span class="nav-tooltip" role="tooltip">Live TV</span>
     </button>
 
     <!-- 3. Movies -->
@@ -47,7 +39,7 @@
       class="nav-tab-btn"
       [class.active]="activeTab === navTabEnum.Movies"
       (click)="selectTab(navTabEnum.Movies)"
-      title="Movies"
+      aria-label="Movies"
       id="nav-tab-movies"
     >
       <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -60,7 +52,7 @@
         <path d="M17 8h5"/>
         <path d="M17 16h5"/>
       </svg>
-      <span class="tab-label">Movies</span>
+      <span class="nav-tooltip" role="tooltip">Movies</span>
     </button>
 
     <!-- 4. TV Shows -->
@@ -69,7 +61,7 @@
       class="nav-tab-btn"
       [class.active]="activeTab === navTabEnum.TVShows"
       (click)="selectTab(navTabEnum.TVShows)"
-      title="TV Shows"
+      aria-label="TV Shows"
       id="nav-tab-series"
     >
       <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -78,7 +70,7 @@
         <path d="M6 21h12"/>
         <path d="M12 18v3"/>
       </svg>
-      <span class="tab-label">TV Shows</span>
+      <span class="nav-tooltip" role="tooltip">TV Shows</span>
     </button>
 
     <!-- 5. Profile -->
@@ -87,14 +79,29 @@
       class="nav-tab-btn"
       [class.active]="activeTab === navTabEnum.Profile"
       (click)="selectTab(navTabEnum.Profile)"
-      title="Profile"
+      aria-label="Profile"
       id="nav-tab-profile"
     >
       <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
       </svg>
-      <span class="tab-label">Profile</span>
+      <span class="nav-tooltip" role="tooltip">Profile</span>
+    </button>
+
+    <!-- 6. Settings -->
+    <button
+      type="button"
+      class="nav-tab-btn"
+      [class.active]="activeTab === navTabEnum.Settings"
+      (click)="selectTab(navTabEnum.Settings)"
+      aria-label="Settings"
+      id="nav-tab-settings"
+    >
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <span class="nav-tooltip" role="tooltip">Settings</span>
     </button>
   </div>
 </nav>

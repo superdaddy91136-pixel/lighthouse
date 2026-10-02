@@ -3,82 +3,13 @@
     d="M2,12A10,10 0 0,1 12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12M18,11H10L13.5,7.5L12.08,6.08L6.16,12L12.08,17.92L13.5,16.5L10,13H18V11Z" />
 </svg>
 <div class="container px-md-5 px-3">
-  <!-- Profile Section Tabs Header -->
-  <div class="profile-header text-center mt-3 mb-4">
-    <h2 class="profile-title mb-3">Profile</h2>
-    <div class="profile-nav-pill mx-auto">
-      <button 
-        type="button" 
-        class="profile-pill-btn" 
-        [class.active]="activeSection === 'favorites'" 
-        (click)="setSection('favorites')">
-        <svg class="pill-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
-        </svg>
-        <span>Favorites</span>
-        <span class="pill-badge" *ngIf="favoriteChannels.length > 0">{{ favoriteChannels.length }}</span>
-      </button>
-      <button 
-        type="button" 
-        class="profile-pill-btn" 
-        [class.active]="activeSection === 'settings'" 
-        (click)="setSection('settings')">
-        <svg class="pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
-        <span>Preferences & Sources</span>
-      </button>
-    </div>
+  <!-- Settings Header -->
+  <div class="settings-header text-center mt-3 mb-4">
+    <h2 class="settings-title mb-2">Settings</h2>
+    <p class="text-secondary small">Configure playback, TMDB metadata, and media sources</p>
   </div>
 
-  <!-- SECTION 1: FAVORITES -->
-  <div *ngIf="activeSection === 'favorites'" class="favorites-section">
-    <div class="fav-controls-row mb-4">
-      <div class="fav-search-wrapper">
-        <input 
-          type="text" 
-          [(ngModel)]="favSearchQuery" 
-          (ngModelChange)="filterFavorites()" 
-          placeholder="Filter favorite channels..." 
-          class="form-control fav-search-input" />
-      </div>
-      <div class="fav-filter-pills">
-        <button class="fav-filter-btn" [class.active]="favMediaType === -1" (click)="setFavMediaType(-1)">All</button>
-        <button class="fav-filter-btn" [class.active]="favMediaType === 0" (click)="setFavMediaType(0)">Live TV</button>
-        <button class="fav-filter-btn" [class.active]="favMediaType === 1" (click)="setFavMediaType(1)">Movies</button>
-        <button class="fav-filter-btn" [class.active]="favMediaType === 2" (click)="setFavMediaType(2)">Series</button>
-      </div>
-      <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center fav-reload-btn" (click)="loadFavorites()" title="Reload Favorites">
-        <svg class="refresh-sm" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
-        </svg>
-      </button>
-    </div>
-
-    <!-- Empty State -->
-    <div *ngIf="filteredFavorites.length === 0 && !loadingFavorites" class="empty-fav-card text-center py-5">
-      <svg class="empty-star mb-3" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
-      </svg>
-      <h5 class="text-white mb-2">No Favorite Channels</h5>
-      <p class="text-secondary small">Right-click any channel card in Home, Live TV, Movies, or TV Shows to add it to your Favorites.</p>
-    </div>
-
-    <!-- Favorite Channel Grid -->
-    <div class="row gy-3" *ngIf="filteredFavorites.length > 0">
-      <app-channel-tile 
-        *ngFor="let channel of filteredFavorites; let i = index"
-        class="col-lg-4 col-md-6 col-12" 
-        [id]="i" 
-        [channel]="channel" 
-        [viewMode]="viewModeEnum.Favorites">
-      </app-channel-tile>
-    </div>
-  </div>
-
-  <!-- SECTION 2: PREFERENCES & SOURCES -->
-  <div *ngIf="activeSection === 'settings'" class="settings-section">
+  <div class="settings-section">
     <div class="row align-items-center">
       <div class="col-4">
         <label [ngbTooltip]="'Where recorded livestreams will be saved'">Recording path</label>
@@ -97,6 +28,20 @@
             </svg>
           </button>
         </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span [ngbTooltip]="'Filter curated rows on the Home screen by language or region'">Home Content Preference</span>
+      </div>
+      <div class="col">
+        <select (ngModelChange)="onHomeContentPrefChange()" [(ngModel)]="homeContentPref" class="form-control" style="max-width: 16rem">
+          <option value="all">All Content</option>
+          <option value="english">English / Hollywood</option>
+          <option value="hindi">Hindi / Indian</option>
+          <option value="korean">Korean</option>
+        </select>
       </div>
     </div>
 

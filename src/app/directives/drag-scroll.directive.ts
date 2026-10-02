@@ -48,6 +48,12 @@ export class DragScrollDirective implements OnInit, OnDestroy {
     // Only drag with primary (left) mouse button
     if (event.button !== 0) return;
 
+    // If click was on an interactive button or control, do not initiate drag
+    const target = event.target as HTMLElement;
+    if (target && target.closest('button, a, input, select, textarea, [mat-menu-item], .btn-card-menu, .card-fav-btn')) {
+      return;
+    }
+
     // If click was on a native scrollbar track/thumb, do not intercept
     if (event.offsetX > this.el.clientWidth || event.offsetY > this.el.clientHeight) {
       return;

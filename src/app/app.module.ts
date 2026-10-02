@@ -17,6 +17,7 @@ import { ConfirmModalComponent } from './setup/confirm-modal/confirm-modal.compo
 import { HomeComponent } from './home/home.component';
 import { ChannelTileComponent } from './channel-tile/channel-tile.component';
 import { SettingsComponent } from './settings/settings.component';
+import { ProfileComponent } from './profile/profile.component';
 import { SourceTileComponent } from './settings/source-tile/source-tile.component';
 import { ErrorModalComponent } from './error-modal/error-modal.component';
 import { EditChannelModalComponent } from './edit-channel-modal/edit-channel-modal.component';
@@ -61,6 +62,7 @@ import { TimeUntilPipe } from './pipes/time-until.pipe';
     ConfirmModalComponent,
     HomeComponent,
     ChannelTileComponent,
+    ProfileComponent,
     SettingsComponent,
     SourceTileComponent,
     ErrorModalComponent,

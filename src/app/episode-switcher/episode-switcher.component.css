@@ -121,9 +121,9 @@
 }
 
 .es-season-pill.active {
-  background: #38bdf8;
-  border-color: #38bdf8;
-  color: #0f172a;
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.95);
+  color: #0b1120;
 }
 
 /* ── Loading ── */
@@ -174,8 +174,8 @@
 }
 
 .es-episode-item.es-active {
-  background: rgba(56, 189, 248, 0.1);
-  border-left: 3px solid #38bdf8;
+  background: rgba(255, 255, 255, 0.1);
+  border-left: 3px solid rgba(255, 255, 255, 0.85);
 }
 
 /* ── Thumbnail ── */
@@ -238,7 +238,8 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #38bdf8;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
   animation: es-pulse 1.5s ease-in-out infinite;
 }
 

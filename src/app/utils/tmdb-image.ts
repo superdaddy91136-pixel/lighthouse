@@ -7,6 +7,20 @@ export type TmdbPosterSize = 'w185' | 'w342' | 'w500' | 'w780' | 'original';
 export type TmdbBackdropSize = 'w300' | 'w780' | 'w1280' | 'original';
 export type TmdbStillSize = 'w185' | 'w300' | 'original';
 export type TmdbProfileSize = 'w185' | 'h632' | 'original';
+export type TmdbLogoSize = 'w300' | 'w500' | 'original';
+
+/**
+ * Builds a full TMDB logo URL with the requested size.
+ * Returns undefined if path is missing or invalid.
+ */
+export function getTmdbLogoUrl(
+  path?: string,
+  size: TmdbLogoSize = 'w500',
+): string | undefined {
+  if (!path || typeof path !== 'string' || path.trim() === '') return undefined;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${TMDB_IMAGE_BASE_URL}${size}${cleanPath}`;
+}
 
 /**
  * Builds a full TMDB poster URL with the requested size.

@@ -15,13 +15,13 @@
     </div>
     <h3 class="text-white fw-bold mb-2">Welcome to Discovery</h3>
     <p class="text-secondary mx-auto mb-4" style="max-width: 480px;">
-      No movies or TV shows are currently available in your catalog. Explore live broadcasts in Live TV, or add a VOD/Series source in Profile.
+      No movies or TV shows are currently available in your catalog. Explore live broadcasts in Live TV, or add a VOD/Series source in Settings.
     </p>
     <div class="d-flex justify-content-center gap-3">
       <button class="btn btn-primary px-4 py-2 rounded-pill fw-semibold" (click)="goToLiveTV()">
         Go to Live TV
       </button>
-      <button class="btn btn-outline-light px-4 py-2 rounded-pill fw-semibold" (click)="goToProfile()">
+      <button class="btn btn-outline-light px-4 py-2 rounded-pill fw-semibold" (click)="goToSettings()">
         Manage Sources
       </button>
     </div>
@@ -29,14 +29,15 @@
 
   <!-- MAIN DISCOVERY VIEW -->
   <div *ngIf="!loading && hasAnyContent">
-    <!-- 1. HERO BANNER -->
+    <!-- 1. HERO BANNER (Full-Bleed Cinematic Hero matching reference) -->
     <div 
       *ngIf="currentHero" 
-      class="hero-banner mb-5" 
+      class="hero-banner" 
+      [class.hero-transitioning]="isTransitioning"
       (mouseenter)="onHeroMouseEnter()" 
       (mouseleave)="onHeroMouseLeave()">
       
-      <!-- Backdrop Image & Gradients -->
+      <!-- Backdrop Image & Cinematic Gradients -->
       <div class="hero-backdrop-wrapper">
         <img 
           *ngIf="currentHero.imageUrl && !isImageBroken(currentHero.channel.id)" 
@@ -44,104 +45,82 @@
           (error)="onImageError(currentHero.channel.id)" 
           alt="{{ currentHero.cleanTitle }}" 
           class="hero-backdrop-img" />
-        <div class="hero-gradient-overlay"></div>
-        <div class="hero-radial-overlay"></div>
+        <div class="hero-gradient-left"></div>
+        <div class="hero-gradient-bottom"></div>
+        <div class="hero-gradient-top"></div>
       </div>
-
-      <!-- Hero Navigation Arrows -->
-      <button 
-        *ngIf="heroItems.length > 1" 
-        class="hero-arrow hero-arrow-left" 
-        (click)="prevHero()" 
-        title="Previous title">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" />
-        </svg>
-      </button>
-      <button 
-        *ngIf="heroItems.length > 1" 
-        class="hero-arrow hero-arrow-right" 
-        (click)="nextHero()" 
-        title="Next title">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" />
-        </svg>
-      </button>
 
       <!-- Hero Content Info -->
       <div class="hero-content">
-        <div class="hero-badges mb-2">
-          <span 
-            class="badge-pill" 
-            [class.badge-series]="currentHero.mediaTypeLabel === 'SERIES'" 
-            [class.badge-movie]="currentHero.mediaTypeLabel === 'MOVIE'">
-            {{ currentHero.mediaTypeLabel }}
+        <!-- Title / Logo Artwork -->
+        <div class="hero-title-wrap mb-3">
+          <img 
+            *ngIf="currentHero.logoUrl" 
+            [src]="currentHero.logoUrl" 
+            alt="{{ currentHero.cleanTitle }}" 
+            class="hero-title-logo" />
+          <h1 
+            *ngIf="!currentHero.logoUrl" 
+            class="hero-title mb-0" 
+            [title]="currentHero.cleanTitle">
+            {{ currentHero.cleanTitle }}
+          </h1>
+        </div>
+
+        <!-- Metadata Pills (Recommended, Year, Quality ONLY) -->
+        <div class="hero-meta-pills d-flex align-items-center flex-wrap gap-2 mb-3">
+          <span class="hero-meta-pill pill-recommendation" *ngIf="getRecommendationLabel(currentHero)">
+            {{ getRecommendationLabel(currentHero) }}
           </span>
-          <span class="badge-pill badge-rating" *ngIf="currentHero.rating">
-            ★ {{ currentHero.rating }}
-          </span>
-          <span class="badge-pill badge-neutral" *ngIf="currentHero.year">
+          <span class="hero-meta-pill pill-neutral" *ngIf="currentHero.year">
             {{ currentHero.year }}
           </span>
-          <span class="badge-pill badge-quality" *ngIf="currentHero.quality">
-            {{ currentHero.quality }}
-          </span>
-          <span class="badge-pill badge-neutral" *ngIf="currentHero.genre">
-            {{ currentHero.genre }}
+          <span class="hero-meta-pill pill-neutral">
+            {{ currentHero.quality || 'HD' }}
           </span>
         </div>
 
-        <h1 class="hero-title mb-3" title="{{ currentHero.cleanTitle }}">
-          {{ currentHero.cleanTitle }}
-        </h1>
-
-        <p class="hero-desc mb-4" *ngIf="currentHero.description">
+        <!-- Short Real Synopsis (2-3 lines truncated) -->
+        <p class="hero-synopsis mb-4" *ngIf="currentHero.description">
           {{ currentHero.description }}
         </p>
 
-        <!-- Hero Actions -->
+        <!-- Action Buttons (Play/Resume, Details, Circular + Button) -->
         <div class="hero-actions d-flex align-items-center gap-3">
-          <button class="btn-hero-play" (click)="handleHeroPlay(currentHero)">
-            <svg class="action-icon" viewBox="0 0 24 24" fill="currentColor">
+          <button class="btn-hero-primary" (click)="handleHeroPlay(currentHero)">
+            <svg class="btn-hero-icon" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
             </svg>
-            <span>Watch Now</span>
+            <span>{{ isWatched(currentHero.channel) ? 'Resume' : 'Watch Now' }}</span>
           </button>
 
-          <button class="btn-hero-details" (click)="handleHeroDetails(currentHero)">
-            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button class="btn-hero-secondary" (click)="handleHeroDetails(currentHero)">
+            <svg class="btn-hero-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span>{{ currentHero.mediaTypeLabel === 'SERIES' ? 'Seasons & Episodes' : 'Details' }}</span>
+            <span>Details</span>
           </button>
 
           <button 
-            class="btn-hero-fav" 
-            [class.active]="currentHero.channel.favorite" 
+            class="btn-hero-list" 
+            [class.in-list]="currentHero.channel.favorite" 
             (click)="toggleFavorite(currentHero.channel, $event)" 
-            title="{{ currentHero.channel.favorite ? 'Remove from favorites' : 'Add to favorites' }}">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
+            [title]="currentHero.channel.favorite ? 'In your list' : 'Add to list'">
+            <svg *ngIf="!currentHero.channel.favorite" class="btn-hero-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+            </svg>
+            <svg *ngIf="currentHero.channel.favorite" class="btn-hero-icon in-list-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9,16.17L4.83,12L3.41,13.41L9,19L21,7L19.59,5.59L9,16.17Z" />
             </svg>
           </button>
         </div>
       </div>
-
-      <!-- Hero Dots Indicator -->
-      <div *ngIf="heroItems.length > 1" class="hero-dots">
-        <button 
-          *ngFor="let item of heroItems; let idx = index" 
-          class="hero-dot" 
-          [class.active]="idx === currentHeroIndex" 
-          (click)="setHeroIndex(idx)" 
-          [title]="item.cleanTitle">
-        </button>
-      </div>
     </div>
 
-    <!-- 2. CONTENT ROWS -->
+
+    <!-- 3. CONTENT ROWS -->
     <div class="discovery-rows-container">
       <section *ngFor="let row of discoveryRows" class="discovery-row mb-5">
         <!-- Row Header -->
@@ -171,14 +150,15 @@
           <div 
             *ngFor="let item of row.items" 
             class="media-card" 
+            [class.cw-card]="row.id === 'row-continue-watching'"
             (click)="handleCardClick(item)" 
             [title]="item.name || ''">
             
             <!-- Poster Artwork Container -->
-            <div class="poster-container">
+            <div class="poster-container" [class.cw-poster-container]="row.id === 'row-continue-watching'">
               <img 
-                *ngIf="getCardArtwork(item) && !isImageBroken(item.id)" 
-                [src]="getCardArtwork(item)" 
+                *ngIf="(row.id === 'row-continue-watching' ? getContinueWatchingArtwork(item) : getCardArtwork(item)) && !isImageBroken(item.id)" 
+                [src]="row.id === 'row-continue-watching' ? getContinueWatchingArtwork(item) : getCardArtwork(item)" 
                 (error)="onImageError(item.id)" 
                 alt="{{ item.name }}" 
                 class="poster-img" 
@@ -186,19 +166,12 @@
                 loading="lazy" />
 
               <!-- Fallback Artwork if image missing or broken -->
-              <div *ngIf="!getCardArtwork(item) || isImageBroken(item.id)" class="poster-fallback">
+              <div *ngIf="!(row.id === 'row-continue-watching' ? getContinueWatchingArtwork(item) : getCardArtwork(item)) || isImageBroken(item.id)" class="poster-fallback">
                 <svg class="fallback-icon mb-2" viewBox="0 0 24 24" fill="currentColor">
-                  <path *ngIf="item.media_type === 2" d="M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19H8V21H16V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3M21,17H3V5H21V17Z" />
-                  <path *ngIf="item.media_type !== 2" d="M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18Z" />
+                  <path *ngIf="isTvShow(item)" d="M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19H8V21H16V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3M21,17H3V5H21V17Z" />
+                  <path *ngIf="!isTvShow(item)" d="M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18Z" />
                 </svg>
-                <span class="fallback-title">{{ getCleanTitle(item.name) }}</span>
-              </div>
-
-              <!-- Media Type Badge -->
-              <div class="card-badge-top-left">
-                <span class="card-media-pill" [class.pill-series]="item.media_type === 2">
-                  {{ item.media_type === 2 ? 'SERIES' : 'MOVIE' }}
-                </span>
+                <span class="fallback-title">{{ getCleanTitle(item) }}</span>
               </div>
 
               <!-- Favorite Toggle -->
@@ -220,21 +193,74 @@
                   </svg>
                 </div>
               </div>
+
+              <!-- Thin Playback Progress Bar for Continue Watching -->
+              <div *ngIf="row.id === 'row-continue-watching'" class="cw-progress-track">
+                <div class="cw-progress-fill" [style.width.%]="getWatchProgress(item)"></div>
+              </div>
             </div>
 
             <!-- Card Bottom Meta -->
             <div class="card-info mt-2">
-              <h5 class="card-title text-truncate mb-1" [title]="getCleanTitle(item.name)">{{ getCleanTitle(item.name) }}</h5>
-              <div class="card-meta-line d-flex align-items-center gap-2" *ngIf="getCardYear(item) || parseQuality(item.name)">
-                <span class="meta-year" *ngIf="getCardYear(item)">{{ getCardYear(item) }}</span>
-                <span class="meta-dot" *ngIf="getCardYear(item) && parseQuality(item.name)">•</span>
-                <span class="meta-quality" *ngIf="parseQuality(item.name)">{{ parseQuality(item.name) }}</span>
+              <h5 class="card-title text-truncate mb-1" [title]="getCleanTitle(item)">{{ getCleanTitle(item) }}</h5>
+              <div class="card-meta-line d-flex align-items-center justify-content-between">
+                <div class="meta-tags d-flex align-items-center gap-2 text-truncate" *ngIf="getEpisodeLabel(item) || getCardYear(item) || parseQuality(item.name)">
+                  <span class="meta-episode" *ngIf="getEpisodeLabel(item)">{{ getEpisodeLabel(item) }}</span>
+                  <span class="meta-dot" *ngIf="getEpisodeLabel(item) && (getCardYear(item) || parseQuality(item.name))">•</span>
+                  <span class="meta-year" *ngIf="getCardYear(item)">{{ getCardYear(item) }}</span>
+                  <span class="meta-dot" *ngIf="getCardYear(item) && parseQuality(item.name)">•</span>
+                  <span class="meta-quality" *ngIf="parseQuality(item.name)">{{ parseQuality(item.name) }}</span>
+                </div>
+                <div *ngIf="!getEpisodeLabel(item) && !getCardYear(item) && !parseQuality(item.name)"></div>
+
+                <!-- Three-dot menu button directly BELOW each Continue Watching card -->
+                <button 
+                  *ngIf="row.id === 'row-continue-watching'" 
+                  type="button" 
+                  class="btn-card-menu ms-auto" 
+                  [matMenuTriggerFor]="cwMenu" 
+                  [matMenuTriggerData]="{ channel: item }" 
+                  (click)="$event.stopPropagation()" 
+                  title="More options">
+                  <svg viewBox="0 0 24 24" fill="currentColor" class="cw-dots-icon">
+                    <path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" />
+                  </svg>
+                </button>
               </div>
             </div>
 
           </div>
         </div>
       </section>
+
+      <!-- Empty state if all rows filtered out by selected preference -->
+      <div *ngIf="discoveryRows.length === 0" class="empty-prefs-notice text-center py-5 my-4">
+        <p class="text-secondary mb-3">No titles match the selected preference in your catalog.</p>
+        <button type="button" class="btn btn-outline-light rounded-pill px-4 py-2" (click)="setContentPreference('all')">
+          Show All Content
+        </button>
+      </div>
     </div>
   </div>
+
+  <!-- CONTINUE WATCHING CARD CONTEXT MENU -->
+  <mat-menu #cwMenu="matMenu" class="cw-card-mat-menu">
+    <ng-template matMenuContent let-channel="channel">
+      <button mat-menu-item (click)="goToDetail(channel, $event)" class="cw-menu-item">
+        <svg *ngIf="isTvShow(channel)" class="cw-menu-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19H8V21H16V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3M21,17H3V5H21V17Z" />
+        </svg>
+        <svg *ngIf="!isTvShow(channel)" class="cw-menu-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18Z" />
+        </svg>
+        <span>{{ isTvShow(channel) ? 'Go to TV Show' : 'Go to Movie' }}</span>
+      </button>
+      <button mat-menu-item (click)="removeFromContinueWatching(channel, $event)" class="cw-menu-item text-danger-subtle">
+        <svg class="cw-menu-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+        </svg>
+        <span>Remove from Continue Watching</span>
+      </button>
+    </ng-template>
+  </mat-menu>
 </div>

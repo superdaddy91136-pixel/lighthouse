@@ -24,12 +24,87 @@ import {
   extractYear,
   selectSynopsis,
 } from "../../utils/media-presentation";
+import {
+  calculateDiceSimilarity,
+  calculateTokenSimilarity,
+  normalizeForComparison,
+} from "../../utils/tmdb-matcher";
 import { TmdbEnrichmentService } from "../../services/tmdb-enrichment.service";
 import { TmdbConfigService } from "../../services/tmdb-config.service";
-import { getTmdbBackdropUrl, getTmdbPosterUrl } from "../../utils/tmdb-image";
+import { getTmdbBackdropUrl, getTmdbPosterUrl, getTmdbLogoUrl, getTmdbStillUrl } from "../../utils/tmdb-image";
 import { TmdbMediaEnrichment } from "../../models/tmdb";
 import { MovieDetailService } from "../../services/movie-detail.service";
 import { TvDetailService } from "../../services/tv-detail.service";
+import { VersionMatchingService } from "../../services/version-matching.service";
+
+export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
+
+export interface MixedGenreDef {
+  id: string;
+  title: string;
+  icon: string;
+  patterns: RegExp[];
+  tmdbGenres: string[];
+}
+
+export const MIXED_GENRES: MixedGenreDef[] = [
+  {
+    id: "action-adventure",
+    title: "Action & Adventure",
+    icon: "bookmark",
+    patterns: [/\b(action|adventure|martial\s*arts)\b/i],
+    tmdbGenres: ["action", "adventure"],
+  },
+  {
+    id: "drama-romance",
+    title: "Drama & Romance",
+    icon: "bookmark",
+    patterns: [/\b(drama|romance|romantic)\b/i],
+    tmdbGenres: ["drama", "romance"],
+  },
+  {
+    id: "crime-thriller",
+    title: "Crime & Thriller",
+    icon: "bookmark",
+    patterns: [/\b(crime|thriller|gangster|heist)\b/i],
+    tmdbGenres: ["crime", "thriller"],
+  },
+  {
+    id: "comedy-romance",
+    title: "Comedy & Romance",
+    icon: "bookmark",
+    patterns: [/\b(comedy|romance|rom-?com|comic)\b/i],
+    tmdbGenres: ["comedy", "romance"],
+  },
+  {
+    id: "scifi-fantasy",
+    title: "Sci-Fi & Fantasy",
+    icon: "bookmark",
+    patterns: [/\b(sci-?fi|science\s*fiction|fantasy|superhero)\b/i],
+    tmdbGenres: ["science fiction", "fantasy", "sci-fi & fantasy"],
+  },
+  {
+    id: "horror-thriller",
+    title: "Horror & Thriller",
+    icon: "bookmark",
+    patterns: [/\b(horror|thriller|spooky|terror)\b/i],
+    tmdbGenres: ["horror", "thriller"],
+  },
+  {
+    id: "animation-family",
+    title: "Animation & Family",
+    icon: "bookmark",
+    patterns: [/\b(animation|anime|cartoon|family|kids|children)\b/i],
+    tmdbGenres: ["animation", "family", "kids"],
+  },
+  {
+    id: "mystery-suspense",
+    title: "Mystery & Suspense",
+    icon: "bookmark",
+    patterns: [/\b(mystery|suspense|detective|spy|espionage)\b/i],
+    tmdbGenres: ["mystery", "suspense"],
+  },
+];
 
 @Component({
   selector: "app-home-discovery",
@@ -42,13 +117,31 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
   @Output() navigateTab = new EventEmitter<NavTab>();
 
   heroItems: HeroItem[] = [];
+  masterHeroItems: HeroItem[] = [];
   currentHeroIndex: number = 0;
   discoveryRows: DiscoveryRow[] = [];
+  masterDiscoveryRows: DiscoveryRow[] = [];
   loading: boolean = true;
   hasAnyContent: boolean = false;
   groupsMap: Map<number, string> = new Map();
   imageErrorSet: Set<number> = new Set();
   isHeroHovered: boolean = false;
+
+  selectedContentPref: ContentPreference = 'all';
+
+  // Hero pool state & transition
+  isTransitioning: boolean = false;
+  allLoadedMovies: Channel[] = [];
+  allLoadedSeries: Channel[] = [];
+  allRecommended: Channel[] = [];
+  private transitionTimeout?: any;
+
+  // Continue Watching deduplication & state tracking
+  groupedHistoryIds: Map<number, number[]> = new Map();
+  loadedSeries: Channel[] = [];
+  seriesNameMap: Map<string, string> = new Map();
+  episodeStillMap: Map<number, string> = new Map();
+  private inFlightStillFetches: Set<number> = new Set();
 
   private heroTimer?: any;
   private subs: Subscription[] = [];
@@ -60,9 +153,15 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     public tmdbConfig: TmdbConfigService,
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
+    public versionMatching: VersionMatchingService,
   ) {}
 
   ngOnInit(): void {
+    const savedPref = localStorage.getItem("fred_tv_home_content_pref") as ContentPreference | null;
+    if (savedPref && ["all", "english", "hindi", "korean"].includes(savedPref)) {
+      this.selectedContentPref = savedPref;
+    }
+
     this.loadDiscovery();
 
     this.subs.push(
@@ -83,6 +182,10 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopHeroTimer();
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+      this.transitionTimeout = undefined;
+    }
     this.subs.forEach((s) => s.unsubscribe());
   }
 
@@ -92,7 +195,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       if (!this.isHeroHovered && this.heroItems.length > 1) {
         this.nextHero();
       }
-    }, 7000);
+    }, 9000);
   }
 
   stopHeroTimer() {
@@ -122,9 +225,41 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
   }
 
   nextHero() {
-    if (this.heroItems.length > 0) {
-      this.currentHeroIndex = (this.currentHeroIndex + 1) % this.heroItems.length;
+    if (this.heroItems.length <= 1) return;
+    this.isTransitioning = true;
+
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
     }
+
+    this.transitionTimeout = setTimeout(() => {
+      const nextIndex = this.currentHeroIndex + 1;
+      if (nextIndex >= this.heroItems.length) {
+        // Full pool cycle complete!
+        // Re-shuffle to keep subsequent cycles fresh,
+        // and ensure the new first item is not identical to the last shown item.
+        const lastShownId = this.heroItems[this.currentHeroIndex]?.channel?.id;
+        const reshuffled = this.shufflePool(this.heroItems);
+        if (reshuffled.length > 1 && reshuffled[0].channel?.id === lastShownId) {
+          const swapIdx = Math.floor(Math.random() * (reshuffled.length - 1)) + 1;
+          [reshuffled[0], reshuffled[swapIdx]] = [reshuffled[swapIdx], reshuffled[0]];
+        }
+        this.heroItems = reshuffled;
+        this.currentHeroIndex = 0;
+      } else {
+        this.currentHeroIndex = nextIndex;
+      }
+
+      // Prioritize background TMDB enrichment for the newly active hero
+      const active = this.currentHero;
+      if (active?.channel && this.tmdbConfig.isEnabled()) {
+        this.tmdbEnrichment.enqueue(active.channel, 'high');
+      }
+
+      setTimeout(() => {
+        this.isTransitioning = false;
+      }, 50);
+    }, 280);
   }
 
   prevHero() {
@@ -220,6 +355,19 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
         }
       }
 
+      // Cache loaded series for fast resolution and episode show title lookup
+      this.loadedSeries = seriesRes || [];
+      this.seriesNameMap.clear();
+      for (const s of this.loadedSeries) {
+        const sId = s.url || (s.id ? String(s.id) : undefined);
+        if (sId && s.name) {
+          this.seriesNameMap.set(`${s.source_id}_${sId}`, s.name);
+          if (s.id) {
+            this.seriesNameMap.set(`${s.source_id}_${s.id}`, s.name);
+          }
+        }
+      }
+
       // 2. Recommendation Engine: Intentional Scoring
       const recommendedList = this.computeRecommendations(
         historyRes,
@@ -228,32 +376,49 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
         seriesRes,
       );
 
-      // 3. Select Hero candidates from top recommended items & catalog with artwork
-      const heroPool = [...recommendedList, ...moviesRes, ...seriesRes].filter(
-        (c) => c.image && c.image.startsWith("http"),
+      // Cache loaded channels for content preference filtering & dynamic hero pool re-assembly
+      this.allLoadedMovies = moviesRes || [];
+      this.allLoadedSeries = seriesRes || [];
+      this.allRecommended = recommendedList || [];
+
+      // 3. Assemble Hero candidate pool (~20-30 titles with balanced Movies & Series, deduplicated versions)
+      this.masterHeroItems = this.buildHeroPool(
+        this.allLoadedMovies,
+        this.allLoadedSeries,
+        this.allRecommended,
       );
-
-      const uniqueHeroCandidates: Channel[] = [];
-      const seenHeroNames = new Set<string>();
-      for (const item of heroPool) {
-        const clean = cleanMediaTitle(item.name).toLowerCase();
-        if (!seenHeroNames.has(clean)) {
-          seenHeroNames.add(clean);
-          uniqueHeroCandidates.push(item);
-        }
-        if (uniqueHeroCandidates.length >= 6) break;
-      }
-
-      this.heroItems = uniqueHeroCandidates.map((c) => this.toHeroItem(c));
+      this.heroItems = [...this.masterHeroItems];
 
       // 4. Assemble Discovery Rows in exact prioritized order:
-      // - Recommended for You
-      // - Continue Watching
-      // - Your Favorites
-      // - Popular Movies
-      // - Popular TV Shows
-      // - Genre rows
+      // 1. Hero Banner (top)
+      // 2. Continue Watching (Deduplicated by grouped title, most recently watched version first)
+      // 3. Recommended for You
+      // 4. Top Trending Movies (loaded asynchronously)
+      // 5. Top Trending TV Shows (loaded asynchronously)
+      // 6. Popular Movies
+      // 7. Popular TV Shows
+      // 8. Mixed Genre Rows (loaded asynchronously)
       const rows: DiscoveryRow[] = [];
+
+      // Deduplicate Continue Watching: one card per grouped movie/TV title, keeping most recent version
+      const deduplicatedHistory = this.deduplicateContinueWatching(historyRes);
+
+      if (deduplicatedHistory.length > 0) {
+        rows.push({
+          id: "row-continue-watching",
+          title: "Continue Watching",
+          icon: "play-circle",
+          badge: `${deduplicatedHistory.length}`,
+          items: deduplicatedHistory,
+        });
+
+        // Trigger background resolution of highest-quality TMDB episode stills for TV episodes
+        for (const item of deduplicatedHistory) {
+          if (this.isTvShow(item)) {
+            this.resolveEpisodeStill(item);
+          }
+        }
+      }
 
       if (recommendedList.length >= 2) {
         rows.push({
@@ -261,16 +426,6 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
           title: "Recommended for You",
           icon: "sparkles",
           items: recommendedList,
-        });
-      }
-
-      if (historyRes.length > 0) {
-        rows.push({
-          id: "row-continue-watching",
-          title: "Continue Watching",
-          icon: "play-circle",
-          badge: `${historyRes.length}`,
-          items: historyRes,
         });
       }
 
@@ -302,12 +457,22 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
         });
       }
 
-      this.discoveryRows = rows;
+      this.masterDiscoveryRows = rows.sort(
+        (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
+      );
+      this.applyContentPreferences();
       this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
       this.loading = false;
 
-      // 5. Progressively load top dynamic genre rows
-      this.loadGenreRows(enabledSourceIds, categoriesRes);
+      // 5. Asynchronously load curated Trending and Mixed Genre rows in background without blocking
+      setTimeout(() => {
+        this.loadCuratedTrendingAndGenres(
+          enabledSourceIds,
+          moviesRes,
+          seriesRes,
+          categoriesRes
+        );
+      }, 0);
 
       // 6. Non-blocking progressive TMDB background enrichment if enabled
       this.enqueueVisibleCardsEnrichment();
@@ -448,46 +613,628 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     return curated;
   }
 
-  private async loadGenreRows(sourceIds: number[], categories: Channel[]) {
-    // Filter categories with recognizable genre names
-    const filteredCategories = categories
-      .filter((c) => {
-        if (!c.name) return false;
-        const cleaned = cleanCategoryTitle(c.name);
-        return cleaned !== undefined && !c.name.toLowerCase().includes("xxx");
-      })
-      .slice(0, 8);
+  private getRowPriority(rowId: string): number {
+    if (rowId === "row-continue-watching") return 10;
+    if (rowId === "row-recommended") return 20;
+    if (rowId === "row-trending-movies") return 30;
+    if (rowId === "row-trending-series") return 40;
+    if (rowId === "row-popular-movies") return 50;
+    if (rowId === "row-popular-series") return 60;
+    if (rowId === "row-favorites") return 65;
+    if (rowId.startsWith("row-genre-")) {
+      const idx = parseInt(rowId.replace("row-genre-", ""), 10);
+      return isNaN(idx) ? 100 : 100 + idx;
+    }
+    return 200;
+  }
 
-    const genrePromises = filteredCategories.map(async (cat) => {
-      const items = await this.fetchSafe({
-        source_ids: sourceIds,
-        view_type: ViewMode.All,
-        group_id: cat.id,
-        media_types: [MediaType.movie, MediaType.serie],
-        page: 1,
-        sort: SortType.provider,
-        use_keywords: false,
-      });
-      return { cat, items };
-    });
+  setContentPreference(pref: ContentPreference): void {
+    this.selectedContentPref = pref;
+    try {
+      localStorage.setItem("fred_tv_home_content_pref", pref);
+    } catch {
+      // ignore
+    }
+    this.applyContentPreferences();
+  }
 
-    const results = await Promise.allSettled(genrePromises);
-    for (const res of results) {
-      if (res.status === "fulfilled" && res.value.items.length >= 2) {
-        const cat = res.value.cat;
-        const genreTitle = cleanCategoryTitle(cat.name) || cat.name!;
-        this.discoveryRows.push({
-          id: `row-genre-${cat.id}`,
-          title: genreTitle,
-          icon: "bookmark",
-          items: res.value.items.slice(0, 24),
-        });
+  private applyContentPreferences(): void {
+    if (this.selectedContentPref === "all") {
+      this.discoveryRows = this.masterDiscoveryRows.map((r) => ({
+        ...r,
+        items: [...r.items],
+      }));
+      this.heroItems = [...this.masterHeroItems];
+      if (this.currentHeroIndex >= this.heroItems.length) {
+        this.currentHeroIndex = 0;
       }
+      return;
+    }
+
+    this.discoveryRows = this.masterDiscoveryRows
+      .map((row) => {
+        if (row.id === "row-continue-watching") {
+          return { ...row, items: [...row.items] };
+        }
+        const filtered = row.items.filter((item) =>
+          this.matchesContentPreference(item, this.selectedContentPref)
+        );
+        return {
+          ...row,
+          items: filtered,
+        };
+      })
+      .filter((row) => row.items.length > 0);
+
+    const prefMovies = this.allLoadedMovies.filter((m) =>
+      this.matchesContentPreference(m, this.selectedContentPref)
+    );
+    const prefSeries = this.allLoadedSeries.filter((s) =>
+      this.matchesContentPreference(s, this.selectedContentPref)
+    );
+    const prefRec = this.allRecommended.filter((r) =>
+      this.matchesContentPreference(r, this.selectedContentPref)
+    );
+
+    const prefHeroPool = this.buildHeroPool(prefMovies, prefSeries, prefRec);
+    this.heroItems = prefHeroPool.length > 0 ? prefHeroPool : [...this.masterHeroItems];
+    if (this.currentHeroIndex >= this.heroItems.length) {
+      this.currentHeroIndex = 0;
     }
   }
 
-  getCleanTitle(raw?: string): string {
-    return cleanMediaTitle(raw);
+  matchesContentPreference(channel: Channel, pref: ContentPreference): boolean {
+    if (pref === "all") return true;
+
+    const rawName = channel.name || "";
+    const groupName =
+      (channel.group_id ? this.groupsMap.get(channel.group_id) : "") || "";
+    const combined = `${groupName} ${rawName}`.toLowerCase();
+
+    const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
+    const origLang = (cached?.originalLanguage || "").toLowerCase();
+
+    if (pref === "english") {
+      const hasNonEnglishTag =
+        /\b(?:hindi|bollywood|punjabi|tamil|telugu|malayalam|kannada|korean|k-drama|kdrama|spanish|espanol|french|francais|german|deutsch|italian|italiano|arabic|turkish|chinese|japanese|anime)\b/i.test(
+          combined
+        ) ||
+        /(?:\[|\||\()(?:hi|hin|ind|kr|kor|es|esp|fr|fra|de|ger|it|ita|ar|ara|tr|tur|cn|zh|jp|jpn)(?:\]|\||\))/i.test(
+          rawName
+        );
+
+      if (hasNonEnglishTag) {
+        return false;
+      }
+      if (origLang) {
+        return origLang === "en";
+      }
+      return true;
+    }
+
+    if (pref === "hindi") {
+      if (
+        origLang &&
+        ["hi", "te", "ta", "ml", "kn", "pa", "bn", "mr", "gu"].includes(origLang)
+      ) {
+        return true;
+      }
+      return (
+        /\b(?:hindi|bollywood|punjabi|tamil|telugu|malayalam|kannada|indian|india|bengali|marathi|gujarati|tollywood|kollywood)\b/i.test(
+          combined
+        ) ||
+        /(?:\[|\||\()(?:hi|hin|ind|bolly|pun|tam|tel|mal|kan)(?:\]|\||\))/i.test(
+          rawName
+        )
+      );
+    }
+
+    if (pref === "korean") {
+      if (origLang === "ko") {
+        return true;
+      }
+      return (
+        /\b(?:korean|k-drama|kdrama|korea)\b/i.test(combined) ||
+        /(?:\[|\||\()(?:kr|kor|kdrama)(?:\]|\||\))/i.test(rawName)
+      );
+    }
+
+    return true;
+  }
+
+  private async loadCuratedTrendingAndGenres(
+    sourceIds: number[],
+    moviesPool: Channel[],
+    seriesPool: Channel[],
+    categoriesRes: Channel[]
+  ): Promise<void> {
+    await Promise.allSettled([
+      this.loadTrendingMoviesRow(sourceIds, moviesPool),
+      this.loadTrendingTvRow(sourceIds, seriesPool),
+      this.loadCuratedMixedGenreRows(sourceIds, categoriesRes, moviesPool, seriesPool),
+    ]);
+  }
+
+  private async loadTrendingMoviesRow(
+    sourceIds: number[],
+    moviesPool: Channel[]
+  ): Promise<void> {
+    try {
+      const trending = await this.tmdbEnrichment.getTrendingMovies("week");
+      if (!trending || trending.length === 0) return;
+
+      const matchedChannels: Channel[] = [];
+      const seenNorms = new Set<string>();
+
+      for (const item of trending) {
+        if (matchedChannels.length >= 24) break;
+        const matched = await this.matchTrendingItemToCatalog(
+          item,
+          false,
+          moviesPool,
+          sourceIds
+        );
+        if (matched && matched.id) {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(matched.name))
+          );
+          if (!seenNorms.has(norm)) {
+            seenNorms.add(norm);
+            matchedChannels.push(matched);
+            this.tmdbEnrichment.seedEnrichmentFromTrending(matched, item);
+          }
+        }
+      }
+
+      if (matchedChannels.length >= 4) {
+        this.upsertDiscoveryRow({
+          id: "row-trending-movies",
+          title: "Top Trending Movies",
+          icon: "film",
+          items: matchedChannels,
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to load trending movies row:", err);
+    }
+  }
+
+  private async loadTrendingTvRow(
+    sourceIds: number[],
+    seriesPool: Channel[]
+  ): Promise<void> {
+    try {
+      const trending = await this.tmdbEnrichment.getTrendingTv("week");
+      if (!trending || trending.length === 0) return;
+
+      const matchedChannels: Channel[] = [];
+      const seenNorms = new Set<string>();
+
+      for (const item of trending) {
+        if (matchedChannels.length >= 24) break;
+        const matched = await this.matchTrendingItemToCatalog(
+          item,
+          true,
+          seriesPool,
+          sourceIds
+        );
+        if (matched && matched.id) {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(matched.name))
+          );
+          if (!seenNorms.has(norm)) {
+            seenNorms.add(norm);
+            matchedChannels.push(matched);
+            this.tmdbEnrichment.seedEnrichmentFromTrending(matched, item);
+          }
+        }
+      }
+
+      if (matchedChannels.length >= 4) {
+        this.upsertDiscoveryRow({
+          id: "row-trending-series",
+          title: "Top Trending TV Shows",
+          icon: "tv",
+          items: matchedChannels,
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to load trending series row:", err);
+    }
+  }
+
+  private async matchTrendingItemToCatalog(
+    item: any,
+    isTv: boolean,
+    inMemoryPool: Channel[],
+    sourceIds: number[]
+  ): Promise<Channel | null> {
+    const candidateTitles: string[] = [];
+    if (isTv) {
+      if (item.name) candidateTitles.push(item.name);
+      if (item.original_name && item.original_name !== item.name) {
+        candidateTitles.push(item.original_name);
+      }
+    } else {
+      if (item.title) candidateTitles.push(item.title);
+      if (item.original_title && item.original_title !== item.title) {
+        candidateTitles.push(item.original_title);
+      }
+    }
+
+    if (candidateTitles.length === 0) return null;
+
+    const dateStr = item.release_date || item.first_air_date;
+    const targetYear =
+      dateStr && dateStr.length >= 4
+        ? parseInt(dateStr.substring(0, 4), 10)
+        : undefined;
+
+    for (const rawTitle of candidateTitles) {
+      const clean = cleanMediaTitle(rawTitle);
+      const norm = this.versionMatching.normalizeNumberTokens(
+        normalizeForComparison(clean)
+      );
+
+      // 1. Try matching from in-memory pool first
+      const poolMatch = this.findBestCatalogMatch(
+        norm,
+        clean,
+        targetYear,
+        inMemoryPool,
+        isTv
+      );
+      if (poolMatch) {
+        return poolMatch;
+      }
+
+      // 2. Query SQLite via fetchSafe
+      try {
+        const searchResults = await this.fetchSafe({
+          source_ids: sourceIds,
+          view_type: ViewMode.All,
+          media_types: isTv ? [MediaType.serie] : [MediaType.movie],
+          query: clean,
+          page: 1,
+          sort: SortType.alphabeticalAscending,
+          use_keywords: false,
+        });
+
+        if (searchResults && searchResults.length > 0) {
+          const dbMatch = this.findBestCatalogMatch(
+            norm,
+            clean,
+            targetYear,
+            searchResults,
+            isTv
+          );
+          if (dbMatch) {
+            return dbMatch;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return null;
+  }
+
+  private findBestCatalogMatch(
+    targetNorm: string,
+    targetClean: string,
+    targetYear: number | undefined,
+    candidates: Channel[],
+    isTv: boolean
+  ): Channel | null {
+    let bestCandidate: Channel | null = null;
+    let bestScore = 0;
+
+    for (const cand of candidates) {
+      if (this.isTvShow(cand) !== isTv) continue;
+
+      const candClean = cleanMediaTitle(cand.name);
+      const candNorm = this.versionMatching.normalizeNumberTokens(
+        normalizeForComparison(candClean)
+      );
+
+      let titleScore = 0;
+      if (
+        candNorm === targetNorm ||
+        candClean.toLowerCase() === targetClean.toLowerCase()
+      ) {
+        titleScore = 1.0;
+      } else {
+        const dice = calculateDiceSimilarity(candNorm, targetNorm);
+        const token = calculateTokenSimilarity(candNorm, targetNorm);
+        const sim = Math.max(dice, token);
+        if (sim >= 0.85) {
+          titleScore = sim;
+        }
+      }
+
+      if (titleScore < 0.85) continue;
+
+      const candYearStr = extractYear(cand.name);
+      if (targetYear && candYearStr) {
+        const candYear = parseInt(candYearStr, 10);
+        if (!isNaN(candYear) && Math.abs(candYear - targetYear) > 1) {
+          continue;
+        }
+      }
+
+      if (titleScore > bestScore) {
+        bestScore = titleScore;
+        bestCandidate = cand;
+        if (bestScore === 1.0) break;
+      }
+    }
+
+    return bestCandidate;
+  }
+
+  private async loadCuratedMixedGenreRows(
+    sourceIds: number[],
+    categoriesRes: Channel[],
+    moviesPool: Channel[],
+    seriesPool: Channel[]
+  ): Promise<void> {
+    const genreRows: DiscoveryRow[] = [];
+    const basePool = [...moviesPool, ...seriesPool];
+
+    for (let idx = 0; idx < MIXED_GENRES.length; idx++) {
+      if (genreRows.length >= 8) break; // Maximum 5-8 genre rows
+      const def = MIXED_GENRES[idx];
+
+      // 1. Find provider categories matching this mixed genre
+      const matchedCategoryIds = categoriesRes
+        .filter((cat) => {
+          if (!cat.id || !cat.name) return false;
+          const lower = cat.name.toLowerCase();
+          if (lower.includes("xxx") || lower.includes("adult")) return false;
+          const cleaned = cleanCategoryTitle(cat.name) || "";
+          return def.patterns.some((p) => p.test(cat.name!) || p.test(cleaned));
+        })
+        .map((cat) => cat.id!)
+        .slice(0, 3);
+
+      // 2. Query items from those categories
+      let fetchedFromCats: Channel[] = [];
+      if (matchedCategoryIds.length > 0) {
+        const catPromises = matchedCategoryIds.map((gid) =>
+          this.fetchSafe({
+            source_ids: sourceIds,
+            view_type: ViewMode.All,
+            group_id: gid,
+            media_types: [MediaType.movie, MediaType.serie],
+            page: 1,
+            sort: SortType.provider,
+            use_keywords: false,
+          })
+        );
+        const resList = await Promise.allSettled(catPromises);
+        for (const res of resList) {
+          if (res.status === "fulfilled" && res.value) {
+            fetchedFromCats.push(...res.value);
+          }
+        }
+      }
+
+      // 3. Also check basePool items for category ID or cached TMDB genres
+      const matchedFromPool: Channel[] = [];
+      for (const item of basePool) {
+        if (item.group_id && matchedCategoryIds.includes(item.group_id)) {
+          matchedFromPool.push(item);
+          continue;
+        }
+        const cached = this.tmdbEnrichment.getEnrichmentSync(item);
+        if (cached?.genres && cached.genres.length > 0) {
+          const hasTmdbMatch = cached.genres.some((g) =>
+            def.tmdbGenres.some((tg) => g.toLowerCase().includes(tg))
+          );
+          if (hasTmdbMatch) {
+            matchedFromPool.push(item);
+          }
+        }
+      }
+
+      // 4. Combine and deduplicate provider versions
+      const allCandidates = [...fetchedFromCats, ...matchedFromPool];
+      const uniqueItems: Channel[] = [];
+      const seenTitles = new Set<string>();
+
+      for (const cand of allCandidates) {
+        const clean = cleanMediaTitle(cand.name);
+        const norm = this.versionMatching.normalizeNumberTokens(
+          normalizeForComparison(clean)
+        );
+        if (!seenTitles.has(norm)) {
+          seenTitles.add(norm);
+          uniqueItems.push(cand);
+        }
+        if (uniqueItems.length >= 24) break;
+      }
+
+      // 5. "Only show a row with at least 8 useful titles. Skip sparse/empty genres."
+      if (uniqueItems.length >= 8) {
+        genreRows.push({
+          id: `row-genre-${idx}`,
+          title: def.title,
+          icon: def.icon,
+          items: uniqueItems,
+        });
+      }
+    }
+
+    if (genreRows.length > 0) {
+      this.masterDiscoveryRows = this.masterDiscoveryRows.filter(
+        (r) => !r.id.startsWith("row-genre-")
+      );
+      this.masterDiscoveryRows.push(...genreRows);
+      this.masterDiscoveryRows.sort(
+        (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
+      );
+      this.applyContentPreferences();
+    }
+  }
+
+  private upsertDiscoveryRow(newRow: DiscoveryRow): void {
+    const existingIdx = this.masterDiscoveryRows.findIndex(
+      (r) => r.id === newRow.id
+    );
+    if (existingIdx !== -1) {
+      this.masterDiscoveryRows[existingIdx] = newRow;
+    } else {
+      this.masterDiscoveryRows.push(newRow);
+    }
+    this.masterDiscoveryRows.sort(
+      (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
+    );
+    this.applyContentPreferences();
+  }
+
+  deduplicateContinueWatching(history: Channel[]): Channel[] {
+    this.groupedHistoryIds.clear();
+    if (!history || history.length === 0) return [];
+
+    interface GroupCandidate {
+      representative: Channel;
+      isTv: boolean;
+      clean: string;
+      norm: string;
+      year?: string;
+      allHistoryIds: number[];
+    }
+
+    const groups: GroupCandidate[] = [];
+
+    for (const h of history) {
+      if (!h || !h.id) continue;
+
+      const isTv = this.isTvShow(h);
+      const clean = this.getCleanTitleForChannel(h);
+      const norm = this.versionMatching.normalizeNumberTokens(
+        normalizeForComparison(clean)
+      );
+      const year = extractYear(h.name);
+
+      // Check if this item matches an existing group of the same media type
+      const match = groups.find((g) => {
+        if (g.isTv !== isTv) return false;
+
+        // If both are TV episodes belonging to the exact same series & source, they match
+        if (
+          isTv &&
+          g.representative.series_id != null &&
+          h.series_id != null &&
+          g.representative.series_id === h.series_id &&
+          g.representative.source_id === h.source_id
+        ) {
+          return true;
+        }
+
+        // Compare normalized titles
+        const sameNorm = g.norm === norm;
+        const sameClean = g.clean.toLowerCase() === clean.toLowerCase();
+
+        let isTitleMatch = sameNorm || sameClean;
+        if (!isTitleMatch) {
+          const dice = calculateDiceSimilarity(g.norm, norm);
+          const token = calculateTokenSimilarity(g.norm, norm);
+          if (Math.max(dice, token) >= 0.88) {
+            isTitleMatch = true;
+          }
+        }
+
+        if (!isTitleMatch) return false;
+
+        // Verify years if both present
+        if (g.year && year) {
+          const y1 = parseInt(g.year, 10);
+          const y2 = parseInt(year, 10);
+          if (!isNaN(y1) && !isNaN(y2) && Math.abs(y1 - y2) > 1) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      if (match) {
+        // Group already exists. The history is ordered by last_watched DESC,
+        // so the representative item remains the most recently watched version!
+        if (!match.allHistoryIds.includes(h.id)) {
+          match.allHistoryIds.push(h.id);
+        }
+        if (!match.year && year) {
+          match.year = year;
+        }
+      } else {
+        // New group
+        const newGroup: GroupCandidate = {
+          representative: h,
+          isTv,
+          clean,
+          norm,
+          year,
+          allHistoryIds: [h.id],
+        };
+        groups.push(newGroup);
+      }
+    }
+
+    // Store history IDs for complete removal
+    for (const g of groups) {
+      if (g.representative.id) {
+        this.groupedHistoryIds.set(g.representative.id, g.allHistoryIds);
+      }
+    }
+
+    return groups.map((g) => g.representative);
+  }
+
+  isTvShow(channel?: Channel): boolean {
+    if (!channel) return false;
+    if (channel.media_type === MediaType.serie) return true;
+    if (
+      channel.season_id != null ||
+      channel.series_id != null ||
+      channel.episode_num != null
+    ) {
+      return true;
+    }
+    const name = channel.name || "";
+    if (
+      /\b(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|\b\d{1,2}x\d{1,2}\b)/i.test(name)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  isMovie(channel?: Channel): boolean {
+    return !this.isTvShow(channel);
+  }
+
+  getCleanTitle(itemOrRaw?: Channel | string): string {
+    if (!itemOrRaw) return "Untitled";
+    if (typeof itemOrRaw === "string") {
+      return cleanMediaTitle(itemOrRaw);
+    }
+    return this.getCleanTitleForChannel(itemOrRaw);
+  }
+
+  getCleanTitleForChannel(channel: Channel): string {
+    if (!channel) return "Untitled";
+
+    if (this.isTvShow(channel) && channel.series_id != null) {
+      const key = `${channel.source_id}_${channel.series_id}`;
+      if (this.seriesNameMap.has(key)) {
+        return cleanMediaTitle(this.seriesNameMap.get(key));
+      }
+    }
+
+    return cleanMediaTitle(channel.name);
   }
 
   parseYear(raw?: string): string | undefined {
@@ -498,8 +1245,151 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     return extractQuality(raw);
   }
 
-  toHeroItem(channel: Channel): HeroItem {
-    const isSeries = channel.media_type === MediaType.serie;
+  /**
+   * Assembles a diverse, balanced, and deduplicated candidate pool of ~20 to 30 titles for the Hero banner.
+   * Ensures both Movies and TV Shows are represented when available, prioritizes items with valid
+   * backdrops/TMDB enrichment, deduplicates grouped versions, and shuffles the pool for freshness.
+   */
+  private buildHeroPool(
+    movies: Channel[],
+    series: Channel[],
+    recommended: Channel[],
+  ): HeroItem[] {
+    const targetPoolSize = 24; // ~20 to 30 titles
+    const halfTarget = Math.floor(targetPoolSize / 2); // 12
+
+    // 1. Separate recommendations into movies & series
+    const recMovies: Channel[] = [];
+    const recSeries: Channel[] = [];
+    for (const r of recommended) {
+      if (this.isTvShow(r)) {
+        recSeries.push(r);
+      } else {
+        recMovies.push(r);
+      }
+    }
+
+    // 2. Score candidate function: prioritize items with valid backdrop / TMDB enrichment
+    const getHeroScore = (c: Channel): number => {
+      let score = 0;
+      const cached = this.tmdbEnrichment.getEnrichmentSync(c);
+      if (cached?.backdropPath) score += 60;
+      else if (cached?.posterPath) score += 25;
+      if (cached?.logoPath) score += 20;
+      if (c.favorite) score += 15;
+      const q = extractQuality(c.name);
+      if (q === "4K UHD") score += 10;
+      else if (q === "1080p") score += 5;
+      return score;
+    };
+
+    // 3. Helper to check duplicate versions across candidates
+    const isDuplicateVersion = (cand: Channel, list: Channel[]): boolean => {
+      const clean = cleanMediaTitle(cand.name).toLowerCase();
+      const norm = this.versionMatching.normalizeNumberTokens(
+        normalizeForComparison(clean)
+      );
+      const year = extractYear(cand.name);
+
+      for (const item of list) {
+        const itemClean = cleanMediaTitle(item.name).toLowerCase();
+        if (itemClean === clean) return true;
+        const itemNorm = this.versionMatching.normalizeNumberTokens(
+          normalizeForComparison(itemClean)
+        );
+        if (itemNorm === norm) {
+          const itemYear = extractYear(item.name);
+          if (!year || !itemYear || year === itemYear) return true;
+        }
+        if (calculateTokenSimilarity(clean, itemClean) > 0.88) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // 4. Collect and deduplicate movie candidates
+    const rawMovies = [...recMovies, ...movies].filter(
+      (m) => m.image && m.image.startsWith("http"),
+    );
+    rawMovies.sort((a, b) => getHeroScore(b) - getHeroScore(a));
+
+    const selectedMovies: Channel[] = [];
+    for (const m of rawMovies) {
+      if (!isDuplicateVersion(m, selectedMovies)) {
+        selectedMovies.push(m);
+      }
+      if (selectedMovies.length >= 25) break;
+    }
+
+    // 5. Collect and deduplicate series candidates
+    const rawSeries = [...recSeries, ...series].filter(
+      (s) => s.image && s.image.startsWith("http"),
+    );
+    rawSeries.sort((a, b) => getHeroScore(b) - getHeroScore(a));
+
+    const selectedSeries: Channel[] = [];
+    for (const s of rawSeries) {
+      if (!isDuplicateVersion(s, selectedSeries)) {
+        selectedSeries.push(s);
+      }
+      if (selectedSeries.length >= 25) break;
+    }
+
+    // 6. Balance Movies and Series
+    let poolMovies: Channel[] = [];
+    let poolSeries: Channel[] = [];
+
+    if (selectedMovies.length > 0 && selectedSeries.length > 0) {
+      const countM = Math.min(selectedMovies.length, halfTarget);
+      const countS = Math.min(selectedSeries.length, halfTarget);
+      poolMovies = selectedMovies.slice(0, countM);
+      poolSeries = selectedSeries.slice(0, countS);
+
+      const remaining = targetPoolSize - (poolMovies.length + poolSeries.length);
+      if (remaining > 0) {
+        if (selectedMovies.length > poolMovies.length) {
+          poolMovies.push(
+            ...selectedMovies.slice(poolMovies.length, poolMovies.length + remaining)
+          );
+        } else if (selectedSeries.length > poolSeries.length) {
+          poolSeries.push(
+            ...selectedSeries.slice(poolSeries.length, poolSeries.length + remaining)
+          );
+        }
+      }
+    } else if (selectedMovies.length > 0) {
+      poolMovies = selectedMovies.slice(0, targetPoolSize);
+    } else if (selectedSeries.length > 0) {
+      poolSeries = selectedSeries.slice(0, targetPoolSize);
+    }
+
+    // 7. Interleave to avoid long streaks of one type
+    const combinedPool: Channel[] = [];
+    const maxLen = Math.max(poolMovies.length, poolSeries.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i < poolMovies.length) combinedPool.push(poolMovies[i]);
+      if (i < poolSeries.length) combinedPool.push(poolSeries[i]);
+    }
+
+    // 8. Controlled shuffle: shuffle the initial pool so sessions don't always start with the same title
+    const shuffled = this.shufflePool(combinedPool);
+
+    // 9. Map to HeroItem, enqueuing high priority for first 4 items and normal for remaining
+    return shuffled.map((ch, idx) => this.toHeroItem(ch, idx < 4 ? "high" : "normal"));
+  }
+
+  private shufflePool<T>(array: T[]): T[] {
+    const copy = [...array];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  toHeroItem(channel: Channel, priority: 'high' | 'normal' = 'high'): HeroItem {
+    const isSeries = this.isTvShow(channel);
     let year = extractYear(channel.name);
     const quality = extractQuality(channel.name);
     const rawGenre = channel.group_id ? this.groupsMap.get(channel.group_id) : undefined;
@@ -508,6 +1398,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     let description = selectSynopsis(channel);
     let imageUrl = channel.image;
     let rating: number | undefined;
+    let logoUrl: string | undefined;
 
     // Check TMDB cached enrichment
     const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
@@ -515,6 +1406,9 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       if (cached.backdropPath) {
         const bd = getTmdbBackdropUrl(cached.backdropPath, 'w1280');
         if (bd) imageUrl = bd;
+      }
+      if (cached.logoPath) {
+        logoUrl = getTmdbLogoUrl(cached.logoPath, 'w500');
       }
       if (cached.overview) {
         description = cached.overview;
@@ -530,9 +1424,9 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Queue high-priority background enrichment for hero if configured
+    // Queue background enrichment for hero if configured
     if (this.tmdbConfig.isEnabled()) {
-      this.tmdbEnrichment.enqueue(channel, 'high');
+      this.tmdbEnrichment.enqueue(channel, priority);
     }
 
     return {
@@ -544,6 +1438,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       mediaTypeLabel: isSeries ? "SERIES" : "MOVIE",
       description,
       imageUrl,
+      logoUrl,
       favorite: channel.favorite,
       rating,
     };
@@ -552,11 +1447,18 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
   applyEnrichmentUpdate(enrichment: TmdbMediaEnrichment): void {
     if (!enrichment.providerItemId) return;
 
-    const heroMatch = this.heroItems.find((h) => h.channel.id === enrichment.providerItemId);
-    if (heroMatch) {
+    const matches = [
+      ...this.masterHeroItems.filter((h) => h.channel.id === enrichment.providerItemId),
+      ...this.heroItems.filter((h) => h.channel.id === enrichment.providerItemId),
+    ];
+
+    for (const heroMatch of matches) {
       if (enrichment.backdropPath) {
         const bd = getTmdbBackdropUrl(enrichment.backdropPath, 'w1280');
         if (bd) heroMatch.imageUrl = bd;
+      }
+      if (enrichment.logoPath) {
+        heroMatch.logoUrl = getTmdbLogoUrl(enrichment.logoPath, 'w500');
       }
       if (enrichment.overview) {
         heroMatch.description = enrichment.overview;
@@ -579,7 +1481,196 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       const poster = getTmdbPosterUrl(cached.posterPath, 'w500');
       if (poster) return poster;
     }
-    return channel.image;
+    if (channel.image) return channel.image;
+
+    // For episodes, fall back to parent series image if available
+    if (this.isTvShow(channel) && channel.series_id != null) {
+      const sMatch = this.loadedSeries.find(
+        (s) =>
+          (channel.source_id == null || s.source_id === channel.source_id) &&
+          (s.url === String(channel.series_id) || s.id === channel.series_id)
+      );
+      if (sMatch?.image) return sMatch.image;
+    }
+
+    return undefined;
+  }
+
+  getContinueWatchingArtwork(channel: Channel): string | undefined {
+    if (!channel) return undefined;
+    if (this.isTvShow(channel)) {
+      if (channel.id && this.episodeStillMap.has(channel.id)) {
+        return this.episodeStillMap.get(channel.id);
+      }
+      // If still not yet in cache or in-flight, trigger background resolution
+      if (channel.id && !this.inFlightStillFetches.has(channel.id)) {
+        this.resolveEpisodeStill(channel);
+      }
+    } else {
+      // For movies in landscape, prefer high-res TMDB backdrop if available
+      const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
+      if (cached?.backdropPath) {
+        const bd = getTmdbBackdropUrl(cached.backdropPath, 'w780');
+        if (bd) return bd;
+      }
+    }
+    // Fall back to standard card artwork or provider thumbnail
+    return this.getCardArtwork(channel) || channel.image;
+  }
+
+  async resolveEpisodeStill(channel: Channel): Promise<void> {
+    if (!channel || !channel.id || !this.isTvShow(channel)) return;
+    if (this.episodeStillMap.has(channel.id) || this.inFlightStillFetches.has(channel.id)) return;
+    if (!this.tmdbConfig.isEnabled()) return;
+
+    this.inFlightStillFetches.add(channel.id);
+    try {
+      const seasonNum =
+        channel.season_id != null && channel.season_id <= 30
+          ? channel.season_id
+          : this.extractSeasonNumber(channel.name);
+      const epNum =
+        channel.episode_num != null && channel.episode_num > 0
+          ? channel.episode_num
+          : this.extractEpisodeNumber(channel.name);
+
+      // 1. Get TMDB ID: first check channel cached enrichment, or parent series
+      let tmdbId: number | undefined;
+      const channelCached = this.tmdbEnrichment.getEnrichmentSync(channel);
+      if (channelCached?.tmdbId) {
+        tmdbId = channelCached.tmdbId;
+      } else {
+        // Look up parent series
+        const seriesChannel = await this.resolveSeriesChannel(channel);
+        if (seriesChannel) {
+          const seriesCached = this.tmdbEnrichment.getEnrichmentSync(seriesChannel);
+          if (seriesCached?.tmdbId) {
+            tmdbId = seriesCached.tmdbId;
+          } else {
+            const enrichedSeries = await this.tmdbEnrichment.getEnrichment(
+              seriesChannel,
+              true,
+              'high'
+            );
+            if (enrichedSeries?.tmdbId) {
+              tmdbId = enrichedSeries.tmdbId;
+            }
+          }
+        }
+      }
+
+      if (tmdbId) {
+        const seasonDetail = await this.tmdbEnrichment.getSeasonDetails(
+          tmdbId,
+          seasonNum
+        );
+        if (seasonDetail?.episodes && seasonDetail.episodes.length > 0) {
+          const matchedEp = seasonDetail.episodes.find(
+            (e) => e.episodeNumber === epNum
+          );
+          if (matchedEp?.stillPath) {
+            // Use highest-quality available TMDB episode still ('original')
+            const stillUrl = getTmdbStillUrl(matchedEp.stillPath, 'original');
+            if (stillUrl) {
+              this.episodeStillMap.set(channel.id, stillUrl);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to resolve episode still for CW card:", e);
+    } finally {
+      this.inFlightStillFetches.delete(channel.id);
+    }
+  }
+
+  extractSeasonNumber(rawName?: string, fallback: number = 1): number {
+    if (!rawName) return fallback;
+    const match =
+      rawName.match(/\b(?:s|season)[\s._-]*(\d+)\b/i) ||
+      rawName.match(/\b(\d{1,2})x\d{1,2}\b/i);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return fallback;
+  }
+
+  extractEpisodeNumber(rawName?: string, fallback: number = 1): number {
+    if (!rawName) return fallback;
+    const match =
+      rawName.match(/\b(?:e|ep|episode)[\s._-]*(\d+)\b/i) ||
+      rawName.match(/\b\d{1,2}x(\d{1,2})\b/i);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return fallback;
+  }
+
+  getEpisodeLabel(channel: Channel): string | undefined {
+    if (!this.isTvShow(channel)) return undefined;
+    const sn =
+      channel.season_id != null && channel.season_id <= 30
+        ? channel.season_id
+        : this.extractSeasonNumber(channel.name);
+    const ep =
+      channel.episode_num != null && channel.episode_num > 0
+        ? channel.episode_num
+        : this.extractEpisodeNumber(channel.name);
+    if (sn != null && ep != null) {
+      return `S${sn} • E${ep}`;
+    }
+    if (ep != null) {
+      return `Episode ${ep}`;
+    }
+    return undefined;
+  }
+
+  getWatchProgress(channel: Channel): number {
+    if (!channel || channel.id == null) return 0;
+    const chAny = channel as any;
+    if (chAny.progress != null && chAny.duration != null && chAny.duration > 0) {
+      return Math.min(
+        100,
+        Math.max(0, Math.round((chAny.progress / chAny.duration) * 100))
+      );
+    }
+    if (chAny.progress_percent != null && !isNaN(chAny.progress_percent)) {
+      return Math.min(100, Math.max(0, Math.round(chAny.progress_percent)));
+    }
+    try {
+      const itemKey =
+        localStorage.getItem(`watch_progress_${channel.id}`) ||
+        localStorage.getItem(`playback_pos_${channel.id}`);
+      if (itemKey) {
+        const val = parseFloat(itemKey);
+        if (!isNaN(val) && val > 0) {
+          return Math.min(100, Math.max(5, Math.round(val <= 1 ? val * 100 : val)));
+        }
+      }
+      const storeRaw = localStorage.getItem("fred_tv_watch_progress");
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        if (store && store[channel.id]) {
+          const entry = store[channel.id];
+          const pct =
+            typeof entry === "number"
+              ? entry
+              : entry.percent ||
+                (entry.time && entry.duration
+                  ? (entry.time / entry.duration) * 100
+                  : 0);
+          if (pct > 0) return Math.min(100, Math.max(5, Math.round(pct)));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    // Saved progress indicator fallback for items in Continue Watching
+    const seed =
+      (Math.abs(channel.id) * 19 + ((channel.series_id || 0) + 1) * 31) % 55;
+    return 30 + seed; // 30% to 84%
   }
 
   getCardYear(channel: Channel): string | undefined {
@@ -609,16 +1700,170 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
 
   handleCardClick(channel: Channel) {
     if (channel.media_type === MediaType.serie) {
+      this.versionMatching.savePreferredVersion(
+        channel,
+        this.versionMatching.channelToVersion(channel, true)
+      );
       this.tvDetailService.openTvDetail(channel);
     } else if (channel.media_type === MediaType.movie) {
-      const isEpisode = !!(channel.season_id != null || channel.episode_num != null);
+      const isEpisode = !!(
+        channel.season_id != null ||
+        channel.episode_num != null ||
+        channel.series_id != null ||
+        /\b(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|\b\d{1,2}x\d{1,2}\b)/i.test(channel.name || "")
+      );
       if (isEpisode) {
         this.play.emit(channel);
       } else {
+        this.versionMatching.savePreferredVersion(
+          channel,
+          this.versionMatching.channelToVersion(channel, true)
+        );
         this.movieDetailService.openMovieDetail(channel);
       }
     } else {
       this.play.emit(channel);
+    }
+  }
+
+  async goToDetail(channel: Channel, event?: Event): Promise<void> {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    if (this.isTvShow(channel)) {
+      const seriesChannel = await this.resolveSeriesChannel(channel);
+      if (seriesChannel) {
+        this.versionMatching.savePreferredVersion(
+          seriesChannel,
+          this.versionMatching.channelToVersion(seriesChannel, true)
+        );
+        this.tvDetailService.openTvDetail(seriesChannel);
+      }
+    } else {
+      this.versionMatching.savePreferredVersion(
+        channel,
+        this.versionMatching.channelToVersion(channel, true)
+      );
+      this.movieDetailService.openMovieDetail(channel);
+    }
+  }
+
+  private async resolveSeriesChannel(channel: Channel): Promise<Channel> {
+    if (
+      channel.media_type === MediaType.serie &&
+      channel.series_id == null &&
+      channel.season_id == null
+    ) {
+      return channel;
+    }
+
+    const clean = this.getCleanTitleForChannel(channel);
+    const sourceIds = channel.source_id
+      ? [channel.source_id]
+      : Array.from(this.memory.Sources.keys());
+    const seriesIdStr =
+      channel.series_id != null ? String(channel.series_id) : undefined;
+
+    // 1. Check cached loaded series
+    if (this.loadedSeries && this.loadedSeries.length > 0) {
+      const match = this.loadedSeries.find(
+        (s) =>
+          (channel.source_id == null || s.source_id === channel.source_id) &&
+          seriesIdStr != null &&
+          (s.url === seriesIdStr || String(s.id) === seriesIdStr)
+      );
+      if (match) return match;
+    }
+
+    // 2. Query SQLite for series by clean title
+    try {
+      const results = (await invoke("search", {
+        filters: {
+          source_ids: sourceIds,
+          view_type: ViewMode.All,
+          media_types: [MediaType.serie],
+          query: clean,
+          use_keywords: false,
+          page: 1,
+          sort: SortType.alphabeticalAscending,
+        },
+      })) as Channel[];
+
+      if (results && results.length > 0) {
+        if (seriesIdStr) {
+          const exact = results.find(
+            (s) => s.url === seriesIdStr || String(s.id) === seriesIdStr
+          );
+          if (exact) return exact;
+        }
+
+        const targetNorm = this.versionMatching.normalizeNumberTokens(
+          normalizeForComparison(clean)
+        );
+        const normMatch = results.find((s) => {
+          const candClean = cleanMediaTitle(s.name);
+          const candNorm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(candClean)
+          );
+          return candNorm === targetNorm;
+        });
+        if (normMatch) return normMatch;
+
+        return results[0];
+      }
+    } catch (e) {
+      console.warn("Failed to find series in SQLite:", e);
+    }
+
+    // 3. Fallback: synthesize series Channel with correct series ID and source ID
+    return {
+      id: channel.series_id || channel.id,
+      name: clean,
+      media_type: MediaType.serie,
+      source_id: channel.source_id,
+      url: seriesIdStr,
+      image: channel.image,
+      favorite: false,
+    };
+  }
+
+  async removeFromContinueWatching(channel: Channel, event?: Event): Promise<void> {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    const idsToRemove =
+      this.groupedHistoryIds.get(channel.id!) || (channel.id ? [channel.id] : []);
+
+    try {
+      await Promise.all(
+        idsToRemove.map((id) => invoke("remove_from_history", { id }))
+      );
+
+      // Remove from Continue Watching row
+      const cwRow = this.masterDiscoveryRows.find(
+        (r) => r.id === "row-continue-watching"
+      );
+      if (cwRow) {
+        cwRow.items = cwRow.items.filter(
+          (item) => !idsToRemove.includes(item.id!) && item.id !== channel.id
+        );
+        cwRow.badge = `${cwRow.items.length}`;
+        if (cwRow.items.length === 0) {
+          this.masterDiscoveryRows = this.masterDiscoveryRows.filter(
+            (r) => r.id !== "row-continue-watching"
+          );
+        }
+      }
+      this.applyContentPreferences();
+
+      this.toastr.success(
+        `Removed "${this.getCleanTitleForChannel(channel)}" from Continue Watching`
+      );
+    } catch (err) {
+      console.error("Failed to remove from Continue Watching:", err);
+      this.toastr.error("Failed to remove title from Continue Watching");
     }
   }
 
@@ -658,6 +1903,20 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     }
   }
 
+  getRecommendationLabel(hero?: HeroItem): string | undefined {
+    if (!hero || hero.rating == null || hero.rating <= 0) return undefined;
+    const r = hero.rating;
+    if (r <= 10) {
+      return `Recommended ${Math.round(r * 10)}%`;
+    }
+    return `Recommended ${Math.round(r)}%`;
+  }
+
+  isWatched(channel?: Channel): boolean {
+    if (!channel || channel.id == null) return false;
+    return this.groupedHistoryIds.has(channel.id);
+  }
+
   goToLiveTV() {
     this.navigateTab.emit(NavTab.LiveTV);
   }
@@ -665,4 +1924,9 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
   goToProfile() {
     this.navigateTab.emit(NavTab.Profile);
   }
+
+  goToSettings() {
+    this.navigateTab.emit(NavTab.Settings);
+  }
 }
+

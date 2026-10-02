@@ -33,6 +33,9 @@ import { ViewMode } from "../models/viewMode";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { MovieDetailService } from "../services/movie-detail.service";
 import { TvDetailService } from "../services/tv-detail.service";
+import { PinService } from "../services/pin.service";
+import { NavTab } from "../models/navTab";
+import { cleanMediaTitle } from "../utils/media-presentation";
 
 @Component({
   selector: "app-channel-tile",
@@ -50,6 +53,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     private download: DownloadService,
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
+    public pinService: PinService,
   ) { }
   @Input() channel?: Channel;
   @Input() id!: number;
@@ -153,6 +157,38 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     this.matMenuTrigger.openMenu();
   }
 
+  isPinned(): boolean {
+    if (!this.channel) return false;
+    return this.pinService.isPinned(this.channel, this.memory.activeNavTab.value);
+  }
+
+  canPin(): boolean {
+    if (!this.channel || this.channel.media_type === MediaType.season) return false;
+    const tab = this.memory.activeNavTab.value;
+    return (
+      tab === NavTab.LiveTV ||
+      tab === NavTab.Movies ||
+      tab === NavTab.TVShows ||
+      this.channel.media_type === MediaType.livestream ||
+      this.channel.media_type === MediaType.movie ||
+      this.channel.media_type === MediaType.serie ||
+      this.channel.media_type === MediaType.group
+    );
+  }
+
+  togglePin(): void {
+    if (!this.channel) return;
+    const tab = this.pinService.getTabForChannel(this.channel, this.memory.activeNavTab.value);
+    const wasPinned = this.isPinned();
+    this.pinService.togglePin(this.channel, tab);
+    const name = cleanMediaTitle(this.channel.name || '');
+    if (wasPinned) {
+      this.toastr.success(`Unpinned "${name}"`);
+    } else {
+      this.toastr.success(`Pinned "${name}"`);
+    }
+  }
+
   onError(event: Event) {
     this.showImage = false;
   }
@@ -223,6 +259,10 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
 
   isLivestream() {
     return this.channel?.media_type == MediaType.livestream;
+  }
+
+  isGroup(): boolean {
+    return this.channel?.media_type == MediaType.group;
   }
 
   isCustom(): boolean {

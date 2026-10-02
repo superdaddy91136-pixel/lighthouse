@@ -1,24 +1,31 @@
 <div id="tile-{{ id }}" placement="top" tabindex="0" (keyup.enter)="click()" [ngClass]="{
     playing: starting,
-    faded: fade
+    faded: fade,
+    'group-tile': isGroup()
 }" [ngbTooltip]="channel?.name" triggers="hover" (click)="click()" class="channel d-inline-flex p-2 align-items-center"
   (contextmenu)="onRightClick($event)">
   <div class="image-container me-2">
     <img (error)="showImage = false" class="channel-image" *ngIf="channel?.image && showImage"
       src="{{ channel?.image }}" />
+    <svg *ngIf="isGroup() && (!channel?.image || !showImage)" class="folder-tile-icon" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+    </svg>
   </div>
   <div class="channel-title-container d-flex flex-column justify-content-center">
     <div class="channel-title">{{ channel?.name }}</div>
-    <div class="channel-source">{{ getSourceName() }}</div>
+    <div class="channel-source" *ngIf="getSourceName()">{{ getSourceName() }}</div>
   </div>
   <div class="ms-auto d-flex flex-column justify-content-center align-items-center h-100">
-    <svg *ngIf="channel?.tv_archive === true" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    <svg *ngIf="isGroup()" class="chevron-tile-icon" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" />
+    </svg>
+    <svg *ngIf="!isGroup() && channel?.tv_archive === true" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
       class="archive-icon">
       <title>archive-clock</title>
       <path
         d="M20 6H2V2H20V6M16.5 12H15V17L18.61 19.16L19.36 17.94L16.5 16.25V12M23 16C23 19.87 19.87 23 16 23C13.62 23 11.53 21.81 10.26 20H3V7H19V9.68C21.36 10.81 23 13.21 23 16M8 12H10.26C10.83 11.19 11.56 10.5 12.41 10H8.5C8.22 10 8 10.22 8 10.5V12M21 16C21 13.24 18.76 11 16 11S11 13.24 11 16 13.24 21 16 21 21 18.76 21 16Z" />
     </svg>
-    <svg *ngIf="channel?.favorite" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    <svg *ngIf="!isGroup() && channel?.favorite" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
       class="favorite-icon">
       <title>star</title>
       <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
@@ -29,8 +36,16 @@
 <div style="visibility: hidden; position: fixed" [style.left.px]="menuTopLeftPosition.x"
   [style.top.px]="menuTopLeftPosition.y" [matMenuTriggerFor]="rightMenu"></div>
 
-<mat-menu #rightMenu="matMenu">
+<mat-menu #rightMenu="matMenu" class="liquid-glass-context-menu">
   <ng-template matMenuContent let-item="item">
+    <button mat-menu-item (click)="togglePin()" *ngIf="canPin()">
+      <svg class="context-menu-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path *ngIf="!isPinned()" d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+        <path *ngIf="isPinned()" d="M2,5.27L3.28,4L20,20.72L18.73,22L12.8,16.07V22H11.2V16H6V14L8,12V11.27L2,5.27M16,12L18,14V16H17.82L8,6.18V4H7V2H17V4H16V12Z" />
+      </svg>
+      <span>{{ isPinned() ? 'Unpin' : 'Pin' }}</span>
+    </button>
+    <div class="context-menu-divider" *ngIf="canPin()"></div>
     <button [hidden]="viewMode != viewModeEnum.History" mat-menu-item (click)="removeFromHistory()">
       Remove
     </button>

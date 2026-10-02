@@ -112,6 +112,22 @@ export class TmdbService {
   }
 
   /**
+   * Fetch trending movies for discovery from TMDB.
+   */
+  async getTrendingMovies(timeWindow: 'day' | 'week' = 'week'): Promise<any[]> {
+    const data = await this.safeGet<any>(`/trending/movie/${timeWindow}`);
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch trending TV shows for discovery from TMDB.
+   */
+  async getTrendingTv(timeWindow: 'day' | 'week' = 'week'): Promise<any[]> {
+    const data = await this.safeGet<any>(`/trending/tv/${timeWindow}`);
+    return data?.results || [];
+  }
+
+  /**
    * Find media by external ID (e.g. IMDb ID 'tt1234567').
    */
   async findByExternalId(externalId: string, externalSource: 'imdb_id' = 'imdb_id'): Promise<any | null> {
@@ -126,7 +142,7 @@ export class TmdbService {
    */
   async getMovieDetails(movieId: number): Promise<any | null> {
     return await this.safeGet<any>(`/movie/${movieId}`, {
-      append_to_response: 'credits,videos',
+      append_to_response: 'credits,videos,images',
     });
   }
 
@@ -135,7 +151,7 @@ export class TmdbService {
    */
   async getTvDetails(tvId: number): Promise<any | null> {
     return await this.safeGet<any>(`/tv/${tvId}`, {
-      append_to_response: 'credits,videos',
+      append_to_response: 'credits,videos,images',
     });
   }
 
@@ -182,6 +198,7 @@ export class TmdbService {
 
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.release_date && raw.release_date.length >= 4 ? raw.release_date.substring(0, 4) : undefined;
+    const logoPath = extractBestLogoPath(raw.images);
 
     return {
       providerItemId,
@@ -194,6 +211,7 @@ export class TmdbService {
       overview: raw.overview?.trim() || undefined,
       posterPath: raw.poster_path || undefined,
       backdropPath: raw.backdrop_path || undefined,
+      logoPath,
       releaseDate: raw.release_date || undefined,
       releaseYear,
       genres: genres.length > 0 ? genres : undefined,
@@ -250,6 +268,7 @@ export class TmdbService {
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.first_air_date && raw.first_air_date.length >= 4 ? raw.first_air_date.substring(0, 4) : undefined;
     const runtime = raw.episode_run_time && raw.episode_run_time.length > 0 ? raw.episode_run_time[0] : undefined;
+    const logoPath = extractBestLogoPath(raw.images);
 
     return {
       providerItemId,
@@ -262,6 +281,7 @@ export class TmdbService {
       overview: raw.overview?.trim() || undefined,
       posterPath: raw.poster_path || undefined,
       backdropPath: raw.backdrop_path || undefined,
+      logoPath,
       releaseDate: raw.first_air_date || undefined,
       releaseYear,
       genres: genres.length > 0 ? genres : undefined,
@@ -313,3 +333,33 @@ export class TmdbService {
     };
   }
 }
+
+/**
+ * Selects the best title logo path from TMDB raw.images?.logos.
+ * Prefers English ('en') or language-neutral logos, followed by vote/rating score.
+ */
+function extractBestLogoPath(images: any): string | undefined {
+  const logos: any[] = images?.logos;
+  if (!logos || !Array.isArray(logos) || logos.length === 0) {
+    return undefined;
+  }
+  const valid = logos.filter(
+    (l) => l && typeof l.file_path === 'string' && l.file_path.trim() !== '',
+  );
+  if (valid.length === 0) return undefined;
+
+  const scored = [...valid].sort((a, b) => {
+    const aLang = a.iso_639_1 === 'en' ? 2 : (!a.iso_639_1 ? 1 : 0);
+    const bLang = b.iso_639_1 === 'en' ? 2 : (!b.iso_639_1 ? 1 : 0);
+    if (aLang !== bLang) return bLang - aLang;
+
+    const aScore = (a.vote_average || 0) * (a.vote_count || 1);
+    const bScore = (b.vote_average || 0) * (b.vote_count || 1);
+    if (aScore !== bScore) return bScore - aScore;
+
+    return (b.width || 0) - (a.width || 0);
+  });
+
+  return scored[0]?.file_path || undefined;
+}
+

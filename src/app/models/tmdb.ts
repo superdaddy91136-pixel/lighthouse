@@ -75,6 +75,7 @@ export interface TmdbMediaEnrichment {
   overview?: string;
   posterPath?: string;
   backdropPath?: string;
+  logoPath?: string;
   releaseDate?: string;
   releaseYear?: string;
   genres?: string[];

@@ -208,8 +208,8 @@
 }
 
 .cs-channel-item.cs-active {
-  background: rgba(56, 189, 248, 0.1);
-  border-left: 3px solid #38bdf8;
+  background: rgba(255, 255, 255, 0.1);
+  border-left: 3px solid rgba(255, 255, 255, 0.85);
 }
 
 .cs-channel-logo-wrap {
@@ -247,7 +247,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #38bdf8;
+  color: #ffffff;
   font-size: 0.75rem;
   font-weight: 600;
   flex-shrink: 0;
@@ -257,7 +257,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #38bdf8;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
   animation: cs-pulse 1.5s ease-in-out infinite;
 }
 

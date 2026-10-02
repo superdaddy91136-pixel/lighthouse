@@ -44,6 +44,13 @@ button:hover .plus, button:hover .nuke, button:hover .history {
   width: 1rem;
 }
 
+.settings-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
 /* Profile liquid-glass tabs */
 .profile-title {
   font-size: 1.4rem;
