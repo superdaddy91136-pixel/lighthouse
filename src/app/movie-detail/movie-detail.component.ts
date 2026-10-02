@@ -26,6 +26,7 @@ import { MovieDetailService } from '../services/movie-detail.service';
 import { TmdbConfigService } from '../services/tmdb-config.service';
 import { TmdbEnrichmentService } from '../services/tmdb-enrichment.service';
 import { VersionMatchingService } from '../services/version-matching.service';
+import { PlaybackService } from '../services/playback.service';
 import { isInputFocused } from '../utils';
 import {
   cleanMediaTitle,
@@ -94,6 +95,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private toastr: ToastrService,
     private error: ErrorService,
     private sanitizer: DomSanitizer,
+    private playbackService: PlaybackService,
   ) {}
 
   private resetScrollPosition(): void {
@@ -425,10 +427,12 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
 
-      this.toastr.info(`Starting playback for "${this.cleanTitle}"...`);
-      invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
-
-      await invoke('play', { channel: playChannel, record: false, recordPath: undefined });
+      await this.playbackService.playMovie(playChannel, {
+        year: this.releaseYear,
+        rating: this.rating ? this.rating.toFixed(1) : undefined,
+        duration: this.runtimeText,
+        quality: this.qualityBadge,
+      });
     } catch (e) {
       console.error('Movie playback error:', e);
       this.error.handleError(e, 'Failed to start playback');

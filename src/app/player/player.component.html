@@ -1,0 +1,344 @@
+<div class="fred-player-container" [class.cursor-hidden]="!controlsVisible && playerState === 'playing'" *ngIf="isOpen">
+  <!-- Video Surface -->
+  <video #videoPlayer
+    class="video-surface"
+    playsinline
+    (timeupdate)="onTimeUpdate()"
+    (play)="onPlay()"
+    (pause)="onPause()"
+    (waiting)="onWaiting()"
+    (playing)="onPlaying()"
+    (ended)="onEnded()"
+    (error)="onError()"
+    (click)="togglePlay()">
+  </video>
+
+  <!-- Ambient Gradients -->
+  <div class="gradient-overlay top-gradient" [class.visible]="controlsVisible"></div>
+  <div class="gradient-overlay bottom-gradient" [class.visible]="controlsVisible"></div>
+
+  <!-- Central Loading & Feedback Overlays -->
+  <div class="center-overlay">
+    <!-- Buffering Spinner -->
+    <div class="spinner-container" *ngIf="playerState === 'loading' || playerState === 'buffering'">
+      <div class="liquid-spinner"></div>
+      <span class="spinner-text" *ngIf="playerState === 'loading'">Connecting to stream...</span>
+      <span class="spinner-text" *ngIf="playerState === 'buffering'">Buffering...</span>
+    </div>
+
+    <!-- Quick Action Feedback Animation -->
+    <div class="feedback-bubble" *ngIf="feedbackType">
+      <!-- Play Feedback -->
+      <svg *ngIf="feedbackType === 'play'" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+      </svg>
+      <!-- Pause Feedback -->
+      <svg *ngIf="feedbackType === 'pause'" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
+      </svg>
+      <!-- Forward 10s -->
+      <div *ngIf="feedbackType === 'forward'" class="skip-feedback">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm4.24 14L11 11.45V6h1.5v4.78l4.47 4.02-.74.2z"/>
+        </svg>
+        <span>+10s</span>
+      </div>
+      <!-- Backward 10s -->
+      <div *ngIf="feedbackType === 'backward'" class="skip-feedback">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
+        </svg>
+        <span>-10s</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Controls Layer -->
+  <div class="controls-layer" [class.visible]="controlsVisible">
+    <!-- TOP BAR -->
+    <header class="player-top-bar">
+      <div class="top-left d-flex align-items-center gap-3">
+        <!-- Exit / Back Button -->
+        <button type="button" class="btn-glass-icon btn-back" (click)="close()" title="Exit player (Esc)">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z" />
+          </svg>
+        </button>
+
+        <!-- Media Metadata Display -->
+        <div class="title-meta-wrap">
+          <div class="d-flex align-items-center gap-2">
+            <h2 class="player-media-title mb-0">{{ payload?.title }}</h2>
+            <!-- Live Indicator Badge -->
+            <span class="live-pill" *ngIf="isLive">
+              <span class="live-pulse-dot"></span>
+              LIVE
+            </span>
+          </div>
+
+          <!-- Subtitle / Season / Year Metadata -->
+          <div class="player-metadata-row d-flex align-items-center gap-2 mt-1">
+            <span class="meta-subtitle" *ngIf="payload?.subtitle">{{ payload?.subtitle }}</span>
+            <span class="meta-dot" *ngIf="payload?.subtitle && payload?.metadata?.year">•</span>
+            <span class="meta-pill" *ngIf="payload?.metadata?.year">{{ payload?.metadata?.year }}</span>
+            <span class="meta-pill" *ngIf="payload?.metadata?.quality">{{ payload?.metadata?.quality }}</span>
+            <span class="meta-pill rating-pill" *ngIf="payload?.metadata?.rating">★ {{ payload?.metadata?.rating }}</span>
+            <span class="meta-pill" *ngIf="payload?.metadata?.duration">{{ payload?.metadata?.duration }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Right Actions -->
+      <div class="top-right d-flex align-items-center gap-2">
+        <!-- Watch Live Jump Action (Live TV Only) -->
+        <button type="button" class="btn-glass-action btn-watch-live" *ngIf="isLive" (click)="jumpToLive()" title="Sync to live broadcast">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="action-icon">
+            <path d="M12,2A10,10,0,1,0,22,12A10,10,0,0,0,12,2M12,4A8,8,0,0,1,20,12A8,8,0,0,1,12,20A8,8,0,0,1,4,12A8,8,0,0,1,12,4M12,6A6,6,0,1,0,18,12A6,6,0,0,0,12,6Z" />
+          </svg>
+          <span>Sync Live</span>
+        </button>
+
+        <!-- In-Player Episode Switcher (TV Shows) -->
+        <button type="button" class="btn-glass-icon" *ngIf="payload?.playbackType === 'episode' && payload?.showChannel" (click)="toggleEpisodeSwitcher()" title="Browse episodes">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M5,19V5H19V19H5M7,7H9V9H7V7M7,11H9V13H7V11M7,15H9V17H7V15M11,7H17V9H11V7M11,11H17V13H11V11M11,15H17V17H11V15Z" />
+          </svg>
+        </button>
+
+        <!-- In-Player Channel Switcher (Live TV) -->
+        <button type="button" class="btn-glass-icon" *ngIf="isLive" (click)="toggleChannelSwitcher()" title="Browse channels">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 3H3C1.9 3 1 3.9 1 5V17C1 18.1 1.9 19 3 19H8V21H16V19H21C22.1 19 23 18.1 23 17V5C23 3.9 22.1 3 21 3M21 17H3V5H21V17M10 8V14L15 11L10 8Z" />
+          </svg>
+        </button>
+
+        <!-- Audio & Subtitles Settings Button -->
+        <button type="button" class="btn-glass-icon" (click)="toggleTracksMenu()" [class.active]="showTracksMenu" title="Audio & Subtitles">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19,4H5A2,2 0 0,0 3,6V18A2,2 0 0,0 5,20H19A2,2 0 0,0 21,18V6A2,2 0 0,0 19,4M19,18H5V6H19V18M7,15H11V13H8.5V11H11V9H7V15M13,15H17V13H14.5V11H17V9H13V15Z" />
+          </svg>
+        </button>
+
+        <!-- Switch to External MPV Player -->
+        <button type="button" class="btn-glass-icon" (click)="switchToMpv()" title="Switch to external MPV player">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- BOTTOM CONTROLS BAR -->
+    <footer class="player-bottom-bar">
+      <!-- Seekbar (for VOD or seekable streams) -->
+      <div class="seekbar-wrapper" *ngIf="!isLive && duration > 0">
+        <div class="seekbar-track">
+          <!-- Buffered Range -->
+          <div class="seekbar-buffered" [style.width.%]="bufferedPercentage"></div>
+          <!-- Played Progress -->
+          <div class="seekbar-played" [style.width.%]="seekPercentage">
+            <div class="seekbar-thumb"></div>
+          </div>
+        </div>
+        <input type="range"
+          class="seekbar-range-input"
+          min="0"
+          [max]="duration"
+          step="0.5"
+          [value]="currentTime"
+          (input)="onSeekInput($event)"
+          (change)="onSeekChange($event)" />
+      </div>
+
+      <!-- Controls Row -->
+      <div class="controls-row d-flex align-items-center justify-content-between">
+        <!-- Left Controls: Play/Pause, Prev/Next, Timers -->
+        <div class="ctrl-group-left d-flex align-items-center gap-3">
+          <!-- Previous (Episode or Channel) -->
+          <button type="button"
+            class="btn-ctrl"
+            *ngIf="payload?.playbackType === 'episode' || isLive"
+            (click)="payload?.playbackType === 'episode' ? playbackService.playPreviousEpisode() : playbackService.playPreviousChannel()"
+            [title]="payload?.playbackType === 'episode' ? 'Previous Episode ([)' : 'Previous Channel ([)'">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6,18V6H8V18H6M9.5,12L18,6V18L9.5,12Z" />
+            </svg>
+          </button>
+
+          <!-- Rewind 10s (VOD only) -->
+          <button type="button" class="btn-ctrl" *ngIf="!isLive" (click)="seek(-10)" title="Rewind 10s (Left Arrow)">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
+            </svg>
+          </button>
+
+          <!-- Play / Pause Main Button -->
+          <button type="button" class="btn-ctrl btn-play-pause" (click)="togglePlay()" title="Play/Pause (Space)">
+            <svg *ngIf="playerState !== 'playing'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+            </svg>
+            <svg *ngIf="playerState === 'playing'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
+            </svg>
+          </button>
+
+          <!-- Forward 10s (VOD only) -->
+          <button type="button" class="btn-ctrl" *ngIf="!isLive" (click)="seek(10)" title="Forward 10s (Right Arrow)">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm4.24 14L11 11.45V6h1.5v4.78l4.47 4.02-.74.2z"/>
+            </svg>
+          </button>
+
+          <!-- Next (Episode or Channel) -->
+          <button type="button"
+            class="btn-ctrl"
+            *ngIf="payload?.playbackType === 'episode' || isLive"
+            (click)="payload?.playbackType === 'episode' ? playbackService.playNextEpisode() : playbackService.playNextChannel()"
+            [title]="payload?.playbackType === 'episode' ? 'Next Episode (])' : 'Next Channel (])'">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16,18H18V6H16M6,18L14.5,12L6,6V18Z" />
+            </svg>
+          </button>
+
+          <!-- Time Display -->
+          <div class="time-display-wrap ms-1" *ngIf="!isLive">
+            <span class="time-curr">{{ formatTime(currentTime) }}</span>
+            <span class="time-div">/</span>
+            <span class="time-total">{{ formatTime(duration) }}</span>
+            <span class="time-rem" *ngIf="remainingTime">{{ remainingTime }}</span>
+          </div>
+          <div class="time-display-wrap ms-1" *ngIf="isLive">
+            <span class="time-live-status">Live Broadcast</span>
+          </div>
+        </div>
+
+        <!-- Right Controls: Volume, Speed, Fullscreen -->
+        <div class="ctrl-group-right d-flex align-items-center gap-2">
+          <!-- Volume Control -->
+          <div class="volume-box d-flex align-items-center">
+            <button type="button" class="btn-ctrl" (click)="toggleMute()" title="Mute/Unmute (M)">
+              <svg *ngIf="isMuted || volume === 0" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.45 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L4.27,3M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z" />
+              </svg>
+              <svg *ngIf="!isMuted && volume > 0 && volume < 0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M5,9V15H9L14,20V4L9,9H5M18.5,12C18.5,10.23 17.5,8.71 16,7.97V16.02C17.5,15.29 18.5,13.77 18.5,12Z" />
+              </svg>
+              <svg *ngIf="!isMuted && volume >= 0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16.02C15.5,15.29 16.5,13.77 16.5,12M3,9V15H7L12,20V4L7,9H3Z" />
+              </svg>
+            </button>
+            <input type="range"
+              class="volume-slider"
+              min="0"
+              max="1"
+              step="0.05"
+              [value]="isMuted ? 0 : volume"
+              (input)="setVolume(+($any($event.target).value))" />
+          </div>
+
+          <!-- Playback Speed (VOD only) -->
+          <div class="speed-box position-relative" *ngIf="!isLive">
+            <button type="button" class="btn-ctrl btn-speed-tag" (click)="showSpeedMenu = !showSpeedMenu" title="Playback speed">
+              {{ playbackRate }}x
+            </button>
+            <div class="speed-dropdown-menu" *ngIf="showSpeedMenu">
+              <button type="button"
+                *ngFor="let s of speeds"
+                class="speed-option"
+                [class.active]="playbackRate === s"
+                (click)="setPlaybackRate(s)">
+                {{ s }}x
+              </button>
+            </div>
+          </div>
+
+          <!-- Fullscreen Toggle -->
+          <button type="button" class="btn-ctrl" (click)="toggleFullscreen()" title="Fullscreen (F)">
+            <svg *ngIf="!isFullscreen" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M5,14H7V17H10V19H5V14Z" />
+            </svg>
+            <svg *ngIf="isFullscreen" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M14,14H19V16H16V19H14V14M5,14H10V19H8V16H5V14M8,5H10V10H5V8H8V5M16,5H19V8H16V10H14V5H16Z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Audio & Subtitles Selection Dialog -->
+  <div class="tracks-modal-backdrop" *ngIf="showTracksMenu" (click)="showTracksMenu = false">
+    <div class="tracks-modal-container" (click)="$event.stopPropagation()">
+      <div class="tracks-modal-header d-flex align-items-center justify-content-between mb-3">
+        <h4 class="tracks-modal-title mb-0">Audio & Subtitles</h4>
+        <button type="button" class="btn-close-modal" (click)="showTracksMenu = false">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Tab Switcher -->
+      <div class="tracks-tabs d-flex mb-3">
+        <button type="button" class="tab-btn flex-fill" [class.active]="activeTab === 'audio'" (click)="activeTab = 'audio'">
+          Audio Tracks ({{ audioTracks.length }})
+        </button>
+        <button type="button" class="tab-btn flex-fill" [class.active]="activeTab === 'subtitles'" (click)="activeTab = 'subtitles'">
+          Subtitles ({{ subtitleTracks.length }})
+        </button>
+      </div>
+
+      <!-- Tab Content: Audio Tracks -->
+      <div class="tracks-list-scroll" *ngIf="activeTab === 'audio'">
+        <div *ngIf="audioTracks.length === 0" class="empty-tracks-msg">
+          No additional audio tracks found
+        </div>
+        <button type="button"
+          *ngFor="let track of audioTracks"
+          class="track-row d-flex align-items-center justify-content-between"
+          [class.selected]="track.id === activeAudioTrackId"
+          (click)="selectAudioTrack(track.id)">
+          <span>{{ track.label }}</span>
+          <svg *ngIf="track.id === activeAudioTrackId" class="check-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Tab Content: Subtitles -->
+      <div class="tracks-list-scroll" *ngIf="activeTab === 'subtitles'">
+        <!-- Off Option -->
+        <button type="button"
+          class="track-row d-flex align-items-center justify-content-between"
+          [class.selected]="activeSubtitleTrackId === null"
+          (click)="selectSubtitleTrack(null)">
+          <span>Off</span>
+          <svg *ngIf="activeSubtitleTrackId === null" class="check-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z" />
+          </svg>
+        </button>
+        <!-- Available Subtitle Tracks -->
+        <button type="button"
+          *ngFor="let track of subtitleTracks"
+          class="track-row d-flex align-items-center justify-content-between"
+          [class.selected]="track.id === activeSubtitleTrackId"
+          (click)="selectSubtitleTrack(track.id)">
+          <span>{{ track.label }}</span>
+          <svg *ngIf="track.id === activeSubtitleTrackId" class="check-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-Player Channel Switcher (for Live TV browsing) -->
+  <app-channel-switcher
+    (switchChannel)="onChannelSwitched($event)">
+  </app-channel-switcher>
+
+  <!-- In-Player Episode Switcher (for TV episode browsing) -->
+  <app-episode-switcher
+    (switchEpisode)="onEpisodeSwitched($event)">
+  </app-episode-switcher>
+</div>

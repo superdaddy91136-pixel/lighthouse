@@ -32,6 +32,7 @@ import { TmdbEnrichmentService } from '../services/tmdb-enrichment.service';
 import { TvDetailService } from '../services/tv-detail.service';
 import { VersionMatchingService } from '../services/version-matching.service';
 import { EpisodeSwitcherComponent } from '../episode-switcher/episode-switcher.component';
+import { PlaybackService } from '../services/playback.service';
 import { isInputFocused } from '../utils';
 import {
   cleanMediaTitle,
@@ -134,6 +135,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private toastr: ToastrService,
     private error: ErrorService,
     private sanitizer: DomSanitizer,
+    private playbackService: PlaybackService,
   ) {}
 
   private resetScrollPosition(): void {
@@ -746,17 +748,13 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.activePlayingEpisode = playChannel;
 
-      // Open episode switcher panel so user can browse seasons/episodes while watching
-      if (this.show && this.episodeSwitcher) {
-        this.episodeSwitcher.open(this.show, playChannel, this.enrichment);
-      }
-
-      // Use existing IPTV provider playback via Tauri IPC
-      await invoke('play', {
-        channel: playChannel,
-        record: false,
-        recordPath: undefined,
-      });
+      const episodeChannels = this.enrichedEpisodes.map((e) => e.channel);
+      await this.playbackService.playEpisode(
+        playChannel,
+        this.show!,
+        episodeChannels,
+        enrichedEp
+      );
     } catch (e) {
       console.error('TV episode playback error:', e);
       this.error.handleError(e, 'Failed to start episode playback');

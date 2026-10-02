@@ -34,6 +34,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { MovieDetailService } from "../services/movie-detail.service";
 import { TvDetailService } from "../services/tv-detail.service";
 import { PinService } from "../services/pin.service";
+import { PlaybackService } from "../services/playback.service";
 import { NavTab } from "../models/navTab";
 import { cleanMediaTitle } from "../utils/media-presentation";
 
@@ -54,6 +55,7 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
     public pinService: PinService,
+    private playbackService: PlaybackService,
   ) { }
   @Input() channel?: Channel;
   @Input() id!: number;
@@ -116,6 +118,17 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
       this.movieDetailService.openMovieDetail(this.channel);
       return;
     }
+    const playChannel = {
+      ...this.channel,
+      media_type: this.channel?.media_type,
+      favorite: !!this.channel?.favorite,
+    };
+
+    if (!record) {
+      await this.playbackService.playChannel(playChannel);
+      return;
+    }
+
     let file = undefined;
     if (record && (this.memory.IsContainer || this.memory.AlwaysAskSave)) {
       file = await save({
@@ -128,11 +141,6 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     this.starting = true;
     this.memory.SetFocus.next(this.id);
     try {
-      const playChannel = {
-        ...this.channel,
-        media_type: this.channel?.media_type,
-        favorite: !!this.channel?.favorite,
-      };
       await invoke("play", { channel: playChannel, record: record, recordPath: file });
     } catch (e) {
       this.error.handleError(e);

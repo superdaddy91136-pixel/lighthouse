@@ -29,9 +29,11 @@
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-shell": "^2.3.3",
+    "hls.js": "^1.7.3",
     "ng-keyboard-shortcuts": "^13.0.8",
     "ngx-toastr": "^19.0.0",
     "rxjs": "~7.8.0",
+    "shaka-player": "^5.2.12",
     "tslib": "^2.3.0",
     "zone.js": "~0.14.3"
   },
