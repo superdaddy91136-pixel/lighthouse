@@ -31,6 +31,8 @@ import { NodeType, fromMediaType } from "../models/nodeType";
 
 import { ViewMode } from "../models/viewMode";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { MovieDetailService } from "../services/movie-detail.service";
+import { TvDetailService } from "../services/tv-detail.service";
 
 @Component({
   selector: "app-channel-tile",
@@ -46,6 +48,8 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     private el: ElementRef,
     private renderer: Renderer2,
     private download: DownloadService,
+    private movieDetailService: MovieDetailService,
+    private tvDetailService: TvDetailService,
   ) { }
   @Input() channel?: Channel;
   @Input() id!: number;
@@ -87,32 +91,25 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
       }
       return;
     }
+    if (!record && this.channel?.media_type === MediaType.serie) {
+      this.tvDetailService.openTvDetail(this.channel);
+      return;
+    }
     if (
-      this.channel?.media_type == MediaType.serie ||
       this.channel?.media_type == MediaType.group ||
       this.channel?.media_type == MediaType.season
     ) {
-      if (
-        this.channel.media_type == MediaType.serie &&
-        !this.memory.SeriesRefreshed.has(this.channel.id!)
-      ) {
-        this.memory.HideChannels.next(false);
-        try {
-          await invoke("get_episodes", { channel: this.channel });
-          this.memory.SeriesRefreshed.set(this.channel.id!, true);
-        } catch (e) {
-          this.error.handleError(e, "Failed to fetch series");
-        }
-      }
       this.memory.SetNode.next({
-        id:
-          this.channel?.media_type == MediaType.serie
-            ? parseInt(this.channel.url!)
-            : this.channel.id!,
+        id: this.channel.id!,
         name: this.channel.name!,
         type: fromMediaType(this.channel.media_type),
         sourceId: this.channel.source_id,
       });
+      return;
+    }
+    const isEpisode = !!(this.channel?.season_id != null || this.channel?.episode_num != null);
+    if (!record && this.channel?.media_type === MediaType.movie && !isEpisode) {
+      this.movieDetailService.openMovieDetail(this.channel);
       return;
     }
     let file = undefined;
@@ -127,7 +124,12 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
     this.starting = true;
     this.memory.SetFocus.next(this.id);
     try {
-      await invoke("play", { channel: this.channel, record: record, recordPath: file });
+      const playChannel = {
+        ...this.channel,
+        media_type: this.channel?.media_type,
+        favorite: !!this.channel?.favorite,
+      };
+      await invoke("play", { channel: playChannel, record: record, recordPath: file });
     } catch (e) {
       this.error.handleError(e);
     }

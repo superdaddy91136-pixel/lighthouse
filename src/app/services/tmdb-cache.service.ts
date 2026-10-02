@@ -1,0 +1,307 @@
+import { Injectable } from '@angular/core';
+import {
+  TmdbFailedMatch,
+  TmdbMediaEnrichment,
+  TmdbSeasonDetail,
+} from '../models/tmdb';
+
+const DB_NAME = 'fred_tv_tmdb_db';
+const DB_VERSION = 1;
+const STORE_MEDIA = 'media_enrichment';
+const STORE_FAILED = 'failed_matches';
+const STORE_SEASONS = 'season_details';
+
+const DEFAULT_STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const DEFAULT_FAILED_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+@Injectable({
+  providedIn: 'root',
+})
+export class TmdbCacheService {
+  private dbPromise: Promise<IDBDatabase> | null = null;
+  /** In-memory hot cache for instant zero-latency UI rendering */
+  private memoryCache: Map<number, TmdbMediaEnrichment> = new Map();
+  private failedMemoryCache: Map<string, number> = new Map(); // searchKey -> retryAfter
+
+  constructor() {
+    this.initDb();
+  }
+
+  private initDb(): Promise<IDBDatabase> {
+    if (this.dbPromise) return this.dbPromise;
+
+    this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+      if (typeof window === 'undefined' || !window.indexedDB) {
+        return reject(new Error('IndexedDB is not available in this environment'));
+      }
+
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+      req.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+        const db = req.result;
+
+        // 1. Media enrichment store keyed by IPTV channel id (providerItemId)
+        if (!db.objectStoreNames.contains(STORE_MEDIA)) {
+          const mediaStore = db.createObjectStore(STORE_MEDIA, {
+            keyPath: 'providerItemId',
+          });
+          mediaStore.createIndex('tmdbId', 'tmdbId', { unique: false });
+          mediaStore.createIndex('normalizedTitle', 'normalizedTitle', { unique: false });
+          mediaStore.createIndex('lastUpdated', 'lastUpdated', { unique: false });
+        }
+
+        // 2. Failed match store (negative cache to avoid futile API calls)
+        if (!db.objectStoreNames.contains(STORE_FAILED)) {
+          db.createObjectStore(STORE_FAILED, { keyPath: 'searchKey' });
+        }
+
+        // 3. Season detail store keyed by composite string `${tmdbId}_s${seasonNumber}`
+        if (!db.objectStoreNames.contains(STORE_SEASONS)) {
+          db.createObjectStore(STORE_SEASONS, { keyPath: 'seasonKey' });
+        }
+      };
+
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+
+    return this.dbPromise;
+  }
+
+  /**
+   * Synchronous check against hot in-memory cache.
+   * Useful in high-frequency rendering pipelines without async overhead.
+   */
+  getEnrichmentSync(providerItemId?: number): TmdbMediaEnrichment | undefined {
+    if (!providerItemId) return undefined;
+    return this.memoryCache.get(providerItemId);
+  }
+
+  /**
+   * Retrieves enrichment for a provider channel from cache.
+   * Checks hot memory first, then persistent IndexedDB.
+   */
+  async getEnrichment(providerItemId?: number): Promise<TmdbMediaEnrichment | undefined> {
+    if (!providerItemId) return undefined;
+
+    if (this.memoryCache.has(providerItemId)) {
+      return this.memoryCache.get(providerItemId);
+    }
+
+    try {
+      const db = await this.initDb();
+      return new Promise<TmdbMediaEnrichment | undefined>((resolve) => {
+        const tx = db.transaction(STORE_MEDIA, 'readonly');
+        const store = tx.objectStore(STORE_MEDIA);
+        const req = store.get(providerItemId);
+
+        req.onsuccess = () => {
+          const result = req.result as TmdbMediaEnrichment | undefined;
+          if (result) {
+            this.memoryCache.set(providerItemId, result);
+          }
+          resolve(result);
+        };
+
+        req.onerror = () => resolve(undefined);
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Saves enrichment to both hot memory and persistent IndexedDB.
+   */
+  async saveEnrichment(enrichment: TmdbMediaEnrichment): Promise<void> {
+    if (!enrichment.providerItemId) return;
+
+    this.memoryCache.set(enrichment.providerItemId, enrichment);
+
+    try {
+      const db = await this.initDb();
+      return new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_MEDIA, 'readwrite');
+        const store = tx.objectStore(STORE_MEDIA);
+        const req = store.put(enrichment);
+
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) {
+      console.warn('Failed to persist TMDB enrichment to IndexedDB', e);
+    }
+  }
+
+  /**
+   * Determines if cached metadata has expired and warrants background revalidation.
+   */
+  isStale(enrichment: TmdbMediaEnrichment, maxAgeMs = DEFAULT_STALE_MS): boolean {
+    if (!enrichment.lastUpdated) return true;
+    return Date.now() - enrichment.lastUpdated > maxAgeMs;
+  }
+
+  /**
+   * Checks if a title search previously failed or had low confidence, and whether the retry window has expired.
+   */
+  async isFailedMatch(searchKey: string): Promise<boolean> {
+    const memRetry = this.failedMemoryCache.get(searchKey);
+    if (memRetry !== undefined) {
+      if (Date.now() < memRetry) return true;
+      this.failedMemoryCache.delete(searchKey);
+    }
+
+    try {
+      const db = await this.initDb();
+      return new Promise<boolean>((resolve) => {
+        const tx = db.transaction(STORE_FAILED, 'readonly');
+        const store = tx.objectStore(STORE_FAILED);
+        const req = store.get(searchKey);
+
+        req.onsuccess = () => {
+          const item = req.result as TmdbFailedMatch | undefined;
+          if (!item) {
+            resolve(false);
+            return;
+          }
+
+          if (Date.now() < item.retryAfter) {
+            this.failedMemoryCache.set(searchKey, item.retryAfter);
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        };
+
+        req.onerror = () => resolve(false);
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Records a negative match result to prevent repeated doomed queries.
+   */
+  async recordFailedMatch(
+    searchKey: string,
+    normalizedTitle: string,
+    mediaType: 'movie' | 'tv',
+    year?: string,
+    ttlMs = DEFAULT_FAILED_TTL_MS,
+  ): Promise<void> {
+    const now = Date.now();
+    const retryAfter = now + ttlMs;
+
+    this.failedMemoryCache.set(searchKey, retryAfter);
+
+    const record: TmdbFailedMatch = {
+      searchKey,
+      normalizedTitle,
+      mediaType,
+      year,
+      attemptedAt: now,
+      retryAfter,
+    };
+
+    try {
+      const db = await this.initDb();
+      return new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE_FAILED, 'readwrite');
+        const store = tx.objectStore(STORE_FAILED);
+        const req = store.put(record);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+      });
+    } catch {
+      // Ignore background persistence errors
+    }
+  }
+
+  /**
+   * Retrieves TV season details from persistent cache.
+   */
+  async getSeasonDetail(tmdbId: number, seasonNumber: number): Promise<TmdbSeasonDetail | undefined> {
+    const seasonKey = `${tmdbId}_s${seasonNumber}`;
+    try {
+      const db = await this.initDb();
+      return new Promise<TmdbSeasonDetail | undefined>((resolve) => {
+        const tx = db.transaction(STORE_SEASONS, 'readonly');
+        const store = tx.objectStore(STORE_SEASONS);
+        const req = store.get(seasonKey);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(undefined);
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Saves TV season details to persistent cache.
+   */
+  async saveSeasonDetail(detail: TmdbSeasonDetail): Promise<void> {
+    const seasonKey = `${detail.tmdbId}_s${detail.seasonNumber}`;
+    const payload = { ...detail, seasonKey };
+
+    try {
+      const db = await this.initDb();
+      return new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE_SEASONS, 'readwrite');
+        const store = tx.objectStore(STORE_SEASONS);
+        const req = store.put(payload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+      });
+    } catch {
+      // Ignore background persistence errors
+    }
+  }
+
+  /**
+   * Clears the entire local TMDB cache.
+   */
+  async clearCache(): Promise<void> {
+    this.memoryCache.clear();
+    this.failedMemoryCache.clear();
+
+    try {
+      const db = await this.initDb();
+      return new Promise<void>((resolve, reject) => {
+        const tx = db.transaction([STORE_MEDIA, STORE_FAILED, STORE_SEASONS], 'readwrite');
+        tx.objectStore(STORE_MEDIA).clear();
+        tx.objectStore(STORE_FAILED).clear();
+        tx.objectStore(STORE_SEASONS).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.warn('Failed to clear TMDB cache', e);
+    }
+  }
+
+  /**
+   * Returns statistics on cached titles.
+   */
+  async getCacheStats(): Promise<{ enrichedCount: number; failedCount: number }> {
+    try {
+      const db = await this.initDb();
+      return new Promise<{ enrichedCount: number; failedCount: number }>((resolve) => {
+        const tx = db.transaction([STORE_MEDIA, STORE_FAILED], 'readonly');
+        const mediaReq = tx.objectStore(STORE_MEDIA).count();
+        const failedReq = tx.objectStore(STORE_FAILED).count();
+
+        tx.oncomplete = () => {
+          resolve({
+            enrichedCount: mediaReq.result || 0,
+            failedCount: failedReq.result || 0,
+          });
+        };
+
+        tx.onerror = () => resolve({ enrichedCount: 0, failedCount: 0 });
+      });
+    } catch {
+      return { enrichedCount: 0, failedCount: 0 };
+    }
+  }
+}

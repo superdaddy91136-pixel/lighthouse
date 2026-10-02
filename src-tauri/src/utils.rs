@@ -253,12 +253,120 @@ fn get_download_path(file_name: String) -> Result<String> {
     Ok(path.to_string_lossy().to_string())
 }
 pub fn get_bin(bin: &str) -> String {
-    if OS == "linux" || which(bin).is_ok() {
+    if OS == "linux" {
         return bin.to_string();
     } else if OS == "macos" {
         return find_macos_bin(bin);
+    } else if OS == "windows" {
+        return find_windows_bin(bin);
+    }
+    if which(bin).is_ok() {
+        return bin.to_string();
     }
     return get_bin_from_deps(bin);
+}
+
+pub fn find_windows_bin(bin: &str) -> String {
+    let bin_with_exe = if bin.to_lowercase().ends_with(".exe") {
+        bin.to_string()
+    } else {
+        format!("{}.exe", bin)
+    };
+
+    let check_file = |dir: &Path| -> Option<PathBuf> {
+        let candidate_exe = dir.join(&bin_with_exe);
+        if candidate_exe.is_file() {
+            return Some(candidate_exe);
+        }
+        let candidate_raw = dir.join(bin);
+        if candidate_raw.is_file() {
+            return Some(candidate_raw);
+        }
+        None
+    };
+
+    // 1. Search relative to current_exe() and its parent directories
+    if let Ok(exe) = current_exe() {
+        let mut curr = exe.parent();
+        while let Some(dir) = curr {
+            if let Some(p) = check_file(&dir.join("deps")) {
+                let resolved = p.to_string_lossy().to_string();
+                log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+                return resolved;
+            }
+            if let Some(p) = check_file(&dir.join("src-tauri").join("deps")) {
+                let resolved = p.to_string_lossy().to_string();
+                log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+                return resolved;
+            }
+            if let Some(p) = check_file(dir) {
+                let resolved = p.to_string_lossy().to_string();
+                log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+                return resolved;
+            }
+            curr = dir.parent();
+        }
+    }
+
+    // 2. Check CARGO_MANIFEST_DIR (available at compile time during development)
+    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+        let manifest_path = Path::new(manifest_dir);
+        if let Some(p) = check_file(&manifest_path.join("deps")) {
+            let resolved = p.to_string_lossy().to_string();
+            log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+            return resolved;
+        }
+        if let Some(parent) = manifest_path.parent() {
+            if let Some(p) = check_file(&parent.join("deps")) {
+                let resolved = p.to_string_lossy().to_string();
+                log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+                return resolved;
+            }
+        }
+    }
+
+    // 3. Check C:\open-tv-deps (standard packaging / build location for Fred TV on Windows)
+    let open_tv_deps = Path::new(r"C:\open-tv-deps");
+    if let Some(p) = check_file(open_tv_deps) {
+        let resolved = p.to_string_lossy().to_string();
+        log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+        return resolved;
+    }
+
+    // 4. Check C:\Program Files\Fred TV\deps (installed package fallback)
+    let installed_deps = Path::new(r"C:\Program Files\Fred TV\deps");
+    if let Some(p) = check_file(installed_deps) {
+        let resolved = p.to_string_lossy().to_string();
+        log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+        return resolved;
+    }
+
+    // 5. Check PATH via which
+    if let Ok(path) = which(&bin_with_exe) {
+        let resolved = path.to_string_lossy().to_string();
+        log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+        return resolved;
+    }
+    if let Ok(path) = which(bin) {
+        let resolved = path.to_string_lossy().to_string();
+        log(format!("Resolved binary '{}' to '{}'", bin, resolved));
+        return resolved;
+    }
+
+    // Fallback: default deps path relative to current exe with .exe
+    if let Ok(exe) = current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let fallback = exe_dir
+                .join("deps")
+                .join(&bin_with_exe)
+                .to_string_lossy()
+                .to_string();
+            log(format!("Binary '{}' not found, falling back to '{}'", bin, fallback));
+            return fallback;
+        }
+    }
+
+    bin_with_exe
 }
 
 fn get_bin_from_deps(bin: &str) -> String {

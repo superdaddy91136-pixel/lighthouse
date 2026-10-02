@@ -10,6 +10,13 @@ import { ViewMode } from "../models/viewMode";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-delete-modal.component";
 import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
+import { NavTab } from "../models/navTab";
+import { Channel } from "../models/channel";
+import { Filters } from "../models/filters";
+import { MediaType } from "../models/mediaType";
+import { ToastrService } from "ngx-toastr";
+import { TmdbConfigService } from "../services/tmdb-config.service";
+import { TmdbCacheService } from "../services/tmdb-cache.service";
 
 @Component({
   selector: "app-settings",
@@ -18,6 +25,23 @@ import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
 })
 export class SettingsComponent {
   subscriptions: Subscription[] = [];
+  activeSection: 'favorites' | 'settings' = 'favorites';
+  favoriteChannels: Channel[] = [];
+  filteredFavorites: Channel[] = [];
+  favSearchQuery: string = "";
+  favMediaType: number = -1;
+  loadingFavorites: boolean = false;
+  mediaTypeEnum = MediaType;
+
+  // TMDB configuration state
+  tmdbEnabled: boolean = false;
+  tmdbToken: string = "";
+  showTmdbToken: boolean = false;
+  tmdbTesting: boolean = false;
+  tmdbTestMessage: string = "";
+  tmdbTestSuccess: boolean | null = null;
+  tmdbCacheStats: { enrichedCount: number; failedCount: number } = { enrichedCount: 0, failedCount: 0 };
+
   settings: Settings = {
     use_stream_caching: true,
     default_view: ViewMode.All,
@@ -41,6 +65,9 @@ export class SettingsComponent {
     public memory: MemoryService,
     private nav: Router,
     private modal: NgbModal,
+    public tmdbConfig: TmdbConfigService,
+    public tmdbCache: TmdbCacheService,
+    private toastr: ToastrService,
   ) { }
 
   _getSortTypeText(sortType: SortType) {
@@ -73,10 +100,80 @@ export class SettingsComponent {
   }
 
   ngOnInit(): void {
+    this.memory.activeNavTab.next(NavTab.Profile);
     this.getSettings();
     this.getSources();
+    this.loadFavorites();
+    this.loadTmdbSettings();
+    this.loadTmdbCacheStats();
     if (this.memory.XtreamSourceIds.size > 0)
       this.getExpiries();
+  }
+
+  setSection(section: 'favorites' | 'settings') {
+    this.activeSection = section;
+    if (section === 'favorites') {
+      this.loadFavorites();
+    }
+  }
+
+  setFavMediaType(type: number) {
+    this.favMediaType = type;
+    this.filterFavorites();
+  }
+
+  filterFavorites() {
+    let list = this.favoriteChannels;
+    if (this.favMediaType !== -1) {
+      list = list.filter(c => c.media_type === this.favMediaType);
+    }
+    if (this.favSearchQuery && this.favSearchQuery.trim() !== '') {
+      const q = this.favSearchQuery.toLowerCase().trim();
+      list = list.filter(c => (c.name || '').toLowerCase().includes(q));
+    }
+    this.filteredFavorites = list;
+  }
+
+  async loadFavorites() {
+    this.loadingFavorites = true;
+    try {
+      const sources = (await invoke("get_sources")) as Source[];
+      const enabledSources = sources.filter(s => s.enabled);
+      if (enabledSources.length === 0) {
+        this.favoriteChannels = [];
+        this.filteredFavorites = [];
+        this.loadingFavorites = false;
+        return;
+      }
+      const sourceIds = enabledSources.map(s => s.id!);
+      const filters: Filters = {
+        source_ids: sourceIds,
+        view_type: ViewMode.Favorites,
+        media_types: [MediaType.livestream, MediaType.movie, MediaType.serie],
+        page: 1,
+        use_keywords: false,
+        sort: SortType.alphabeticalAscending,
+      };
+      let allFavs: Channel[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && page <= 25) {
+        filters.page = page;
+        const res = (await invoke("search", { filters })) as Channel[];
+        if (res && res.length > 0) {
+          allFavs = allFavs.concat(res);
+          hasMore = res.length === 36;
+          page++;
+        } else {
+          hasMore = false;
+        }
+      }
+      this.favoriteChannels = allFavs;
+      this.filterFavorites();
+    } catch (e) {
+      console.error("Failed to load favorites", e);
+    }
+    this.loadingFavorites = false;
   }
 
   getSettings() {
@@ -146,6 +243,7 @@ export class SettingsComponent {
 
   async goBack() {
     await this.updateSettings();
+    this.memory.activeNavTab.next(NavTab.Home);
     this.router.navigateByUrl("");
   }
 
@@ -186,6 +284,65 @@ export class SettingsComponent {
         await invoke("clear_history");
       },
     );
+  }
+
+  loadTmdbSettings() {
+    const cfg = this.tmdbConfig.getConfig();
+    this.tmdbEnabled = cfg.enabled;
+    this.tmdbToken = cfg.token || '';
+  }
+
+  async loadTmdbCacheStats() {
+    this.tmdbCacheStats = await this.tmdbCache.getCacheStats();
+  }
+
+  onTmdbEnabledChange() {
+    this.tmdbConfig.setEnabled(this.tmdbEnabled);
+    if (this.tmdbEnabled && (!this.tmdbToken || this.tmdbToken.trim().length === 0)) {
+      this.toastr.info("Please enter your TMDB API Read Access Token to enable enrichment.");
+    }
+  }
+
+  onTmdbTokenChange() {
+    this.tmdbConfig.setToken(this.tmdbToken);
+    this.tmdbTestSuccess = null;
+    this.tmdbTestMessage = '';
+  }
+
+  toggleShowTmdbToken() {
+    this.showTmdbToken = !this.showTmdbToken;
+  }
+
+  async testTmdbConnection() {
+    this.tmdbTesting = true;
+    this.tmdbTestMessage = '';
+    this.tmdbTestSuccess = null;
+    try {
+      const res = await this.tmdbConfig.testConnection(this.tmdbToken);
+      this.tmdbTestSuccess = res.success;
+      this.tmdbTestMessage = res.message;
+      if (res.success) {
+        this.toastr.success(res.message);
+      } else {
+        this.toastr.error(res.message);
+      }
+    } finally {
+      this.tmdbTesting = false;
+    }
+  }
+
+  clearTmdbToken() {
+    this.tmdbToken = '';
+    this.tmdbConfig.clearToken();
+    this.tmdbTestSuccess = null;
+    this.tmdbTestMessage = '';
+    this.toastr.info("TMDB API Read Access Token cleared.");
+  }
+
+  async clearTmdbCache() {
+    await this.tmdbCache.clearCache();
+    await this.loadTmdbCacheStats();
+    this.toastr.success("TMDB metadata cache cleared.");
   }
 
   ngOnDestroy(): void {

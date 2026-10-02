@@ -1,2 +1,7 @@
-<router-outlet></router-outlet>
-<app-download-manager *ngIf="showDownloadManager()"></app-download-manager>
+<div class="app-layout">
+  <app-nav-bar *ngIf="showNavBar()"></app-nav-bar>
+  <main class="app-main" [class.with-nav]="showNavBar()">
+    <router-outlet></router-outlet>
+    <app-download-manager *ngIf="showDownloadManager()"></app-download-manager>
+  </main>
+</div>

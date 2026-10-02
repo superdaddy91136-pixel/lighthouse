@@ -1007,7 +1007,7 @@ fn row_to_channel(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         url: row.get("url")?,
         favorite: row.get("favorite")?,
         episode_num: row.get("episode_num")?,
-        series_id: None,
+        series_id: row.get("series_id")?,
         group: None,
         stream_id: row.get("stream_id")?,
         tv_archive: row.get("tv_archive")?,

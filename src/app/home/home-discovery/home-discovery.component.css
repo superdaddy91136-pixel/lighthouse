@@ -1,0 +1,5 @@
+/* Scoped Discovery Component styles */
+:host {
+  display: block;
+  width: 100%;
+}

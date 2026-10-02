@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { SortType } from "./models/sortType";
 import { LAST_SEEN_VERSION } from "./models/localStorage";
 import { SetNodeDTO } from "./models/setNodeDTO";
+import { NavTab } from "./models/navTab";
 
 @Injectable({
   providedIn: "root",
@@ -20,6 +21,8 @@ export class MemoryService {
   ) {
     invoke("is_container").then((val) => (this.IsContainer = val as boolean));
   }
+  public activeNavTab: BehaviorSubject<NavTab> = new BehaviorSubject<NavTab>(NavTab.Home);
+  public navTabClick: Subject<NavTab> = new Subject<NavTab>();
   public SetNode: Subject<SetNodeDTO> = new Subject();
   public SetFocus: Subject<number> = new Subject();
   public Sort: BehaviorSubject<[number, boolean]> = new BehaviorSubject<[number, boolean]>([

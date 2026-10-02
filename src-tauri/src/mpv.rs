@@ -70,6 +70,7 @@ pub async fn play(
     let mut cmd = Command::new(MPV_PATH.clone())
         .args(args)
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
     let token = CancellationToken::new();
@@ -90,26 +91,41 @@ pub async fn play(
             if status.success() {
                 Ok(())
             } else {
-                let stdout = cmd.stdout.take();
-                if stdout.is_none() {
-                     Ok(())
+                let code = status.code().unwrap_or(0);
+                if code == 0 || code == 4 {
+                    Ok(())
                 } else {
-                    let stdout = stdout.context("no stdout")?;
-                    let mut error: String = String::new();
-                    let mut lines = BufReader::new(stdout).lines();
-                    let mut first = true;
-                    while let Some(line) = lines.next_line().await? {
-                        error += &line;
-                        if !first {
-                            error += "\n";
-                        } else {
-                            first = false;
+                    let mut error = String::new();
+                    if let Some(stderr) = cmd.stderr.take() {
+                        let mut lines = BufReader::new(stderr).lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            let trimmed = line.trim();
+                            if !trimmed.is_empty() {
+                                if !error.is_empty() {
+                                    error.push('\n');
+                                }
+                                error.push_str(trimmed);
+                            }
                         }
                     }
-                    if error != "" {
+                    if error.is_empty() {
+                        if let Some(stdout) = cmd.stdout.take() {
+                            let mut lines = BufReader::new(stdout).lines();
+                            while let Ok(Some(line)) = lines.next_line().await {
+                                let trimmed = line.trim();
+                                if !trimmed.is_empty() {
+                                    if !error.is_empty() {
+                                        error.push('\n');
+                                    }
+                                    error.push_str(trimmed);
+                                }
+                            }
+                        }
+                    }
+                    if !error.is_empty() {
                         Err(anyhow::anyhow!(error))
                     } else {
-                        Err(anyhow::anyhow!("Mpv encountered an unknown error"))
+                        Ok(())
                     }
                 }
             }

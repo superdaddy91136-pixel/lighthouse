@@ -1,0 +1,79 @@
+<!-- Episode Switcher Overlay Panel -->
+<div class="episode-switcher-backdrop" *ngIf="isOpen" (click)="closePanel()">
+  <div class="episode-switcher-panel" (click)="$event.stopPropagation()">
+    
+    <!-- Panel Header -->
+    <div class="es-header">
+      <div class="es-header-left">
+        <h3 class="es-title">{{ seriesTitle }}</h3>
+        <span class="es-subtitle">Episodes</span>
+      </div>
+      <button class="es-close-btn" (click)="closePanel()" title="Close">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Season Selector Pills -->
+    <div class="es-seasons-row" *ngIf="seasons.length > 1">
+      <button 
+        *ngFor="let s of seasons; trackBy: trackBySeasonId" 
+        class="es-season-pill" 
+        [class.active]="selectedSeason?.id === s.id"
+        (click)="selectSeason(s)">
+        {{ s.name }}
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div class="es-loading" *ngIf="loading">
+      <div class="spinner-border spinner-border-sm text-info" role="status"></div>
+      <span>Loading episodes...</span>
+    </div>
+
+    <!-- Episodes List -->
+    <div class="es-list" *ngIf="!loading && episodes.length > 0">
+      <button 
+        *ngFor="let ep of episodes; trackBy: trackByEpisodeId" 
+        class="es-episode-item" 
+        [class.es-active]="isCurrentEpisode(ep)"
+        (click)="onSelectEpisode(ep)">
+        
+        <!-- Thumbnail -->
+        <div class="es-thumb-wrap">
+          <img 
+            *ngIf="ep.stillUrl" 
+            [src]="ep.stillUrl" 
+            alt="" 
+            class="es-thumb-img" 
+            (error)="$any($event.target).style.display='none'" />
+          <div *ngIf="!ep.stillUrl" class="es-thumb-fallback">
+            <span>E{{ ep.episodeNum }}</span>
+          </div>
+          <div class="es-play-icon" *ngIf="!isCurrentEpisode(ep)">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+            </svg>
+          </div>
+          <div class="es-now-playing-badge" *ngIf="isCurrentEpisode(ep)">
+            <span class="es-live-dot"></span>
+          </div>
+        </div>
+
+        <!-- Info -->
+        <div class="es-info">
+          <span class="es-ep-title">{{ ep.title }}</span>
+          <span class="es-ep-sub">Season {{ ep.seasonNum }}, Episode {{ ep.episodeNum }}</span>
+        </div>
+
+      </button>
+    </div>
+
+    <!-- Empty State -->
+    <div class="es-empty" *ngIf="!loading && episodes.length === 0">
+      <p>No episodes found for this season.</p>
+    </div>
+
+  </div>
+</div>

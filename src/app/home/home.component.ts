@@ -33,15 +33,19 @@ import { Settings } from "../models/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { SortType } from "../models/sortType";
 import { getVersion } from "@tauri-apps/api/app";
+import { TvDetailService } from "../services/tv-detail.service";
 import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { WhatsNewModalComponent } from "../whats-new-modal/whats-new-modal.component";
 import { LAST_SEEN_VERSION } from "../models/localStorage";
 import { isInputFocused } from "../utils";
 import { Node } from "../models/node";
-import { NodeType } from "../models/nodeType";
+import { NodeType, fromMediaType } from "../models/nodeType";
 import { Stack } from "../models/stack";
 
 import { BulkActionType } from '../models/bulkActionType';
+import { NavTab } from '../models/navTab';
+import { cleanMediaTitle } from '../utils/media-presentation';
+import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.component';
 
 @Component({
   selector: "app-home",
@@ -99,9 +103,86 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   loading = false;
   nodeStack: Stack = new Stack();
   showScrollTop = false;
+  @ViewChild(ChannelSwitcherComponent) channelSwitcher?: ChannelSwitcherComponent;
+  livePlayingChannel?: Channel;
+
+  get isHomeDiscoveryMode(): boolean {
+    return (
+      this.memory.activeNavTab.value === NavTab.Home &&
+      !this.nodeStack.hasNodes() &&
+      !this.filters?.series_id &&
+      !this.filters?.group_id &&
+      (!this.filters?.query || this.filters.query.trim() === '')
+    );
+  }
 
   scrollToTop() {
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async playMedia(channel: Channel) {
+    if (channel.media_type === MediaType.serie) {
+      await this.openSeries(channel);
+      return;
+    }
+    const playChannel: Channel = {
+      ...channel,
+      media_type: channel.media_type,
+      favorite: !!channel.favorite,
+    };
+    const isLive = channel.media_type === MediaType.livestream;
+    if (isLive) {
+      this.livePlayingChannel = channel;
+    }
+    try {
+      this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
+      invoke("add_last_watched", { id: channel.id }).catch(console.error);
+
+      // Open channel switcher panel for Live TV so user can browse while watching
+      if (isLive && this.channelSwitcher) {
+        this.channelSwitcher.open(channel);
+      }
+
+      await invoke("play", { channel: playChannel, record: false, recordPath: undefined });
+    } catch (e) {
+      this.error.handleError(e);
+    }
+    if (isLive) {
+      this.livePlayingChannel = undefined;
+    }
+  }
+
+  async onSwitchChannel(channel: Channel): Promise<void> {
+    // Cancel current live stream and start the new one
+    if (this.livePlayingChannel?.id && this.livePlayingChannel.source_id != null) {
+      try {
+        await invoke("cancel_play", {
+          sourceId: this.livePlayingChannel.source_id,
+          channelId: this.livePlayingChannel.id,
+        });
+      } catch (e) {
+        console.warn("Failed to cancel previous stream:", e);
+      }
+    }
+    // Play the new channel (reuses the same playMedia flow)
+    this.playMedia(channel);
+  }
+
+  onChannelSwitcherClose(): void {
+    // No-op, panel closes itself
+  }
+
+  async openSeries(channel: Channel) {
+    this.tvDetailService.openTvDetail(channel);
+  }
+
+  navigateToTab(tab: NavTab) {
+    this.memory.activeNavTab.next(tab);
+    if (tab === NavTab.Profile) {
+      this.router.navigateByUrl("settings");
+    } else {
+      this.handleNavTabClick(tab);
+    }
   }
 
   constructor(
@@ -110,6 +191,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     public toast: ToastrService,
     private error: ErrorService,
     private modal: NgbModal,
+    private tvDetailService: TvDetailService,
   ) {
     this.getSources();
   }
@@ -153,10 +235,35 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             sessionStorage.setItem("epgCheckedOnStart", "true");
             invoke("on_start_check_epg");
           }
+          const currentTab = this.memory.activeNavTab.value;
+          let initialMediaTypes = [MediaType.livestream, MediaType.movie, MediaType.serie];
+          if (currentTab === NavTab.LiveTV) {
+            initialMediaTypes = [MediaType.livestream];
+            this.chkLiveStream = true;
+            this.chkMovie = false;
+            this.chkSerie = false;
+          } else if (currentTab === NavTab.Movies) {
+            initialMediaTypes = [MediaType.movie];
+            this.chkLiveStream = false;
+            this.chkMovie = true;
+            this.chkSerie = false;
+          } else if (currentTab === NavTab.TVShows) {
+            initialMediaTypes = [MediaType.serie];
+            this.chkLiveStream = false;
+            this.chkMovie = false;
+            this.chkSerie = true;
+          } else {
+            this.chkLiveStream = false;
+            this.chkMovie = true;
+            this.chkSerie = this.anyXtream();
+            this.memory.activeNavTab.next(NavTab.Home);
+            initialMediaTypes = [MediaType.movie, MediaType.serie];
+          }
+
           this.filters = {
             source_ids: Array.from(this.memory.Sources.keys()),
             view_type: settings.default_view ?? ViewMode.All,
-            media_types: [MediaType.livestream, MediaType.movie, MediaType.serie],
+            media_types: initialMediaTypes,
             page: 1,
             use_keywords: false,
             sort: SortType.provider,
@@ -165,7 +272,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             this.memory.Sort.next([settings.default_sort, false]);
             this.filters.sort = settings.default_sort;
           }
-          this.chkSerie = this.anyXtream();
+          if (currentTab !== NavTab.LiveTV && currentTab !== NavTab.Movies && currentTab !== NavTab.TVShows) {
+            this.chkSerie = this.anyXtream();
+          }
           if (settings.refresh_on_start === true && !sessionStorage.getItem("refreshedOnStart")) {
             sessionStorage.setItem("refreshedOnStart", "true");
             this.refreshOnStart().then((_) => _);
@@ -247,6 +356,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         if (!this.filters || !load) return;
         this.filters!.sort = sort;
         await this.load();
+      }),
+    );
+    this.subscriptions.push(
+      this.memory.navTabClick.subscribe((tab: NavTab) => {
+        this.handleNavTabClick(tab);
       }),
     );
   }
@@ -429,10 +543,63 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     );
   }
 
+  handleNavTabClick(tab: NavTab) {
+    if (!this.filters) return;
+    this.nodeStack.clear();
+    this.clearSearch();
+    this.filters.series_id = undefined;
+    this.filters.group_id = undefined;
+    this.filters.season = undefined;
+    this.filters.view_type = ViewMode.All;
+
+    switch (tab) {
+      case NavTab.LiveTV:
+        this.chkLiveStream = true;
+        this.chkMovie = false;
+        this.chkSerie = false;
+        this.filters.media_types = [MediaType.livestream];
+        break;
+      case NavTab.Movies:
+        this.chkLiveStream = false;
+        this.chkMovie = true;
+        this.chkSerie = false;
+        this.filters.media_types = [MediaType.movie];
+        break;
+      case NavTab.TVShows:
+        this.chkLiveStream = false;
+        this.chkMovie = false;
+        this.chkSerie = true;
+        this.filters.media_types = [MediaType.serie];
+        break;
+      case NavTab.Home:
+      default:
+        this.chkLiveStream = false;
+        this.chkMovie = true;
+        this.chkSerie = this.anyXtream();
+        this.filters.media_types = [MediaType.movie, MediaType.serie];
+        break;
+    }
+    this.load();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  syncActiveNavTab() {
+    if (this.chkLiveStream && !this.chkMovie && !this.chkSerie) {
+      this.memory.activeNavTab.next(NavTab.LiveTV);
+    } else if (!this.chkLiveStream && this.chkMovie && !this.chkSerie) {
+      this.memory.activeNavTab.next(NavTab.Movies);
+    } else if (!this.chkLiveStream && !this.chkMovie && this.chkSerie) {
+      this.memory.activeNavTab.next(NavTab.TVShows);
+    } else {
+      this.memory.activeNavTab.next(NavTab.Home);
+    }
+  }
+
   updateMediaTypes(mediaType: MediaType) {
     let index = this.filters!.media_types.indexOf(mediaType);
     if (index == -1) this.filters!.media_types.push(mediaType);
     else this.filters!.media_types.splice(index, 1);
+    this.syncActiveNavTab();
     this.load();
   }
 
@@ -549,11 +716,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (lowSize && tmpFocus % 3 == 0 && this.focusArea == FocusArea.Tiles) tmpFocus / 3;
     tmpFocus += this.focus;
     if (tmpFocus < 0) {
-      this.changeFocusArea(false);
-    } else if (tmpFocus > goOverSize && this.focusArea == FocusArea.Filters) {
-      this.changeFocusArea(true);
-    } else if (tmpFocus > 4 && this.focusArea == FocusArea.ViewMode) {
-      this.changeFocusArea(true);
+      this.focusSearch();
+      return;
     } else if (
       this.focusArea == FocusArea.Tiles &&
       tmpFocus >= this.filters!.page * 36 &&

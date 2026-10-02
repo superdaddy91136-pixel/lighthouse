@@ -31,6 +31,13 @@ import { RestreamModalComponent } from './restream-modal/restream-modal.componen
 import { SortButtonComponent } from './home/sort-button/sort-button.component';
 import { SortItemComponent } from './home/sort-button/sort-item/sort-item.component';
 import { DownloadManagerComponent } from './download-manager/download-manager.component';
+import { NavBarComponent } from './nav-bar/nav-bar.component';
+import { HomeDiscoveryComponent } from './home/home-discovery/home-discovery.component';
+import { MovieDetailComponent } from './movie-detail/movie-detail.component';
+import { TvDetailComponent } from './tv-detail/tv-detail.component';
+import { DragScrollDirective } from './directives/drag-scroll.directive';
+import { ChannelSwitcherComponent } from './channel-switcher/channel-switcher.component';
+import { EpisodeSwitcherComponent } from './episode-switcher/episode-switcher.component';
 
 import { TimeAgoPipe } from "./pipes/time-ago.pipe";
 import { TimeUntilPipe } from './pipes/time-until.pipe';
@@ -38,6 +45,13 @@ import { TimeUntilPipe } from './pipes/time-until.pipe';
 @NgModule({
   declarations: [
     AppComponent,
+    NavBarComponent,
+    HomeDiscoveryComponent,
+    MovieDetailComponent,
+    TvDetailComponent,
+    DragScrollDirective,
+    ChannelSwitcherComponent,
+    EpisodeSwitcherComponent,
     TimeAgoPipe,
     TimeUntilPipe,
     SetupComponent,

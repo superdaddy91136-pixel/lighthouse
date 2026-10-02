@@ -1,5 +1,7 @@
 import { Component, HostListener } from "@angular/core";
 import { DownloadService } from "./download.service";
+import { Router } from "@angular/router";
+import { MemoryService } from "./memory.service";
 
 @Component({
   selector: "app-root",
@@ -9,7 +11,11 @@ import { DownloadService } from "./download.service";
 export class AppComponent {
   title = "open-tv";
 
-  constructor(private download: DownloadService) {}
+  constructor(
+    private download: DownloadService,
+    public router: Router,
+    public memory: MemoryService
+  ) {}
 
   @HostListener("document:contextmenu", ["$event"])
   onRightClick(event: MouseEvent) {
@@ -26,5 +32,12 @@ export class AppComponent {
 
   showDownloadManager() {
     return this.download.Downloads.size > 0;
+  }
+
+  showNavBar(): boolean {
+    if (this.router.url === "/setup" && !this.memory.AddingAdditionalSource && this.memory.Sources.size === 0) {
+      return false;
+    }
+    return true;
   }
 }

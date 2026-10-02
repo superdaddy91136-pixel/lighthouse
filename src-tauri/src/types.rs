@@ -12,10 +12,12 @@ use tokio_util::sync::CancellationToken;
 pub struct Channel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
+    #[serde(default)]
     pub name: String,
     pub url: Option<String>,
     pub group: Option<String>,
     pub image: Option<String>,
+    #[serde(default)]
     pub media_type: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_id: Option<i64>,
@@ -23,6 +25,7 @@ pub struct Channel {
     pub series_id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_id: Option<i64>,
+    #[serde(default)]
     pub favorite: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_id: Option<u64>,

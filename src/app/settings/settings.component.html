@@ -2,219 +2,399 @@
   <path
     d="M2,12A10,10 0 0,1 12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12M18,11H10L13.5,7.5L12.08,6.08L6.16,12L12.08,17.92L13.5,16.5L10,13H18V11Z" />
 </svg>
-<div class="container px-5">
-  <h2 class="mt-4 mb-4 text-center">Settings</h2>
-  <div class="row align-items-center">
-    <div class="col-4">
-      <label [ngbTooltip]="'Where recorded livestreams will be saved'">Recording path</label>
+<div class="container px-md-5 px-3">
+  <!-- Profile Section Tabs Header -->
+  <div class="profile-header text-center mt-3 mb-4">
+    <h2 class="profile-title mb-3">Profile</h2>
+    <div class="profile-nav-pill mx-auto">
+      <button 
+        type="button" 
+        class="profile-pill-btn" 
+        [class.active]="activeSection === 'favorites'" 
+        (click)="setSection('favorites')">
+        <svg class="pill-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
+        </svg>
+        <span>Favorites</span>
+        <span class="pill-badge" *ngIf="favoriteChannels.length > 0">{{ favoriteChannels.length }}</span>
+      </button>
+      <button 
+        type="button" 
+        class="profile-pill-btn" 
+        [class.active]="activeSection === 'settings'" 
+        (click)="setSection('settings')">
+        <svg class="pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <span>Preferences & Sources</span>
+      </button>
     </div>
-    <div class="col">
-      <div class="d-flex align-items-center">
-        <span class="selectable" *ngIf="!settings.recording_path" id="default-path">~/Home/Videos</span>
-        <span class="selectable" *ngIf="settings.recording_path">{{
-          settings.recording_path
-          }}</span>
-        <button (click)="selectFolder()" class="btn btn-primary btn-sm ms-4 d-inline-flex align-items-center">
-          <span>Change</span>
-          <svg fill="currentColor" class="ms-2 folder" viewBox="0 0 24 24">
-            <path
-              d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" />
-          </svg>
+  </div>
+
+  <!-- SECTION 1: FAVORITES -->
+  <div *ngIf="activeSection === 'favorites'" class="favorites-section">
+    <div class="fav-controls-row mb-4">
+      <div class="fav-search-wrapper">
+        <input 
+          type="text" 
+          [(ngModel)]="favSearchQuery" 
+          (ngModelChange)="filterFavorites()" 
+          placeholder="Filter favorite channels..." 
+          class="form-control fav-search-input" />
+      </div>
+      <div class="fav-filter-pills">
+        <button class="fav-filter-btn" [class.active]="favMediaType === -1" (click)="setFavMediaType(-1)">All</button>
+        <button class="fav-filter-btn" [class.active]="favMediaType === 0" (click)="setFavMediaType(0)">Live TV</button>
+        <button class="fav-filter-btn" [class.active]="favMediaType === 1" (click)="setFavMediaType(1)">Movies</button>
+        <button class="fav-filter-btn" [class.active]="favMediaType === 2" (click)="setFavMediaType(2)">Series</button>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center fav-reload-btn" (click)="loadFavorites()" title="Reload Favorites">
+        <svg class="refresh-sm" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="filteredFavorites.length === 0 && !loadingFavorites" class="empty-fav-card text-center py-5">
+      <svg class="empty-star mb-3" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
+      </svg>
+      <h5 class="text-white mb-2">No Favorite Channels</h5>
+      <p class="text-secondary small">Right-click any channel card in Home, Live TV, Movies, or TV Shows to add it to your Favorites.</p>
+    </div>
+
+    <!-- Favorite Channel Grid -->
+    <div class="row gy-3" *ngIf="filteredFavorites.length > 0">
+      <app-channel-tile 
+        *ngFor="let channel of filteredFavorites; let i = index"
+        class="col-lg-4 col-md-6 col-12" 
+        [id]="i" 
+        [channel]="channel" 
+        [viewMode]="viewModeEnum.Favorites">
+      </app-channel-tile>
+    </div>
+  </div>
+
+  <!-- SECTION 2: PREFERENCES & SOURCES -->
+  <div *ngIf="activeSection === 'settings'" class="settings-section">
+    <div class="row align-items-center">
+      <div class="col-4">
+        <label [ngbTooltip]="'Where recorded livestreams will be saved'">Recording path</label>
+      </div>
+      <div class="col">
+        <div class="d-flex align-items-center">
+          <span class="selectable" *ngIf="!settings.recording_path" id="default-path">~/Home/Videos</span>
+          <span class="selectable" *ngIf="settings.recording_path">{{
+            settings.recording_path
+            }}</span>
+          <button (click)="selectFolder()" class="btn btn-primary btn-sm ms-4 d-inline-flex align-items-center">
+            <span>Change</span>
+            <svg fill="currentColor" class="ms-2 folder" viewBox="0 0 24 24">
+              <path
+                d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span [ngbTooltip]="
+            'Launch parameters applied to all channels. Leave as-is if you don\'t know what this is'
+          ">Global MPV Parameters</span>
+      </div>
+      <div class="col">
+        <textarea #mpvParams id="mpvParams" [(ngModel)]="settings.mpv_params"
+          placeholder="mpv params like: --hwdec auto. Don't touch this unless you know what you're doing!"
+          class="form-control"></textarea>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span>Default view</span>
+      </div>
+      <div class="col">
+        <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_view" class="form-control">
+          <option [ngValue]="viewModeEnum.All">All</option>
+          <option [ngValue]="viewModeEnum.Categories">Categories</option>
+          <option [ngValue]="viewModeEnum.Favorites">Favorites</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span>Default sort</span>
+      </div>
+      <div class="col">
+        <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_sort" class="form-control">
+          <ng-container *ngFor="let sort of sortTypes">
+            <option [ngValue]="sort">{{ _getSortTypeText(sort) }}</option>
+          </ng-container>
+        </select>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span>Volume on start</span>
+      </div>
+      <div class="col d-inline-flex">
+        <input type="range" style="flex-grow: 10; width: auto" step="1" class="form-range" min="0" max="100"
+          [(ngModel)]="settings.volume" (ngModelChange)="updateSettings()" />
+        <span style="flex-grow: 0.5" class="text-end">{{ settings.volume }}</span>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span>Re-stream port</span>
+      </div>
+      <div class="col">
+        <input class="form-control" style="width: 10rem" type="number" [(ngModel)]="settings.restream_port" />
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span>UI Zoom</span>
+      </div>
+      <div class="col">
+        <div class="input-group" style="width: 10rem">
+          <input class="form-control" step="10" min="10" max="1000" type="number" [(ngModel)]="settings.zoom" />
+          <span class="input-group-text">%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span [ngbTooltip]="
+            'Depending on your provider/internet connection, using no caching would give you a lower latency and a more stable experience'
+          ">Use stream caching</span>
+      </div>
+      <div class="col">
+        <div class="form-check form-switch">
+          <input [(ngModel)]="settings.use_stream_caching" (ngModelChange)="updateSettings()" class="form-check-input"
+            type="checkbox" />
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span [ngbTooltip]="
+            'Uses your gpu instead of your cpu to decode livestreams and movies. Concretely, this option adds hwdec=auto to the mpv config'
+          ">Enable hardware acceleration</span>
+      </div>
+      <div class="col">
+        <div class="form-check form-switch">
+          <input [(ngModel)]="settings.enable_hwdec" (ngModelChange)="updateSettings()" class="form-check-input"
+            type="checkbox" />
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span [ngbTooltip]="
+            'Applies modern hardware settings for mpv. Concretely adds --vo=gpu-next --gpu-api=vulkan to the mpv config.'
+          ">Use modern hardware player optimizations (HDR, gpu playback, etc)</span>
+      </div>
+      <div class="col">
+        <div class="form-check form-switch">
+          <input [(ngModel)]="settings.enable_gpu" (ngModelChange)="updateSettings()" class="form-check-input"
+            type="checkbox" />
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span [ngbTooltip]="
+            'Opens the file dialog for all downloads and recordings. Overrides recording path. '
+          ">Always ask where to save downloads</span>
+      </div>
+      <div class="col">
+        <div class="form-check form-switch">
+          <input [(ngModel)]="settings.always_ask_save" (ngModelChange)="this.updateSettings()" class="form-check-input"
+            type="checkbox" />
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span>Refresh all sources on start</span>
+      </div>
+      <div class="col">
+        <div class="form-check form-switch">
+          <input [(ngModel)]="settings.refresh_on_start" (ngModelChange)="updateSettings()" class="form-check-input"
+            type="checkbox" />
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3 align-items-center">
+      <div class="col-4">
+        <span ngbTooltip="Disabling the tray icon also disables EPG notifications">Enable tray icon</span>
+      </div>
+      <div class="col">
+        <div class="form-check form-switch">
+          <input [(ngModel)]="settings.enable_tray_icon" (ngModelChange)="updateSettings()" class="form-check-input"
+            type="checkbox" />
+        </div>
+      </div>
+    </div>
+
+    <!-- TMDB Integration Section -->
+    <div class="tmdb-settings-card mt-4 mb-4 p-4">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="d-flex align-items-center gap-2">
+          <div class="tmdb-pill-badge">TMDB</div>
+          <h3 class="tmdb-section-title mb-0">The Movie Database (TMDB) Integration</h3>
+        </div>
+        <div class="form-check form-switch m-0">
+          <input 
+            type="checkbox" 
+            class="form-check-input" 
+            [(ngModel)]="tmdbEnabled" 
+            (ngModelChange)="onTmdbEnabledChange()"
+            id="tmdbSwitch" />
+        </div>
+      </div>
+      <p class="tmdb-section-subtitle mb-4">
+        Enriches movies and TV shows with high-resolution posters, backdrops, authentic synopses, release years, cast, ratings, and genres.
+      </p>
+
+      <div class="row g-3 align-items-center mb-3">
+        <div class="col-md-4 col-12">
+          <label class="form-label mb-0 text-light fw-medium" [ngbTooltip]="'Log in to themoviedb.org, navigate to Settings > API, and copy the API Read Access Token (v4 auth).'">
+            API Read Access Token
+          </label>
+        </div>
+        <div class="col-md-8 col-12">
+          <div class="input-group">
+            <input 
+              [type]="showTmdbToken ? 'text' : 'password'" 
+              class="form-control tmdb-token-input" 
+              placeholder="eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOi..." 
+              [(ngModel)]="tmdbToken" 
+              (ngModelChange)="onTmdbTokenChange()" />
+            <button 
+              type="button" 
+              class="btn btn-outline-secondary tmdb-input-btn" 
+              (click)="toggleShowTmdbToken()" 
+              [title]="showTmdbToken ? 'Hide Token' : 'Show Token'">
+              <svg *ngIf="!showTmdbToken" class="tmdb-icon-sm" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
+              </svg>
+              <svg *ngIf="showTmdbToken" class="tmdb-icon-sm" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.8,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.74,6.93C10.44,6.67 11.2,6.5 12,7Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions row -->
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <button 
+          type="button" 
+          class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1"
+          [disabled]="tmdbTesting || !tmdbToken" 
+          (click)="testTmdbConnection()">
+          <span *ngIf="tmdbTesting" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          <span>{{ tmdbTesting ? 'Testing...' : 'Test Connection' }}</span>
+        </button>
+        <button 
+          type="button" 
+          class="btn btn-outline-secondary btn-sm"
+          [disabled]="!tmdbToken" 
+          (click)="clearTmdbToken()">
+          Clear Token
+        </button>
+        <button 
+          type="button" 
+          class="btn btn-outline-secondary btn-sm ms-auto"
+          (click)="clearTmdbCache()"
+          [title]="'Clears cached TMDB posters, backdrops, and synopses'">
+          Clear Cache ({{ tmdbCacheStats.enrichedCount }} enriched)
         </button>
       </div>
-    </div>
-  </div>
 
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span [ngbTooltip]="
-          'Launch parameters applied to all channels. Leave as-is if you don\'t know what this is'
-        ">Global MPV Parameters</span>
-    </div>
-    <div class="col">
-      <textarea #mpvParams id="mpvParams" [(ngModel)]="settings.mpv_params"
-        placeholder="mpv params like: --hwdec auto. Don't touch this unless you know what you're doing!"
-        class="form-control"></textarea>
-    </div>
-  </div>
+      <!-- Test Connection Feedback alert -->
+      <div *ngIf="tmdbTestMessage" class="alert py-2 px-3 mb-3 d-flex align-items-center gap-2" 
+        [ngClass]="tmdbTestSuccess ? 'alert-success tmdb-alert-success' : 'alert-danger tmdb-alert-danger'">
+        <svg *ngIf="tmdbTestSuccess" class="tmdb-icon-sm text-success" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z"/>
+        </svg>
+        <svg *ngIf="!tmdbTestSuccess" class="tmdb-icon-sm text-danger" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
+        </svg>
+        <span class="small">{{ tmdbTestMessage }}</span>
+      </div>
 
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span>Default view</span>
-    </div>
-    <div class="col">
-      <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_view" class="form-control">
-        <option [ngValue]="viewModeEnum.All">All</option>
-        <option [ngValue]="viewModeEnum.Categories">Categories</option>
-        <option [ngValue]="viewModeEnum.Favorites">Favorites</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span>Default sort</span>
-    </div>
-    <div class="col">
-      <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_sort" class="form-control">
-        <ng-container *ngFor="let sort of sortTypes">
-          <option [ngValue]="sort">{{ _getSortTypeText(sort) }}</option>
-        </ng-container>
-      </select>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span>Volume on start</span>
-    </div>
-    <div class="col d-inline-flex">
-      <input type="range" style="flex-grow: 10; width: auto" step="1" class="form-range" min="0" max="100"
-        [(ngModel)]="settings.volume" (ngModelChange)="updateSettings()" />
-      <span style="flex-grow: 0.5" class="text-end">{{ settings.volume }}</span>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span>Re-stream port</span>
-    </div>
-    <div class="col">
-      <input class="form-control" style="width: 10rem" type="number" [(ngModel)]="settings.restream_port" />
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span>UI Zoom</span>
-    </div>
-    <div class="col">
-      <div class="input-group" style="width: 10rem">
-        <input class="form-control" step="10" min="10" max="1000" type="number" [(ngModel)]="settings.zoom" />
-        <span class="input-group-text">%</span>
+      <!-- Required TMDB Attribution (Requirement 12) -->
+      <div class="tmdb-attribution mt-3 pt-3 border-top border-secondary border-opacity-25 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <div class="tmdb-logo-box">
+            <span class="tmdb-logo-text">TMDB</span>
+          </div>
+          <span class="tmdb-attribution-text">
+            This product uses the TMDB API but is not endorsed or certified by TMDB.
+          </span>
+        </div>
+        <span class="tmdb-notice-text">
+          Streams and playback are supplied exclusively by your IPTV provider.
+        </span>
       </div>
     </div>
-  </div>
 
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span [ngbTooltip]="
-          'Depending on your provider/internet connection, using no caching would give you a lower latency and a more stable experience'
-        ">Use stream caching</span>
-    </div>
-    <div class="col">
-      <div class="form-check form-switch">
-        <input [(ngModel)]="settings.use_stream_caching" (ngModelChange)="updateSettings()" class="form-check-input"
-          type="checkbox" />
+    <h2 class="mt-4 mb-4 text-center">Sources</h2>
+    <ng-container *ngFor="let source of sources; let i = index">
+      <div [ngClass]="{ 'mt-3': i != 0 }">
+        <app-source-tile [source]="source"
+          [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"></app-source-tile>
       </div>
-    </div>
-  </div>
+    </ng-container>
 
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span [ngbTooltip]="
-          'Uses your gpu instead of your cpu to decode livestreams and movies. Concretely, this option adds hwdec=auto to the mpv config'
-        ">Enable hardware acceleration</span>
+    <div class="mt-4 d-flex flex-wrap gap-3">
+      <button [disabled]="memory.Loading" (click)="addSource()" class="btn btn-primary d-inline-flex align-items-center">
+        <span>Add source </span>
+        <svg class="plus ms-1" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+        </svg>
+      </button>
+      <button [disabled]="memory.Loading" (click)="refreshAll()"
+        class="btn btn-secondary d-inline-flex align-items-center">
+        Refresh all
+        <svg class="refresh ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path fill="currentColor"
+            d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+        </svg>
+      </button>
+      <button [disabled]="memory.Loading" (click)="clearHistory()"
+        class="btn btn-secondary d-inline-flex align-items-center">
+        Clear history
+        <svg class="history ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path fill="currentColor"
+            d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
+        </svg>
+      </button>
+      <button ngbTooltip="Use this if an upgrade didn't fix a bug you're experiencing"
+        class="btn btn-danger d-inline-flex align-items-center" [disabled]="memory.Loading" (click)="nuke()">
+        Delete everything
+        <svg class="nuke ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path fill="currentColor"
+            d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
+        </svg>
+      </button>
     </div>
-    <div class="col">
-      <div class="form-check form-switch">
-        <input [(ngModel)]="settings.enable_hwdec" (ngModelChange)="updateSettings()" class="form-check-input"
-          type="checkbox" />
-      </div>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span [ngbTooltip]="
-          'Applies modern hardware settings for mpv. Concretely adds --vo=gpu-next --gpu-api=vulkan to the mpv config.'
-        ">Use modern hardware player optimizations (HDR, gpu playback, etc)</span>
-    </div>
-    <div class="col">
-      <div class="form-check form-switch">
-        <input [(ngModel)]="settings.enable_gpu" (ngModelChange)="updateSettings()" class="form-check-input"
-          type="checkbox" />
-      </div>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span [ngbTooltip]="
-          'Opens the file dialog for all downloads and recordings. Overrides recording path. '
-        ">Always ask where to save downloads</span>
-    </div>
-    <div class="col">
-      <div class="form-check form-switch">
-        <input [(ngModel)]="settings.always_ask_save" (ngModelChange)="this.updateSettings()" class="form-check-input"
-          type="checkbox" />
-      </div>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span>Refresh all sources on start</span>
-    </div>
-    <div class="col">
-      <div class="form-check form-switch">
-        <input [(ngModel)]="settings.refresh_on_start" (ngModelChange)="updateSettings()" class="form-check-input"
-          type="checkbox" />
-      </div>
-    </div>
-  </div>
-
-  <div class="row mt-3 align-items-center">
-    <div class="col-4">
-      <span ngbTooltip="Disabling the tray icon also disables EPG notifications">Enable tray icon</span>
-    </div>
-    <div class="col">
-      <div class="form-check form-switch">
-        <input [(ngModel)]="settings.enable_tray_icon" (ngModelChange)="updateSettings()" class="form-check-input"
-          type="checkbox" />
-      </div>
-    </div>
-  </div>
-
-  <h2 class="mt-4 mb-4 text-center">Sources</h2>
-  <ng-container *ngFor="let source of sources; let i = index">
-    <div [ngClass]="{ 'mt-3': i != 0 }">
-      <app-source-tile [source]="source"
-        [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"></app-source-tile>
-    </div>
-  </ng-container>
-
-  <div class="mt-4 d-flex flex-wrap gap-3">
-    <button [disabled]="memory.Loading" (click)="addSource()" class="btn btn-primary d-inline-flex align-items-center">
-      <span>Add source </span>
-      <svg class="plus ms-1" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
-      </svg>
-    </button>
-    <button [disabled]="memory.Loading" (click)="refreshAll()"
-      class="btn btn-secondary d-inline-flex align-items-center">
-      Refresh all
-      <svg class="refresh ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path fill="currentColor"
-          d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
-      </svg>
-    </button>
-    <button [disabled]="memory.Loading" (click)="clearHistory()"
-      class="btn btn-secondary d-inline-flex align-items-center">
-      Clear history
-      <svg class="history ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path fill="currentColor"
-          d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
-      </svg>
-    </button>
-    <button ngbTooltip="Use this if an upgrade didn't fix a bug you're experiencing"
-      class="btn btn-danger d-inline-flex align-items-center" [disabled]="memory.Loading" (click)="nuke()">
-      Delete everything
-      <svg class="nuke ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path fill="currentColor"
-          d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
-      </svg>
-    </button>
   </div>
 </div>
 

@@ -1,37 +1,11 @@
-.settings {
-  position: absolute;
-  top: 2%;
-  right: 2%;
-  height: 2.5rem;
-  width: 2.5rem;
-  cursor: pointer;
-  transition: transform 0.3s ease;
-}
-
-.settings:hover {
-  transform: scale(125%) rotate(360deg);
-}
-
 .reserve-settings-space {
-  margin-top: 2rem;
+  margin-top: 1.25rem;
 }
 
 @media screen and (max-width: 767px) {
   .reserve-settings-space {
-    margin-top: 5rem;
+    margin-top: 1.5rem;
   }
-}
-
-.filterBox {
-  border-radius: 10px;
-  padding: 10px;
-  background-color: #343a40;
-  display: block;
-  width: fit-content;
-}
-
-.form-check {
-  margin-bottom: 0 !important;
 }
 
 .clickable {
@@ -39,43 +13,15 @@
 }
 
 .go-back-arrow {
-  height: 2.5rem;
-  width: 2.5rem;
-  transition: transform 0.3s ease;
+  height: 2.2rem;
+  width: 2.2rem;
+  color: rgba(255, 255, 255, 0.7);
+  transition: transform 0.25s ease, color 0.2s ease;
 }
 
 .go-back-arrow:hover {
-  transform: scale(125%);
-}
-
-.keyword-search-icon {
-  height: 1.75rem;
-  width: 1.75rem;
-  position: absolute;
-  right: 3rem;
-  top: 50%;
-  transform: translateY(-50%);
-  cursor: pointer;
-  transition: transform 0.5s ease;
-}
-
-.keyword-search-icon:hover {
-  transform: translateY(-50%) scale(1.1);
-}
-
-.reload-icon {
-  height: 1.75rem;
-  width: 1.75rem;
-  position: absolute;
-  right: 8rem;
-  top: 50%;
-  transform: translateY(-50%);
-  cursor: pointer;
-  transition: transform 0.5s ease;
-}
-
-.reload-icon:hover {
-  transform: translateY(-50%) rotate(360deg) scale(1.1);
+  transform: scale(1.15);
+  color: #38bdf8;
 }
 
 .search-box {
@@ -83,32 +29,112 @@
   transition: all 0.3s ease;
 }
 
+.search-box input.form-control {
+  background: rgba(30, 33, 40, 0.68);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  color: #ffffff;
+  padding: 10px 105px 10px 18px;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition: all 0.25s ease;
+}
+
+.search-box input.form-control:focus {
+  background: rgba(36, 40, 50, 0.88);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 4px 20px rgba(13, 110, 253, 0.22);
+  outline: none;
+}
+
+.keyword-search-icon {
+  height: 1.6rem;
+  width: 1.6rem;
+  position: absolute;
+  right: 3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  transition: transform 0.25s ease, color 0.2s ease;
+}
+
+.keyword-search-icon:hover {
+  transform: translateY(-50%) scale(1.12);
+  color: #38bdf8;
+}
+
+.reload-icon {
+  height: 1.6rem;
+  width: 1.6rem;
+  position: absolute;
+  right: 5.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  transition: transform 0.4s ease, color 0.2s ease;
+}
+
+.reload-icon:hover {
+  transform: translateY(-50%) rotate(360deg) scale(1.12);
+  color: #38bdf8;
+}
+
+.bulk-action-icon {
+  height: 1.6rem;
+  width: 1.6rem;
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  transition: transform 0.25s ease, color 0.2s ease;
+}
+
+.bulk-action-icon:hover {
+  transform: translateY(-50%) scale(1.12);
+  color: #38bdf8;
+}
+
+.bulk-action-icon.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .scroll-to-top {
   position: fixed;
   bottom: 2rem;
   right: 2rem;
-  width: 3rem;
-  height: 3rem;
-  background-color: #0d6efd;
+  width: 2.8rem;
+  height: 2.8rem;
+  background: rgba(13, 110, 253, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
   z-index: 1000;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   transition: transform 0.2s ease, background-color 0.2s;
   animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .scroll-to-top:hover {
   transform: scale(1.1);
-  background-color: #0b5ed7;
+  background: #0b5ed7;
 }
 
 .scroll-to-top svg {
-  width: 2rem;
-  height: 2rem;
+  width: 1.75rem;
+  height: 1.75rem;
   color: white;
 }
 
@@ -116,29 +142,7 @@
   0% {
     transform: scale(0);
   }
-
   100% {
     transform: scale(1);
   }
-}
-
-.bulk-action-icon {
-  height: 1.75rem;
-  width: 1.75rem;
-  position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  cursor: pointer;
-  transition: transform 0.5s ease;
-}
-
-.bulk-action-icon:hover {
-  transform: translateY(-50%) scale(1.1);
-}
-
-.bulk-action-icon.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
 }
