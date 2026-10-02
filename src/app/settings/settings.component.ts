@@ -26,7 +26,6 @@ import { TmdbCacheService } from "../services/tmdb-cache.service";
 export class SettingsComponent {
   subscriptions: Subscription[] = [];
   homeContentPref: string = "all";
-  playerEngine: 'embedded' | 'mpv' = 'embedded';
 
   // TMDB configuration state
   tmdbEnabled: boolean = false;
@@ -99,21 +98,10 @@ export class SettingsComponent {
     this.getSettings();
     this.getSources();
     this.loadHomeContentPref();
-    this.loadPlayerEngine();
     this.loadTmdbSettings();
     this.loadTmdbCacheStats();
     if (this.memory.XtreamSourceIds.size > 0)
       this.getExpiries();
-  }
-
-  loadPlayerEngine() {
-    this.playerEngine = (localStorage.getItem("fred_tv_preferred_player") as 'embedded' | 'mpv') || 'embedded';
-  }
-
-  setPlayerEngine(engine: 'embedded' | 'mpv') {
-    this.playerEngine = engine;
-    localStorage.setItem("fred_tv_preferred_player", engine);
-    this.toastr.success(`Playback engine set to ${engine === 'embedded' ? 'Embedded Player' : 'External MPV'}`);
   }
 
   loadHomeContentPref() {

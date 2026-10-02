@@ -39,7 +39,6 @@ import { TvDetailComponent } from './tv-detail/tv-detail.component';
 import { DragScrollDirective } from './directives/drag-scroll.directive';
 import { ChannelSwitcherComponent } from './channel-switcher/channel-switcher.component';
 import { EpisodeSwitcherComponent } from './episode-switcher/episode-switcher.component';
-import { PlayerComponent } from './player/player.component';
 
 import { TimeAgoPipe } from "./pipes/time-ago.pipe";
 import { TimeUntilPipe } from './pipes/time-until.pipe';
@@ -47,7 +46,6 @@ import { TimeUntilPipe } from './pipes/time-until.pipe';
 @NgModule({
   declarations: [
     AppComponent,
-    PlayerComponent,
     NavBarComponent,
     HomeDiscoveryComponent,
     MovieDetailComponent,

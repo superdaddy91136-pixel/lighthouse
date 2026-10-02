@@ -47,7 +47,6 @@ import { NavTab } from '../models/navTab';
 import { cleanMediaTitle } from '../utils/media-presentation';
 import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.component';
 import { PinService } from '../services/pin.service';
-import { PlaybackService } from '../services/playback.service';
 
 export interface UniversalSearchResults {
   channels: Channel[];
@@ -178,15 +177,46 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       await this.openSeries(channel);
       return;
     }
+    const playChannel: Channel = {
+      ...channel,
+      media_type: channel.media_type,
+      favorite: !!channel.favorite,
+    };
     const isLive = channel.media_type === MediaType.livestream;
     if (isLive) {
-      await this.playbackService.playLiveChannel(channel, this.channels);
-    } else {
-      await this.playbackService.playMovie(channel);
+      this.livePlayingChannel = channel;
+    }
+    try {
+      this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
+      invoke("add_last_watched", { id: channel.id }).catch(console.error);
+
+      // Open channel switcher panel for Live TV so user can browse while watching
+      if (isLive && this.channelSwitcher) {
+        this.channelSwitcher.open(channel);
+      }
+
+      await invoke("play", { channel: playChannel, record: false, recordPath: undefined });
+    } catch (e) {
+      this.error.handleError(e);
+    }
+    if (isLive) {
+      this.livePlayingChannel = undefined;
     }
   }
 
   async onSwitchChannel(channel: Channel): Promise<void> {
+    // Cancel current live stream and start the new one
+    if (this.livePlayingChannel?.id && this.livePlayingChannel.source_id != null) {
+      try {
+        await invoke("cancel_play", {
+          sourceId: this.livePlayingChannel.source_id,
+          channelId: this.livePlayingChannel.id,
+        });
+      } catch (e) {
+        console.warn("Failed to cancel previous stream:", e);
+      }
+    }
+    // Play the new channel (reuses the same playMedia flow)
     this.playMedia(channel);
   }
 
@@ -217,7 +247,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     private modal: NgbModal,
     private tvDetailService: TvDetailService,
     public pinService: PinService,
-    public playbackService: PlaybackService,
   ) {
     this.getSources();
     this.updatePinnedItems();

@@ -38,8 +38,7 @@
               "@angular/material/prebuilt-themes/indigo-pink.css",
               "src/styles.css"
             ],
-            "scripts": [],
-            "allowedCommonJsDependencies": ["shaka-player", "hls.js"]
+            "scripts": []
           },
           "configurations": {
             "production": {
@@ -51,8 +50,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "15kb",
-                  "maximumError": "30kb"
+                  "maximumWarning": "4kb",
+                  "maximumError": "8kb"
                 }
               ],
               "optimization": {
