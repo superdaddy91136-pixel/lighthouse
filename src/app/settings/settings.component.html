@@ -1,354 +1,442 @@
-<svg (click)="goBack()" class="arrow" fill="currentColor" viewBox="0 0 24 24">
-  <path
-    d="M2,12A10,10 0 0,1 12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12M18,11H10L13.5,7.5L12.08,6.08L6.16,12L12.08,17.92L13.5,16.5L10,13H18V11Z" />
-</svg>
-<div class="container px-md-5 px-3">
-  <!-- Settings Header -->
-  <div class="settings-header text-center mt-3 mb-4">
-    <h2 class="settings-title mb-2">Settings</h2>
-    <p class="text-secondary small">Configure playback, TMDB metadata, and media sources</p>
-  </div>
+<div class="settings-page">
+  <!-- Top Navigation & Header -->
+  <header class="settings-nav-header">
+    <button type="button" class="btn-back-glass" (click)="goBack()" title="Back to Home (Esc)">
+      <svg viewBox="0 0 24 24" fill="currentColor" class="nav-icon">
+        <path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z" />
+      </svg>
+      <span>Back</span>
+    </button>
+    <div class="settings-header-text">
+      <h1 class="settings-main-title">Settings</h1>
+      <p class="settings-main-subtitle">Manage interface preferences, playback engine, TMDB enrichment, and IPTV sources</p>
+    </div>
+  </header>
 
-  <div class="settings-section">
-    <div class="row align-items-center">
-      <div class="col-4">
-        <label [ngbTooltip]="'Where recorded livestreams will be saved'">Recording path</label>
-      </div>
-      <div class="col">
-        <div class="d-flex align-items-center">
-          <span class="selectable" *ngIf="!settings.recording_path" id="default-path">~/Home/Videos</span>
-          <span class="selectable" *ngIf="settings.recording_path">{{
-            settings.recording_path
-            }}</span>
-          <button (click)="selectFolder()" class="btn btn-primary btn-sm ms-4 d-inline-flex align-items-center">
-            <span>Change</span>
-            <svg fill="currentColor" class="ms-2 folder" viewBox="0 0 24 24">
-              <path
-                d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" />
-            </svg>
-          </button>
+  <main class="settings-content-wrapper">
+    <!-- SECTION 1: INTERFACE & DISPLAY -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 3H3C1.9 3 1 3.9 1 5V17C1 18.1 1.9 19 3 19H8V21H16V19H21C22.1 19 23 18.1 23 17V5C23 3.9 22.1 3 21 3M21 17H3V5H21V17Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Interface & Display</h2>
+          <p class="card-subtitle">Customize navigation layout, catalog ordering, and interface scaling</p>
         </div>
       </div>
-    </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="'Filter curated rows on the Home screen by language or region'">Home Content Preference</span>
-      </div>
-      <div class="col">
-        <select (ngModelChange)="onHomeContentPrefChange()" [(ngModel)]="homeContentPref" class="form-control" style="max-width: 16rem">
-          <option value="all">All Content</option>
-          <option value="english">English / Hollywood</option>
-          <option value="hindi">Hindi / Indian</option>
-          <option value="korean">Korean</option>
-        </select>
-      </div>
-    </div>
+      <div class="settings-group">
+        <!-- Default View -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="defaultViewSelect">Default View Mode</label>
+            <span class="setting-desc">The primary browsing mode displayed when opening Lighthouse</span>
+          </div>
+          <div class="setting-control-col">
+            <select id="defaultViewSelect" class="form-select-glass" (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_view">
+              <option [ngValue]="viewModeEnum.All">All Content</option>
+              <option [ngValue]="viewModeEnum.Categories">Categories</option>
+              <option [ngValue]="viewModeEnum.Favorites">Favorites</option>
+            </select>
+          </div>
+        </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="
-            'Launch parameters applied to all channels. Leave as-is if you don\'t know what this is'
-          ">Global MPV Parameters</span>
-      </div>
-      <div class="col">
-        <textarea #mpvParams id="mpvParams" [(ngModel)]="settings.mpv_params"
-          placeholder="mpv params like: --hwdec auto. Don't touch this unless you know what you're doing!"
-          class="form-control"></textarea>
-      </div>
-    </div>
+        <!-- Default Sort -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="defaultSortSelect">Default Catalog Sorting</label>
+            <span class="setting-desc">Order channels, movies, and series lists by provider order or alphabetically</span>
+          </div>
+          <div class="setting-control-col">
+            <select id="defaultSortSelect" class="form-select-glass" (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_sort">
+              <ng-container *ngFor="let sort of sortTypes">
+                <option [ngValue]="sort">{{ _getSortTypeText(sort) }}</option>
+              </ng-container>
+            </select>
+          </div>
+        </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span>Default view</span>
-      </div>
-      <div class="col">
-        <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_view" class="form-control">
-          <option [ngValue]="viewModeEnum.All">All</option>
-          <option [ngValue]="viewModeEnum.Categories">Categories</option>
-          <option [ngValue]="viewModeEnum.Favorites">Favorites</option>
-        </select>
-      </div>
-    </div>
+        <!-- UI Zoom -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="zoomInput">Interface Scaling (Zoom)</label>
+            <span class="setting-desc">Scale the user interface for comfortable viewing on high-DPI screens or TVs</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="input-glass-group" style="max-width: 9rem;">
+              <input id="zoomInput" class="form-control-glass text-center" step="10" min="10" max="1000" type="number" [(ngModel)]="settings.zoom" />
+              <span class="input-glass-suffix">%</span>
+            </div>
+          </div>
+        </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span>Default sort</span>
-      </div>
-      <div class="col">
-        <select (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_sort" class="form-control">
-          <ng-container *ngFor="let sort of sortTypes">
-            <option [ngValue]="sort">{{ _getSortTypeText(sort) }}</option>
-          </ng-container>
-        </select>
-      </div>
-    </div>
-
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span>Volume on start</span>
-      </div>
-      <div class="col d-inline-flex">
-        <input type="range" style="flex-grow: 10; width: auto" step="1" class="form-range" min="0" max="100"
-          [(ngModel)]="settings.volume" (ngModelChange)="updateSettings()" />
-        <span style="flex-grow: 0.5" class="text-end">{{ settings.volume }}</span>
-      </div>
-    </div>
-
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span>Re-stream port</span>
-      </div>
-      <div class="col">
-        <input class="form-control" style="width: 10rem" type="number" [(ngModel)]="settings.restream_port" />
-      </div>
-    </div>
-
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span>UI Zoom</span>
-      </div>
-      <div class="col">
-        <div class="input-group" style="width: 10rem">
-          <input class="form-control" step="10" min="10" max="1000" type="number" [(ngModel)]="settings.zoom" />
-          <span class="input-group-text">%</span>
+        <!-- Home Content Preference -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="homePrefSelect">Home Content Preference</label>
+            <span class="setting-desc">Filter curated rows and featured recommendations by language or region</span>
+          </div>
+          <div class="setting-control-col">
+            <select id="homePrefSelect" class="form-select-glass" (ngModelChange)="onHomeContentPrefChange()" [(ngModel)]="homeContentPref">
+              <option value="all">All Content</option>
+              <option value="english">English / Hollywood</option>
+              <option value="hindi">Hindi / Indian</option>
+              <option value="korean">Korean</option>
+            </select>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="
-            'Depending on your provider/internet connection, using no caching would give you a lower latency and a more stable experience'
-          ">Use stream caching</span>
-      </div>
-      <div class="col">
-        <div class="form-check form-switch">
-          <input [(ngModel)]="settings.use_stream_caching" (ngModelChange)="updateSettings()" class="form-check-input"
-            type="checkbox" />
+    <!-- SECTION 2: PLAYBACK & STORAGE -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 12 2 12 2M10 16.5V7.5L16 12L10 16.5Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Playback & Storage</h2>
+          <p class="card-subtitle">Control startup audio levels, buffering cache, and local recording destinations</p>
         </div>
       </div>
-    </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="
-            'Uses your gpu instead of your cpu to decode livestreams and movies. Concretely, this option adds hwdec=auto to the mpv config'
-          ">Enable hardware acceleration</span>
-      </div>
-      <div class="col">
-        <div class="form-check form-switch">
-          <input [(ngModel)]="settings.enable_hwdec" (ngModelChange)="updateSettings()" class="form-check-input"
-            type="checkbox" />
+      <div class="settings-group">
+        <!-- Volume on Start -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="startVolumeSlider">Startup Volume Level</label>
+            <span class="setting-desc">Initial playback volume applied when launching video streams</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="volume-slider-wrapper">
+              <input id="startVolumeSlider" type="range" class="form-range-glass" min="0" max="100" step="1"
+                [(ngModel)]="settings.volume" (ngModelChange)="updateSettings()" />
+              <span class="value-badge">{{ settings.volume }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stream Caching -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="streamCacheSwitch">Stream Caching Buffer</label>
+            <span class="setting-desc">Buffer stream data ahead of playback. Disabling cache reduces latency on live broadcasts</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="form-check form-switch m-0">
+              <input id="streamCacheSwitch" class="form-check-input" type="checkbox"
+                [(ngModel)]="settings.use_stream_caching" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Recording Path -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label">Recording Destination</label>
+            <span class="setting-desc">Folder where recorded live TV broadcasts and downloaded media are stored</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="folder-select-group">
+              <span class="path-display-badge" [title]="settings.recording_path || '~/Home/Videos'">
+                {{ settings.recording_path || '~/Home/Videos' }}
+              </span>
+              <button type="button" (click)="selectFolder()" class="btn-action-glass" title="Change recording destination">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+                  <path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" />
+                </svg>
+                <span>Change Folder</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Always Ask Save Location -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="alwaysAskSaveSwitch">Always Prompt for Save Location</label>
+            <span class="setting-desc">Open a file picker dialog before starting any recording or download</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="form-check form-switch m-0">
+              <input id="alwaysAskSaveSwitch" class="form-check-input" type="checkbox"
+                [(ngModel)]="settings.always_ask_save" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="
-            'Applies modern hardware settings for mpv. Concretely adds --vo=gpu-next --gpu-api=vulkan to the mpv config.'
-          ">Use modern hardware player optimizations (HDR, gpu playback, etc)</span>
-      </div>
-      <div class="col">
-        <div class="form-check form-switch">
-          <input [(ngModel)]="settings.enable_gpu" (ngModelChange)="updateSettings()" class="form-check-input"
-            type="checkbox" />
+    <!-- SECTION 3: HARDWARE & PERFORMANCE -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 2H18C19.1 2 20 2.9 20 4V20C20 21.1 19.1 22 18 22H6C4.9 22 4 21.1 4 20V4C4 2.9 4.9 2 6 2M9 4V6H15V4H9M9 8V10H15V8H9M9 12V14H15V12H9M9 16V18H15V16H9Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Hardware & Performance</h2>
+          <p class="card-subtitle">Configure GPU video decoding acceleration and high-performance renderer pipelines</p>
         </div>
       </div>
-    </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span [ngbTooltip]="
-            'Opens the file dialog for all downloads and recordings. Overrides recording path. '
-          ">Always ask where to save downloads</span>
-      </div>
-      <div class="col">
-        <div class="form-check form-switch">
-          <input [(ngModel)]="settings.always_ask_save" (ngModelChange)="this.updateSettings()" class="form-check-input"
-            type="checkbox" />
+      <div class="settings-group">
+        <!-- Hardware Decoding -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="hwdecSwitch">Hardware Video Decoding</label>
+            <span class="setting-desc">Offload video decoding to your graphics card (adds <code>--hwdec=auto</code> to MPV) to minimize CPU usage</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="form-check form-switch m-0">
+              <input id="hwdecSwitch" class="form-check-input" type="checkbox"
+                [(ngModel)]="settings.enable_hwdec" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Modern GPU Optimizations -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="gpuNextSwitch">Modern GPU Render Optimizations</label>
+            <span class="setting-desc">Apply high-quality shader scaling and HDR tone-mapping (adds <code>--vo=gpu-next</code> to MPV)</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="form-check form-switch m-0">
+              <input id="gpuNextSwitch" class="form-check-input" type="checkbox"
+                [(ngModel)]="settings.enable_gpu" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span>Refresh all sources on start</span>
-      </div>
-      <div class="col">
-        <div class="form-check form-switch">
-          <input [(ngModel)]="settings.refresh_on_start" (ngModelChange)="updateSettings()" class="form-check-input"
-            type="checkbox" />
+    <!-- SECTION 4: APPLICATION & SYSTEM -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Application & System</h2>
+          <p class="card-subtitle">Manage system tray notifications, automated playlist refreshing, and local streaming</p>
         </div>
       </div>
-    </div>
 
-    <div class="row mt-3 align-items-center">
-      <div class="col-4">
-        <span ngbTooltip="Disabling the tray icon also disables EPG notifications">Enable tray icon</span>
-      </div>
-      <div class="col">
-        <div class="form-check form-switch">
-          <input [(ngModel)]="settings.enable_tray_icon" (ngModelChange)="updateSettings()" class="form-check-input"
-            type="checkbox" />
+      <div class="settings-group">
+        <!-- Enable Tray Icon -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="trayIconSwitch">System Tray Integration</label>
+            <span class="setting-desc">Keep Lighthouse resident in the taskbar notification tray. Required for EPG program reminders</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="form-check form-switch m-0">
+              <input id="trayIconSwitch" class="form-check-input" type="checkbox"
+                [(ngModel)]="settings.enable_tray_icon" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Refresh on Start -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="refreshStartSwitch">Refresh Sources on Launch</label>
+            <span class="setting-desc">Automatically check provider servers and update channel playlists upon startup</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="form-check form-switch m-0">
+              <input id="refreshStartSwitch" class="form-check-input" type="checkbox"
+                [(ngModel)]="settings.refresh_on_start" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Re-stream Port -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="restreamPortInput">Local Re-stream Port</label>
+            <span class="setting-desc">Local TCP port utilized when sharing or restreaming broadcast channels to other devices</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="input-glass-group" style="max-width: 9rem;">
+              <input id="restreamPortInput" class="form-control-glass text-center" type="number"
+                [(ngModel)]="settings.restream_port" (ngModelChange)="updateSettings()" />
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- TMDB Integration Section -->
-    <div class="tmdb-settings-card mt-4 mb-4 p-4">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <div class="d-flex align-items-center gap-2">
+    <!-- SECTION 5: TMDB METADATA INTEGRATION -->
+    <section class="settings-card tmdb-special-card">
+      <div class="card-header-row justify-content-between">
+        <div class="d-flex align-items-center gap-3">
           <div class="tmdb-pill-badge">TMDB</div>
-          <h3 class="tmdb-section-title mb-0">The Movie Database (TMDB) Integration</h3>
+          <div class="header-info">
+            <h2 class="card-title">The Movie Database (TMDB) Integration</h2>
+            <p class="card-subtitle">Enrich movies and TV shows with official posters, backdrops, authentic synopses, cast, and ratings</p>
+          </div>
         </div>
         <div class="form-check form-switch m-0">
-          <input 
-            type="checkbox" 
-            class="form-check-input" 
-            [(ngModel)]="tmdbEnabled" 
-            (ngModelChange)="onTmdbEnabledChange()"
-            id="tmdbSwitch" />
+          <input id="tmdbSwitch" class="form-check-input" type="checkbox"
+            [(ngModel)]="tmdbEnabled" (ngModelChange)="onTmdbEnabledChange()" />
         </div>
       </div>
-      <p class="tmdb-section-subtitle mb-4">
-        Enriches movies and TV shows with high-resolution posters, backdrops, authentic synopses, release years, cast, ratings, and genres.
-      </p>
 
-      <div class="row g-3 align-items-center mb-3">
-        <div class="col-md-4 col-12">
-          <label class="form-label mb-0 text-light fw-medium" [ngbTooltip]="'Log in to themoviedb.org, navigate to Settings > API, and copy the API Read Access Token (v4 auth).'">
-            API Read Access Token
-          </label>
-        </div>
-        <div class="col-md-8 col-12">
-          <div class="input-group">
-            <input 
-              [type]="showTmdbToken ? 'text' : 'password'" 
-              class="form-control tmdb-token-input" 
-              placeholder="eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOi..." 
-              [(ngModel)]="tmdbToken" 
-              (ngModelChange)="onTmdbTokenChange()" />
-            <button 
-              type="button" 
-              class="btn btn-outline-secondary tmdb-input-btn" 
-              (click)="toggleShowTmdbToken()" 
-              [title]="showTmdbToken ? 'Hide Token' : 'Show Token'">
-              <svg *ngIf="!showTmdbToken" class="tmdb-icon-sm" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
-              </svg>
-              <svg *ngIf="showTmdbToken" class="tmdb-icon-sm" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.8,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.74,6.93C10.44,6.67 11.2,6.5 12,7Z" />
-              </svg>
-            </button>
+      <div class="settings-group">
+        <!-- API Read Access Token -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="tmdbTokenInput">API Read Access Token (v4 auth)</label>
+            <span class="setting-desc">Obtain your free API Read Access Token from your TMDB Account &gt; Settings &gt; API</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="token-input-wrapper">
+              <input id="tmdbTokenInput" [type]="showTmdbToken ? 'text' : 'password'"
+                class="form-control-glass token-field" placeholder="eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOi..."
+                [(ngModel)]="tmdbToken" (ngModelChange)="onTmdbTokenChange()" />
+              <button type="button" class="btn-token-toggle" (click)="toggleShowTmdbToken()"
+                [title]="showTmdbToken ? 'Hide Token' : 'Show Token'">
+                <svg *ngIf="!showTmdbToken" class="action-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
+                </svg>
+                <svg *ngIf="showTmdbToken" class="action-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.8,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.74,6.93C10.44,6.67 11.2,6.5 12,7Z" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Actions row -->
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <button 
-          type="button" 
-          class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1"
-          [disabled]="tmdbTesting || !tmdbToken" 
-          (click)="testTmdbConnection()">
-          <span *ngIf="tmdbTesting" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-          <span>{{ tmdbTesting ? 'Testing...' : 'Test Connection' }}</span>
-        </button>
-        <button 
-          type="button" 
-          class="btn btn-outline-secondary btn-sm"
-          [disabled]="!tmdbToken" 
-          (click)="clearTmdbToken()">
-          Clear Token
-        </button>
-        <button 
-          type="button" 
-          class="btn btn-outline-secondary btn-sm ms-auto"
-          (click)="clearTmdbCache()"
-          [title]="'Clears cached TMDB posters, backdrops, and synopses'">
-          Clear Cache ({{ tmdbCacheStats.enrichedCount }} enriched)
-        </button>
-      </div>
-
-      <!-- Test Connection Feedback alert -->
-      <div *ngIf="tmdbTestMessage" class="alert py-2 px-3 mb-3 d-flex align-items-center gap-2" 
-        [ngClass]="tmdbTestSuccess ? 'alert-success tmdb-alert-success' : 'alert-danger tmdb-alert-danger'">
-        <svg *ngIf="tmdbTestSuccess" class="tmdb-icon-sm text-success" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z"/>
-        </svg>
-        <svg *ngIf="!tmdbTestSuccess" class="tmdb-icon-sm text-danger" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
-        </svg>
-        <span class="small">{{ tmdbTestMessage }}</span>
-      </div>
-
-      <!-- Required TMDB Attribution (Requirement 12) -->
-      <div class="tmdb-attribution mt-3 pt-3 border-top border-secondary border-opacity-25 d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-2">
-          <div class="tmdb-logo-box">
-            <span class="tmdb-logo-text">TMDB</span>
-          </div>
-          <span class="tmdb-attribution-text">
-            This product uses the TMDB API but is not endorsed or certified by TMDB.
-          </span>
+        <!-- TMDB Actions -->
+        <div class="tmdb-button-toolbar">
+          <button type="button" class="btn-primary-glass" [disabled]="tmdbTesting || !tmdbToken" (click)="testTmdbConnection()">
+            <span *ngIf="tmdbTesting" class="spinner-border spinner-border-sm me-2" role="status"></span>
+            <span>{{ tmdbTesting ? 'Verifying...' : 'Test Connection' }}</span>
+          </button>
+          <button type="button" class="btn-secondary-glass" [disabled]="!tmdbToken" (click)="clearTmdbToken()">
+            <span>Clear Token</span>
+          </button>
+          <button type="button" class="btn-secondary-glass ms-auto" (click)="clearTmdbCache()"
+            title="Clears local cache of TMDB posters, backdrops, and synopses">
+            <span>Clear Cache ({{ tmdbCacheStats.enrichedCount }} enriched)</span>
+          </button>
         </div>
-        <span class="tmdb-notice-text">
-          Streams and playback are supplied exclusively by your IPTV provider.
-        </span>
+
+        <!-- TMDB Connection Feedback Alert -->
+        <div *ngIf="tmdbTestMessage" class="status-alert-box"
+          [ngClass]="tmdbTestSuccess ? 'status-alert-success' : 'status-alert-danger'">
+          <svg *ngIf="tmdbTestSuccess" class="alert-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z"/>
+          </svg>
+          <svg *ngIf="!tmdbTestSuccess" class="alert-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
+          </svg>
+          <span class="alert-text">{{ tmdbTestMessage }}</span>
+        </div>
+
+        <!-- TMDB Attribution Footer -->
+        <div class="tmdb-legal-footer">
+          <div class="d-flex align-items-center gap-2">
+            <div class="tmdb-logo-box">
+              <span class="tmdb-logo-text">TMDB</span>
+            </div>
+            <span class="attribution-copy">This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
+          </div>
+          <span class="provider-notice">Streams and playback are supplied exclusively by your IPTV provider.</span>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <h2 class="mt-4 mb-4 text-center">Sources</h2>
-    <ng-container *ngFor="let source of sources; let i = index">
-      <div [ngClass]="{ 'mt-3': i != 0 }">
-        <app-source-tile [source]="source"
-          [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"></app-source-tile>
+    <!-- SECTION 6: ADVANCED MPV OPTIONS -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5A2,2 0 0,1 4,3H20M13,17V15H18V17H13M9.58,13L5.5,8.91L6.91,7.5L12.41,13L6.91,18.5L5.5,17.09L9.58,13Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Advanced MPV Configuration</h2>
+          <p class="card-subtitle">Pass custom command-line arguments and flags directly to the MPV playback process</p>
+        </div>
       </div>
-    </ng-container>
 
-    <div class="mt-4 d-flex flex-wrap gap-3">
-      <button [disabled]="memory.Loading" (click)="addSource()" class="btn btn-primary d-inline-flex align-items-center">
-        <span>Add source </span>
-        <svg class="plus ms-1" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
-        </svg>
-      </button>
-      <button [disabled]="memory.Loading" (click)="refreshAll()"
-        class="btn btn-secondary d-inline-flex align-items-center">
-        Refresh all
-        <svg class="refresh ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
-        </svg>
-      </button>
-      <button [disabled]="memory.Loading" (click)="clearHistory()"
-        class="btn btn-secondary d-inline-flex align-items-center">
-        Clear history
-        <svg class="history ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
-        </svg>
-      </button>
-      <button ngbTooltip="Use this if an upgrade didn't fix a bug you're experiencing"
-        class="btn btn-danger d-inline-flex align-items-center" [disabled]="memory.Loading" (click)="nuke()">
-        Delete everything
-        <svg class="nuke ms-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
-        </svg>
-      </button>
-    </div>
-  </div>
-</div>
+      <div class="settings-group">
+        <div class="setting-column">
+          <label class="setting-label mb-1" for="mpvParams">Global MPV Parameters</label>
+          <p class="setting-desc mb-3">Custom launch options applied to all playback sessions. Leave blank unless you need specialized decoder options</p>
+          <textarea #mpvParams id="mpvParams" [(ngModel)]="settings.mpv_params"
+            placeholder="e.g. --hwdec=auto --demuxer-max-bytes=150M"
+            class="form-control-glass textarea-monospace"></textarea>
+        </div>
+      </div>
+    </section>
 
-<div class="author mt-5 mb-4">
-  <p>
-    <a href="https://github.com/Fredolx/open-tv/discussions/69" target="_blank">
-      Made by Frédéric Lachapelle with ❤️
-      <br />Please consider donating to support future updates <br />Fred TV is currently not
-      sustainable and needs your support
-    </a>
-  </p>
+    <!-- SECTION 7: MEDIA SOURCES & DATA -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Media Sources &amp; Management</h2>
+          <p class="card-subtitle">Connected IPTV providers, playlist synchronization, viewing history, and local database</p>
+        </div>
+      </div>
+
+      <!-- Sources List -->
+      <div class="sources-list-wrap">
+        <ng-container *ngFor="let source of sources; let i = index">
+          <div class="source-tile-item" [class.mt-3]="i !== 0">
+            <app-source-tile [source]="source"
+              [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"></app-source-tile>
+          </div>
+        </ng-container>
+      </div>
+
+      <!-- Action Buttons Grid -->
+      <div class="sources-actions-toolbar">
+        <button type="button" [disabled]="memory.Loading" (click)="addSource()" class="btn-primary-glass">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+            <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+          </svg>
+          <span>Add Source</span>
+        </button>
+
+        <button type="button" [disabled]="memory.Loading" (click)="refreshAll()" class="btn-secondary-glass">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm icon-spin-hover">
+            <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+          </svg>
+          <span>Refresh All Sources</span>
+        </button>
+
+        <button type="button" [disabled]="memory.Loading" (click)="clearHistory()" class="btn-secondary-glass">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+            <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
+          </svg>
+          <span>Clear Watch History</span>
+        </button>
+
+        <button type="button" [disabled]="memory.Loading" (click)="nuke()" class="btn-danger-glass ms-auto"
+          title="Reset database and remove all playlists and settings">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+            <path d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
+          </svg>
+          <span>Reset All Data</span>
+        </button>
+      </div>
+    </section>
+  </main>
 </div>

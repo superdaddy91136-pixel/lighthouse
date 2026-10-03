@@ -1,196 +1,22 @@
-.arrow {
-  position: absolute;
-  top: 2%;
-  left: 2%;
-  width: 2.5rem;
-  height: 2.5rem;
-  cursor: pointer;
-  transition: transform 0.3s ease;
+/* FRED TV SETTINGS COMPONENT SCOPED STYLES */
+:host {
+  display: block;
+  width: 100%;
+  min-height: 100vh;
+  background-color: #0b0d13;
+  color: #ffffff;
 }
 
-.arrow:hover {
-  transform: scale(1.2);
+.settings-page {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  padding: 2.5rem 2rem 5rem 6.5rem;
+  box-sizing: border-box;
 }
 
-.author {
-  text-align: center;
-  font-size: 1rem;
+@media (max-width: 768px) {
+  .settings-page {
+    padding: 1.5rem 1rem 4rem 1rem;
+  }
 }
-
-a {
-  text-decoration: none;
-}
-
-.btn.disabled {
-  pointer-events: auto !important;
-}
-
-button .refresh, button .plus, button .nuke, button .history {
-  width: 1.4rem;
-  height: 1.4rem;
-  transition: transform 0.3s ease;
-}
-
-button:hover .refresh {
-  transform: rotate(360deg);
-}
-
-button:hover .plus, button:hover .nuke, button:hover .history {
-  transform: scale(1.2);
-}
-
-.folder {
-  height: 1rem;
-  width: 1rem;
-}
-
-.settings-title {
-  font-size: 1.4rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: #fff;
-}
-
-/* Profile liquid-glass tabs */
-.profile-title {
-  font-size: 1.4rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: #fff;
-}
-
-.profile-nav-pill {
-  display: inline-flex;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
-  padding: 4px;
-  gap: 4px;
-}
-
-.profile-pill-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 18px;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 0.88rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.profile-pill-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.profile-pill-btn.active {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-}
-
-.pill-icon {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-
-.pill-badge {
-  background: rgba(255, 255, 255, 0.18);
-  padding: 1px 7px;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-/* Favorites section controls */
-.fav-controls-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.fav-search-wrapper {
-  flex: 1 1 240px;
-}
-
-.fav-search-input {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  color: #fff;
-  padding: 8px 14px;
-  font-size: 0.88rem;
-}
-
-.fav-search-input:focus {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  box-shadow: none;
-}
-
-.fav-filter-pills {
-  display: flex;
-  gap: 6px;
-}
-
-.fav-filter-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.65);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 0.82rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.fav-filter-btn:hover, .fav-filter-btn.active {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.fav-reload-btn {
-  border-radius: 8px;
-  padding: 6px 10px;
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.fav-reload-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-.refresh-sm {
-  width: 1rem;
-  height: 1rem;
-}
-
-/* Empty favorites state */
-.empty-fav-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(255, 255, 255, 0.09);
-  border-radius: 16px;
-  padding: 3rem 1.5rem;
-}
-
-.empty-star {
-  width: 3rem;
-  height: 3rem;
-  color: rgba(255, 255, 255, 0.15);
-}
-
-

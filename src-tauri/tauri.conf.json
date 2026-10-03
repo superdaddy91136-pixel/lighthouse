@@ -1,5 +1,5 @@
 {
-  "productName": "Fred TV",
+  "productName": "Lighthouse",
   "version": "1.9.1",
   "identifier": "dev.fredol.open-tv",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Fred TV (v1.9.1)",
+        "title": "Lighthouse (v1.9.1)",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -31,7 +31,7 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/Lighthouse-taskbar-clean.ico"
     ],
     "windows": {
       "wix": {
