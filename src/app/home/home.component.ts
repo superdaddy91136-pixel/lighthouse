@@ -33,11 +33,7 @@ import { ErrorService } from "../error.service";
 import { Settings } from "../models/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { SortType } from "../models/sortType";
-import { getVersion } from "@tauri-apps/api/app";
 import { TvDetailService } from "../services/tv-detail.service";
-import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
-import { WhatsNewModalComponent } from "../whats-new-modal/whats-new-modal.component";
-import { LAST_SEEN_VERSION } from "../models/localStorage";
 import { isInputFocused } from "../utils";
 import { Node } from "../models/node";
 import { NodeType, fromMediaType } from "../models/nodeType";
@@ -121,8 +117,17 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     tvShows: [],
     categories: [],
   };
+  rawSearchResults: UniversalSearchResults = {
+    channels: [],
+    movies: [],
+    tvShows: [],
+    categories: [],
+  };
   searchKeyword = "";
   isSearchExpanded = false;
+  searchTypeFilter: 'all' | 'movies' | 'tv' | 'live' = 'all';
+  searchSortBy: 'provider' | 'alphabetical' = 'provider';
+  searchSortOrder: 'asc' | 'desc' = 'asc';
 
   get isSearching(): boolean {
     return !!(this.filters?.query && this.filters.query.trim().length > 0);
@@ -140,11 +145,94 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
   get totalSearchResultsCount(): number {
     return (
+      this.rawSearchResults.channels.length +
+      this.rawSearchResults.movies.length +
+      this.rawSearchResults.tvShows.length +
+      this.rawSearchResults.categories.length
+    );
+  }
+
+  get visibleSearchResultsCount(): number {
+    return (
       this.searchResults.channels.length +
       this.searchResults.movies.length +
       this.searchResults.tvShows.length +
       this.searchResults.categories.length
     );
+  }
+
+  setSearchTypeFilter(filter: 'all' | 'movies' | 'tv' | 'live'): void {
+    this.searchTypeFilter = filter;
+    this.applySearchSortAndFilter();
+  }
+
+  setSearchSortBy(sortBy: 'provider' | 'alphabetical'): void {
+    this.searchSortBy = sortBy;
+    this.applySearchSortAndFilter();
+  }
+
+  setSearchSortOrder(order: 'asc' | 'desc'): void {
+    this.searchSortOrder = order;
+    this.applySearchSortAndFilter();
+  }
+
+  private sortList(list: Channel[]): Channel[] {
+    const copy = [...list];
+    if (this.searchSortBy === 'provider') {
+      if (this.searchSortOrder === 'desc') {
+        copy.reverse();
+      }
+      return copy;
+    } else {
+      copy.sort((a, b) => {
+        const nameA = cleanMediaTitle(a.name || '').toLowerCase();
+        const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+        const cmp = nameA.localeCompare(nameB, undefined, { numeric: true });
+        return this.searchSortOrder === 'asc' ? cmp : -cmp;
+      });
+      return copy;
+    }
+  }
+
+  get isHomeSearchTab(): boolean {
+    return this.memory.activeNavTab.value === NavTab.Home;
+  }
+
+  get isLiveTvSearch(): boolean {
+    return (
+      this.memory.activeNavTab.value === NavTab.LiveTV ||
+      this.memory.activeNavTab.value === NavTab.Home
+    );
+  }
+
+  applySearchSortAndFilter(): void {
+    const currentTab = this.memory.activeNavTab.value;
+    const isCatalogScoped =
+      currentTab === NavTab.LiveTV ||
+      currentTab === NavTab.Movies ||
+      currentTab === NavTab.TVShows;
+
+    if (isCatalogScoped) {
+      this.searchResults = {
+        channels: this.sortList(this.rawSearchResults.channels),
+        movies: this.sortList(this.rawSearchResults.movies),
+        tvShows: this.sortList(this.rawSearchResults.tvShows),
+        categories: this.sortList(this.rawSearchResults.categories),
+      };
+      return;
+    }
+
+    const showAll = this.searchTypeFilter === 'all';
+    const showLive = showAll || this.searchTypeFilter === 'live';
+    const showMovies = showAll || this.searchTypeFilter === 'movies';
+    const showTv = showAll || this.searchTypeFilter === 'tv';
+
+    this.searchResults = {
+      channels: showLive ? this.sortList(this.rawSearchResults.channels) : [],
+      movies: showMovies ? this.sortList(this.rawSearchResults.movies) : [],
+      tvShows: showTv ? this.sortList(this.rawSearchResults.tvShows) : [],
+      categories: showLive ? this.sortList(this.rawSearchResults.categories) : [],
+    };
   }
 
   get isHomeDiscoveryMode(): boolean {
@@ -253,7 +341,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     public memory: MemoryService,
     public toast: ToastrService,
     private error: ErrorService,
-    private modal: NgbModal,
     private tvDetailService: TvDetailService,
     public pinService: PinService,
   ) {
@@ -284,17 +371,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         this.memory.Sources = new Map(sources.filter((x) => x.enabled).map(s => [s.id!, s]));
         if (sources.length == 0) this.reset();
         else {
-          getVersion().then((version) => {
-            if (localStorage.getItem(LAST_SEEN_VERSION) != version) {
-              this.memory.AppVersion = version;
-              this.memory.ModalRef = this.modal.open(WhatsNewModalComponent, {
-                backdrop: "static",
-                size: "xl",
-                keyboard: false,
-              });
-              this.memory.ModalRef.componentInstance.name = "WhatsNewModal";
-            }
-          });
           sources
             .filter((x) => x.source_type == SourceType.Custom)
             .map((x) => x.id!)
@@ -319,18 +395,21 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             this.chkMovie = false;
             this.chkSerie = false;
             initialViewType = ViewMode.Categories;
+            this.memory.activeNavTab.next(NavTab.LiveTV);
           } else if (currentTab === NavTab.Movies) {
             initialMediaTypes = [MediaType.movie];
             this.chkLiveStream = false;
             this.chkMovie = true;
             this.chkSerie = false;
             initialViewType = ViewMode.Categories;
+            this.memory.activeNavTab.next(NavTab.Movies);
           } else if (currentTab === NavTab.TVShows) {
             initialMediaTypes = [MediaType.serie];
             this.chkLiveStream = false;
             this.chkMovie = false;
             this.chkSerie = true;
             initialViewType = ViewMode.Categories;
+            this.memory.activeNavTab.next(NavTab.TVShows);
           } else {
             this.chkLiveStream = false;
             this.chkMovie = true;
@@ -412,7 +491,16 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         );
         if (dto.type == NodeType.Category) {
           this.filters!.group_id = dto.id;
-          this.filters!.media_types = [MediaType.livestream, MediaType.movie, MediaType.serie];
+          const currentTab = this.memory.activeNavTab.value;
+          if (currentTab === NavTab.LiveTV) {
+            this.filters!.media_types = [MediaType.livestream];
+          } else if (currentTab === NavTab.Movies) {
+            this.filters!.media_types = [MediaType.movie];
+          } else if (currentTab === NavTab.TVShows) {
+            this.filters!.media_types = [MediaType.serie];
+          } else {
+            this.filters!.media_types = [MediaType.livestream, MediaType.movie, MediaType.serie];
+          }
           this.filters!.view_type = ViewMode.Categories;
         } else if (dto.type == NodeType.Series) {
           this.filters!.series_id = dto.id;
@@ -463,6 +551,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.search.nativeElement.value = "";
     this.prevSearchValue = "";
     this.filters!.query = "";
+    this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
     this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
     this.searchKeyword = "";
   }
@@ -493,6 +582,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     const query = rawQuery.trim();
     this.searchKeyword = query;
     if (!query) {
+      this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       return;
     }
@@ -502,6 +592,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       : Array.from(this.memory.Sources.keys());
 
     if (sourceIds.length === 0) {
+      this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       return;
     }
@@ -570,17 +661,44 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       return this.dedupeChannels(list);
     };
 
-    const [channels, movies, tvShows, categories] = await Promise.all([
-      fetchGroup([MediaType.livestream]),
-      fetchGroup([MediaType.movie]),
-      fetchGroup([MediaType.serie]),
-      fetchGroup(
+    const currentTab = this.memory.activeNavTab.value;
+    let fetchChannelsPromise: Promise<Channel[]> = Promise.resolve([]);
+    let fetchMoviesPromise: Promise<Channel[]> = Promise.resolve([]);
+    let fetchTvShowsPromise: Promise<Channel[]> = Promise.resolve([]);
+    let fetchCategoriesPromise: Promise<Channel[]> = Promise.resolve([]);
+
+    if (currentTab === NavTab.LiveTV) {
+      // 1. LIVE TV TAB: Show ONLY Live TV channel results and Live TV folder/category results.
+      fetchChannelsPromise = fetchGroup([MediaType.livestream]);
+      fetchCategoriesPromise = fetchGroup([MediaType.livestream], ViewMode.Categories);
+    } else if (currentTab === NavTab.Movies) {
+      // 2. MOVIES TAB: Show ONLY Movie results and Movie folder/category results.
+      fetchMoviesPromise = fetchGroup([MediaType.movie]);
+      fetchCategoriesPromise = fetchGroup([MediaType.movie], ViewMode.Categories);
+    } else if (currentTab === NavTab.TVShows) {
+      // 3. TV SHOWS TAB: Show ONLY TV Show results and TV Show folder/category results.
+      fetchTvShowsPromise = fetchGroup([MediaType.serie]);
+      fetchCategoriesPromise = fetchGroup([MediaType.serie], ViewMode.Categories);
+    } else {
+      // 4. HOME TAB: Universal search showing Movies, TV Shows, Channels, and all categories.
+      fetchChannelsPromise = fetchGroup([MediaType.livestream]);
+      fetchMoviesPromise = fetchGroup([MediaType.movie]);
+      fetchTvShowsPromise = fetchGroup([MediaType.serie]);
+      fetchCategoriesPromise = fetchGroup(
         [MediaType.livestream, MediaType.movie, MediaType.serie],
         ViewMode.Categories
-      ),
+      );
+    }
+
+    const [channels, movies, tvShows, categories] = await Promise.all([
+      fetchChannelsPromise,
+      fetchMoviesPromise,
+      fetchTvShowsPromise,
+      fetchCategoriesPromise,
     ]);
 
-    this.searchResults = { channels, movies, tvShows, categories };
+    this.rawSearchResults = { channels, movies, tvShows, categories };
+    this.applySearchSortAndFilter();
     this.channelsVisible = true;
   }
 

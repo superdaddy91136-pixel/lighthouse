@@ -21,7 +21,19 @@ export class MemoryService {
   ) {
     invoke("is_container").then((val) => (this.IsContainer = val as boolean));
   }
-  public activeNavTab: BehaviorSubject<NavTab> = new BehaviorSubject<NavTab>(NavTab.Home);
+
+  private getInitialStartupTab(): NavTab {
+    try {
+      const pref = localStorage.getItem("fred_tv_startup_page") || "home";
+      if (pref === "livetv") return NavTab.LiveTV;
+      if (pref === "movies") return NavTab.Movies;
+      if (pref === "tvshows") return NavTab.TVShows;
+    } catch {
+      // ignore
+    }
+    return NavTab.Home;
+  }
+  public activeNavTab: BehaviorSubject<NavTab> = new BehaviorSubject<NavTab>(this.getInitialStartupTab());
   public navTabClick: Subject<NavTab> = new Subject<NavTab>();
   public SetNode: Subject<SetNodeDTO> = new Subject();
   public SetFocus: Subject<number> = new Subject();

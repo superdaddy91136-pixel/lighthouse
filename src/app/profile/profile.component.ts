@@ -8,6 +8,7 @@ import { Filters } from "../models/filters";
 import { MediaType } from "../models/mediaType";
 import { NavTab } from "../models/navTab";
 import { SortType } from "../models/sortType";
+import { SourceType } from "../models/sourceType";
 import { ViewMode } from "../models/viewMode";
 
 @Component({
@@ -16,7 +17,7 @@ import { ViewMode } from "../models/viewMode";
   styleUrl: "./profile.component.css",
 })
 export class ProfileComponent implements OnInit {
-  activeSection: "favorites" | "history" = "favorites";
+  activeSection: "favorites" | "history" | "hidden" = "favorites";
 
   // Favorites state
   favoriteChannels: Channel[] = [];
@@ -32,6 +33,13 @@ export class ProfileComponent implements OnInit {
   historyMediaType: number = -1;
   loadingHistory: boolean = false;
 
+  // Hidden state
+  hiddenChannels: Channel[] = [];
+  filteredHidden: Channel[] = [];
+  hiddenSearchQuery: string = "";
+  hiddenMediaType: number = -1;
+  loadingHidden: boolean = false;
+
   mediaTypeEnum = MediaType;
   viewModeEnum = ViewMode;
 
@@ -45,6 +53,30 @@ export class ProfileComponent implements OnInit {
 
   get favoriteLiveTv(): Channel[] {
     return this.filteredFavorites.filter((c) => c.media_type === MediaType.livestream);
+  }
+
+  get historyMovies(): Channel[] {
+    return this.filteredHistory.filter((c) => c.media_type === MediaType.movie);
+  }
+
+  get historyTvShows(): Channel[] {
+    return this.filteredHistory.filter((c) => c.media_type === MediaType.serie);
+  }
+
+  get historyLiveTv(): Channel[] {
+    return this.filteredHistory.filter((c) => c.media_type === MediaType.livestream);
+  }
+
+  get hiddenMovies(): Channel[] {
+    return this.filteredHidden.filter((c) => c.media_type === MediaType.movie);
+  }
+
+  get hiddenTvShows(): Channel[] {
+    return this.filteredHidden.filter((c) => c.media_type === MediaType.serie);
+  }
+
+  get hiddenLiveTv(): Channel[] {
+    return this.filteredHidden.filter((c) => c.media_type === MediaType.livestream);
   }
 
   constructor(
@@ -82,14 +114,17 @@ export class ProfileComponent implements OnInit {
     this.memory.activeNavTab.next(NavTab.Profile);
     this.loadFavorites();
     this.loadHistory();
+    this.loadHidden();
   }
 
-  setSection(section: "favorites" | "history") {
+  setSection(section: "favorites" | "history" | "hidden") {
     this.activeSection = section;
     if (section === "favorites") {
       this.loadFavorites();
-    } else {
+    } else if (section === "history") {
       this.loadHistory();
+    } else {
+      this.loadHidden();
     }
   }
 
@@ -110,10 +145,22 @@ export class ProfileComponent implements OnInit {
     this.filteredFavorites = list;
   }
 
+  private populateSourceMaps(sources: any[]): void {
+    for (const s of sources) {
+      if (s.id && !this.memory.Sources.has(s.id)) {
+        this.memory.Sources.set(s.id, s);
+      }
+      if (s.source_type === SourceType.Xtream && s.id) {
+        this.memory.XtreamSourceIds.add(s.id);
+      }
+    }
+  }
+
   async loadFavorites() {
     this.loadingFavorites = true;
     try {
       const sources = (await invoke("get_sources")) as any[];
+      this.populateSourceMaps(sources);
       const enabledSources = sources.filter((s) => s.enabled);
       if (enabledSources.length === 0) {
         this.favoriteChannels = [];
@@ -173,6 +220,7 @@ export class ProfileComponent implements OnInit {
     this.loadingHistory = true;
     try {
       const sources = (await invoke("get_sources")) as any[];
+      this.populateSourceMaps(sources);
       const enabledSources = sources.filter((s) => s.enabled);
       if (enabledSources.length === 0) {
         this.historyChannels = [];
@@ -221,6 +269,85 @@ export class ProfileComponent implements OnInit {
         this.filteredHistory = [];
       }
     );
+  }
+
+  setHiddenMediaType(type: number) {
+    this.hiddenMediaType = type;
+    this.filterHidden();
+  }
+
+  filterHidden() {
+    let list = this.hiddenChannels;
+    if (this.hiddenMediaType !== -1) {
+      list = list.filter((c) => c.media_type === this.hiddenMediaType);
+    }
+    if (this.hiddenSearchQuery && this.hiddenSearchQuery.trim() !== "") {
+      const q = this.hiddenSearchQuery.toLowerCase().trim();
+      list = list.filter((c) => (c.name || "").toLowerCase().includes(q));
+    }
+    this.filteredHidden = list;
+  }
+
+  async loadHidden() {
+    this.loadingHidden = true;
+    try {
+      const sources = (await invoke("get_sources")) as any[];
+      this.populateSourceMaps(sources);
+      const enabledSources = sources.filter((s) => s.enabled);
+      if (enabledSources.length === 0) {
+        this.hiddenChannels = [];
+        this.filteredHidden = [];
+        this.loadingHidden = false;
+        return;
+      }
+      const sourceIds = enabledSources.map((s) => s.id);
+      const filters: Filters = {
+        source_ids: sourceIds,
+        view_type: ViewMode.Hidden,
+        media_types: [MediaType.livestream, MediaType.movie, MediaType.serie],
+        page: 1,
+        use_keywords: false,
+        sort: SortType.alphabeticalAscending,
+      };
+      let allHidden: Channel[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && page <= 25) {
+        filters.page = page;
+        const res = (await invoke("search", { filters })) as Channel[];
+        if (res && res.length > 0) {
+          allHidden = allHidden.concat(res);
+          hasMore = res.length === 36;
+          page++;
+        } else {
+          hasMore = false;
+        }
+      }
+      this.hiddenChannels = allHidden;
+      this.filterHidden();
+    } catch (e) {
+      console.error("Failed to load hidden items", e);
+    }
+    this.loadingHidden = false;
+  }
+
+  async unhideChannel(channel: Channel) {
+    const isGroup = channel.media_type === MediaType.group;
+    const command = isGroup ? "hide_group" : "hide_channel";
+    try {
+      await invoke(command, { id: channel.id, hidden: false });
+      channel.hidden = false;
+      this.hiddenChannels = this.hiddenChannels.filter((c) => c.id !== channel.id);
+      this.filterHidden();
+      this.toastr.success(`Unhidden "${channel.name}"`);
+    } catch (e) {
+      this.toastr.error(`Failed to unhide "${channel.name}"`);
+    }
+  }
+
+  onChannelUnhidden(channel: Channel) {
+    this.hiddenChannels = this.hiddenChannels.filter((c) => c.id !== channel.id);
+    this.filterHidden();
   }
 
   goBack() {

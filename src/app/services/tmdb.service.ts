@@ -128,6 +128,18 @@ export class TmdbService {
   }
 
   /**
+   * Fetch Korean TV shows from TMDB discover.
+   */
+  async getKoreanTv(page: number = 1): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/tv', {
+      with_original_language: 'ko',
+      sort_by: 'popularity.desc',
+      page,
+    });
+    return data?.results || [];
+  }
+
+  /**
    * Find media by external ID (e.g. IMDb ID 'tt1234567').
    */
   async findByExternalId(externalId: string, externalSource: 'imdb_id' = 'imdb_id'): Promise<any | null> {
@@ -223,6 +235,9 @@ export class TmdbService {
       director: directorMember?.name,
       imdbId: raw.imdb_id,
       originalLanguage: raw.original_language || undefined,
+      originCountry: Array.isArray(raw.origin_country)
+        ? raw.origin_country
+        : (raw.production_countries || []).map((p: any) => p.iso_3166_1).filter(Boolean),
       trailers: trailers.length > 0 ? trailers : undefined,
       lastUpdated: Date.now(),
     };
@@ -299,6 +314,9 @@ export class TmdbService {
         ? raw.created_by.map((c: any) => c.name).join(', ')
         : undefined,
       originalLanguage: raw.original_language || undefined,
+      originCountry: Array.isArray(raw.origin_country)
+        ? raw.origin_country
+        : (raw.production_countries || []).map((p: any) => p.iso_3166_1).filter(Boolean),
       lastUpdated: Date.now(),
     };
   }

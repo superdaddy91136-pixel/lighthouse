@@ -92,15 +92,111 @@
     <!-- UNIVERSAL SEARCH RESULTS MODE -->
     <ng-container *ngIf="isSearching">
       <div class="search-results-container" [@fade]="channelsVisible ? 'visible' : 'hidden'">
+        <!-- Search Toolbar: Content Type Filter and Sorting Controls -->
+        <div class="search-toolbar mb-4" *ngIf="totalSearchResultsCount > 0">
+          <!-- Content Type Filter -->
+          <div class="search-filter-pills" role="tablist" aria-label="Search content type filter" *ngIf="isHomeSearchTab">
+            <button 
+              type="button" 
+              class="search-filter-pill" 
+              [class.active]="searchTypeFilter === 'all'" 
+              (click)="setSearchTypeFilter('all')">
+              <span>All</span>
+              <span class="search-count-badge">{{ totalSearchResultsCount }}</span>
+            </button>
+            <button 
+              type="button" 
+              class="search-filter-pill" 
+              [class.active]="searchTypeFilter === 'movies'" 
+              (click)="setSearchTypeFilter('movies')">
+              <span>Movies</span>
+              <span class="search-count-badge" *ngIf="rawSearchResults.movies.length > 0">{{ rawSearchResults.movies.length }}</span>
+            </button>
+            <button 
+              type="button" 
+              class="search-filter-pill" 
+              [class.active]="searchTypeFilter === 'tv'" 
+              (click)="setSearchTypeFilter('tv')">
+              <span>TV Shows</span>
+              <span class="search-count-badge" *ngIf="rawSearchResults.tvShows.length > 0">{{ rawSearchResults.tvShows.length }}</span>
+            </button>
+            <button 
+              type="button" 
+              class="search-filter-pill" 
+              [class.active]="searchTypeFilter === 'live'" 
+              (click)="setSearchTypeFilter('live')">
+              <span>Live TV</span>
+              <span class="search-count-badge" *ngIf="(rawSearchResults.channels.length + rawSearchResults.categories.length) > 0">
+                {{ rawSearchResults.channels.length + rawSearchResults.categories.length }}
+              </span>
+            </button>
+          </div>
+
+          <!-- Sorting & Direction Controls -->
+          <div class="search-sort-controls">
+            <!-- Sort Method: Provider order vs Alphabetical -->
+            <div class="search-sort-pill-group" role="group" aria-label="Sort method">
+              <button 
+                type="button" 
+                class="search-sort-pill" 
+                [class.active]="searchSortBy === 'provider'" 
+                (click)="setSearchSortBy('provider')"
+                title="Provider order">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-type-icon">
+                  <path d="M3,4H21V6H3V4M3,11H21V13H3V11M3,18H21V20H3V18Z"/>
+                </svg>
+                <span>Provider order</span>
+              </button>
+              <button 
+                type="button" 
+                class="search-sort-pill" 
+                [class.active]="searchSortBy === 'alphabetical'" 
+                (click)="setSearchSortBy('alphabetical')"
+                title="Alphabetical">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-type-icon">
+                  <path d="M9.25,5L12.5,13.5H10.5L9.85,11.75H7.15L6.5,13.5H4.5L7.75,5H9.25M8.5,8L7.65,10.25H9.35L8.5,8M15,5H19.5V7H16.8L19.5,11.5V13.5H15V11.5H17.7L15,7V5Z"/>
+                </svg>
+                <span>Alphabetical</span>
+              </button>
+            </div>
+
+            <!-- Compact Order Control: Ascending vs Descending -->
+            <div class="search-order-pill-group" role="group" aria-label="Sort order">
+              <button 
+                type="button" 
+                class="search-order-pill" 
+                [class.active]="searchSortOrder === 'asc'" 
+                (click)="setSearchSortOrder('asc')"
+                title="Ascending">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-direction-icon">
+                  <path d="M19,17H22L18,21L14,17H17V3H19M2,17H12V19H2M6,5V7H2V5M2,11H9V13H2V11Z"/>
+                </svg>
+                <span>Ascending</span>
+              </button>
+              <button 
+                type="button" 
+                class="search-order-pill" 
+                [class.active]="searchSortOrder === 'desc'" 
+                (click)="setSearchSortOrder('desc')"
+                title="Descending">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-direction-icon">
+                  <path d="M19,7H22L18,3L14,7H17V21H19M2,17H12V19H2M6,5V7H2V5M2,11H9V13H2V11Z"/>
+                </svg>
+                <span>Descending</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Channels Section -->
         <div class="search-group-section mb-4" *ngIf="searchResults.channels.length > 0">
           <div class="search-group-header mb-3">
             <h4 class="search-group-title mb-0">Channels</h4>
             <span class="search-group-badge">{{ searchResults.channels.length }}</span>
           </div>
-          <div class="row gy-3">
+          <div class="row g-2 g-md-3">
             <app-channel-tile *ngFor="let channel of searchResults.channels; let i = index"
-              class="col-lg-4 col-md-4" [id]="i" [channel]="channel" [viewMode]="viewModeEnum.All"></app-channel-tile>
+              class="col-compact-card" [id]="i" [channel]="channel" [viewMode]="viewModeEnum.All" [isLiveTvCard]="true"></app-channel-tile>
           </div>
         </div>
 
@@ -134,15 +230,21 @@
             <h4 class="search-group-title mb-0">Categories / Folders</h4>
             <span class="search-group-badge">{{ searchResults.categories.length }}</span>
           </div>
-          <div class="row gy-3">
+          <div class="row g-2 g-md-3">
             <app-channel-tile *ngFor="let group of searchResults.categories; let i = index"
-              class="col-lg-4 col-md-4" [id]="i + 3000" [channel]="group" [viewMode]="viewModeEnum.Categories"></app-channel-tile>
+              class="col-compact-card" [id]="i + 3000" [channel]="group" [viewMode]="viewModeEnum.Categories" [isLiveTvCard]="isLiveTvSearch"></app-channel-tile>
           </div>
         </div>
 
         <!-- Empty state when no matches in any group -->
-        <div *ngIf="!loading && totalSearchResultsCount === 0" class="text-center py-5 text-muted">
+        <div *ngIf="!loading && visibleSearchResultsCount === 0" class="text-center py-5 text-muted">
           <p class="fs-5">No items found for "{{ searchKeyword }}"</p>
+          <button 
+            *ngIf="isHomeSearchTab && totalSearchResultsCount > 0 && searchTypeFilter !== 'all'" 
+            (click)="setSearchTypeFilter('all')" 
+            class="btn btn-sm btn-outline-light mt-2">
+            Show all results ({{ totalSearchResultsCount }})
+          </button>
         </div>
       </div>
     </ng-container>

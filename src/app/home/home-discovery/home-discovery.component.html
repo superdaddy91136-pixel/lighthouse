@@ -124,35 +124,27 @@
     <div class="discovery-rows-container">
       <section *ngFor="let row of discoveryRows" class="discovery-row mb-5">
         <!-- Row Header -->
-        <div class="row-header d-flex justify-content-between align-items-center mb-3">
+        <div class="row-header d-flex align-items-center mb-3">
           <div class="d-flex align-items-center gap-2">
             <h3 class="row-title mb-0">{{ row.title }}</h3>
             <span *ngIf="row.badge" class="row-badge">{{ row.badge }}</span>
           </div>
-
-          <!-- Carousel Controls -->
-          <div class="carousel-nav-buttons d-flex gap-2">
-            <button class="carousel-arrow-btn" (click)="scrollRow(row.id, 'left')" title="Scroll left">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" />
-              </svg>
-            </button>
-            <button class="carousel-arrow-btn" (click)="scrollRow(row.id, 'right')" title="Scroll right">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" />
-              </svg>
-            </button>
-          </div>
         </div>
 
-        <!-- Horizontal Scrollable Track -->
-        <div [id]="row.id" class="row-track" appDragScroll>
+        <!-- Horizontal Scrollable Track Wrapper -->
+        <div class="row-track-wrapper">
+          <div 
+            [id]="row.id" 
+            class="row-track" 
+            appDragScroll
+            (scroll)="onRowScroll(row.id)">
           <div 
             *ngFor="let item of row.items" 
             class="media-card" 
             [class.cw-card]="row.id === 'row-continue-watching'"
             (click)="handleCardClick(item)" 
-            [title]="item.name || ''">
+            (mouseenter)="onCardMouseEnter($event)"
+            (mouseleave)="onCardMouseLeave($event)">
             
             <!-- Poster Artwork Container -->
             <div class="poster-container" [class.cw-poster-container]="row.id === 'row-continue-watching'">
@@ -173,6 +165,20 @@
                 </svg>
                 <span class="fallback-title">{{ getCleanTitle(item) }}</span>
               </div>
+
+              <!-- Three-dot menu button for Continue Watching -->
+              <button 
+                *ngIf="row.id === 'row-continue-watching'" 
+                type="button" 
+                class="card-cw-menu-btn" 
+                [matMenuTriggerFor]="cwMenu" 
+                [matMenuTriggerData]="{ channel: item }" 
+                (click)="$event.stopPropagation()" 
+                title="More options">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="cw-dots-icon">
+                  <path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" />
+                </svg>
+              </button>
 
               <!-- Favorite Toggle -->
               <button 
@@ -195,44 +201,35 @@
                 </div>
               </div>
 
+              <!-- Title Overlay (Revealed on Hover) -->
+              <div class="card-title-overlay">
+                <div class="overlay-title-wrap">
+                  <span class="overlay-title-text">{{ getCleanTitle(item) }}</span>
+                </div>
+              </div>
+
               <!-- Thin Playback Progress Bar for Continue Watching -->
               <div *ngIf="row.id === 'row-continue-watching'" class="cw-progress-track">
                 <div class="cw-progress-fill" [style.width.%]="getWatchProgress(item)"></div>
               </div>
             </div>
-
-            <!-- Card Bottom Meta -->
-            <div class="card-info mt-2">
-              <h5 class="card-title text-truncate mb-1" [title]="getCleanTitle(item)">{{ getCleanTitle(item) }}</h5>
-              <div class="card-meta-line d-flex align-items-center justify-content-between">
-                <div class="meta-tags d-flex align-items-center gap-2 text-truncate" *ngIf="getEpisodeLabel(item) || getCardYear(item) || parseQuality(item.name)">
-                  <span class="meta-episode" *ngIf="getEpisodeLabel(item)">{{ getEpisodeLabel(item) }}</span>
-                  <span class="meta-dot" *ngIf="getEpisodeLabel(item) && (getCardYear(item) || parseQuality(item.name))">•</span>
-                  <span class="meta-year" *ngIf="getCardYear(item)">{{ getCardYear(item) }}</span>
-                  <span class="meta-dot" *ngIf="getCardYear(item) && parseQuality(item.name)">•</span>
-                  <span class="meta-quality" *ngIf="parseQuality(item.name)">{{ parseQuality(item.name) }}</span>
-                </div>
-                <div *ngIf="!getEpisodeLabel(item) && !getCardYear(item) && !parseQuality(item.name)"></div>
-
-                <!-- Three-dot menu button directly BELOW each Continue Watching card -->
-                <button 
-                  *ngIf="row.id === 'row-continue-watching'" 
-                  type="button" 
-                  class="btn-card-menu ms-auto" 
-                  [matMenuTriggerFor]="cwMenu" 
-                  [matMenuTriggerData]="{ channel: item }" 
-                  (click)="$event.stopPropagation()" 
-                  title="More options">
-                  <svg viewBox="0 0 24 24" fill="currentColor" class="cw-dots-icon">
-                    <path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
           </div>
         </div>
-      </section>
+
+        <!-- Single Floating Right Navigation Arrow -->
+        <button 
+          *ngIf="canScrollRight(row.id)" 
+          type="button" 
+          class="row-nav-arrow-right" 
+          (click)="scrollRow(row.id, 'right'); $event.stopPropagation()" 
+          aria-label="Scroll next" 
+          title="Next">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="row-arrow-icon">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+    </section>
 
       <!-- Empty state if all rows filtered out by selected preference -->
       <div *ngIf="discoveryRows.length === 0" class="empty-prefs-notice text-center py-5 my-4">

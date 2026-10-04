@@ -24,22 +24,23 @@
         </div>
         <div class="header-info">
           <h2 class="card-title">Interface & Display</h2>
-          <p class="card-subtitle">Customize navigation layout, catalog ordering, and interface scaling</p>
+          <p class="card-subtitle">Customize startup navigation and catalog ordering</p>
         </div>
       </div>
 
       <div class="settings-group">
-        <!-- Default View -->
+        <!-- Page Shown at Startup -->
         <div class="setting-row">
           <div class="setting-label-col">
-            <label class="setting-label" for="defaultViewSelect">Default View Mode</label>
-            <span class="setting-desc">The primary browsing mode displayed when opening Lighthouse</span>
+            <label class="setting-label" for="startupPageSelect">Page Shown at Startup</label>
+            <span class="setting-desc">The primary section displayed when launching Lighthouse</span>
           </div>
           <div class="setting-control-col">
-            <select id="defaultViewSelect" class="form-select-glass" (ngModelChange)="updateSettings()" [(ngModel)]="settings.default_view">
-              <option [ngValue]="viewModeEnum.All">All Content</option>
-              <option [ngValue]="viewModeEnum.Categories">Categories</option>
-              <option [ngValue]="viewModeEnum.Favorites">Favorites</option>
+            <select id="startupPageSelect" class="form-select-glass" (ngModelChange)="onStartupPageChange()" [(ngModel)]="startupPage">
+              <option value="home">Home (default)</option>
+              <option value="livetv">Live TV</option>
+              <option value="movies">Movies</option>
+              <option value="tvshows">TV Shows</option>
             </select>
           </div>
         </div>
@@ -55,36 +56,6 @@
               <ng-container *ngFor="let sort of sortTypes">
                 <option [ngValue]="sort">{{ _getSortTypeText(sort) }}</option>
               </ng-container>
-            </select>
-          </div>
-        </div>
-
-        <!-- UI Zoom -->
-        <div class="setting-row">
-          <div class="setting-label-col">
-            <label class="setting-label" for="zoomInput">Interface Scaling (Zoom)</label>
-            <span class="setting-desc">Scale the user interface for comfortable viewing on high-DPI screens or TVs</span>
-          </div>
-          <div class="setting-control-col">
-            <div class="input-glass-group" style="max-width: 9rem;">
-              <input id="zoomInput" class="form-control-glass text-center" step="10" min="10" max="1000" type="number" [(ngModel)]="settings.zoom" />
-              <span class="input-glass-suffix">%</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Home Content Preference -->
-        <div class="setting-row">
-          <div class="setting-label-col">
-            <label class="setting-label" for="homePrefSelect">Home Content Preference</label>
-            <span class="setting-desc">Filter curated rows and featured recommendations by language or region</span>
-          </div>
-          <div class="setting-control-col">
-            <select id="homePrefSelect" class="form-select-glass" (ngModelChange)="onHomeContentPrefChange()" [(ngModel)]="homeContentPref">
-              <option value="all">All Content</option>
-              <option value="english">English / Hollywood</option>
-              <option value="hindi">Hindi / Indian</option>
-              <option value="korean">Korean</option>
             </select>
           </div>
         </div>
@@ -434,7 +405,7 @@
           <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
             <path d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
           </svg>
-          <span>Reset All Data</span>
+          <span>Log Out</span>
         </button>
       </div>
     </section>

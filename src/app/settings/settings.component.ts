@@ -25,7 +25,7 @@ import { TmdbCacheService } from "../services/tmdb-cache.service";
 })
 export class SettingsComponent {
   subscriptions: Subscription[] = [];
-  homeContentPref: string = "all";
+  startupPage: string = "home";
 
   // TMDB configuration state
   tmdbEnabled: boolean = false;
@@ -97,19 +97,19 @@ export class SettingsComponent {
     this.memory.activeNavTab.next(NavTab.Settings);
     this.getSettings();
     this.getSources();
-    this.loadHomeContentPref();
+    this.loadStartupPage();
     this.loadTmdbSettings();
     this.loadTmdbCacheStats();
     if (this.memory.XtreamSourceIds.size > 0)
       this.getExpiries();
   }
 
-  loadHomeContentPref() {
-    this.homeContentPref = localStorage.getItem("fred_tv_home_content_pref") || "all";
+  loadStartupPage() {
+    this.startupPage = localStorage.getItem("fred_tv_startup_page") || "home";
   }
 
-  onHomeContentPrefChange() {
-    localStorage.setItem("fred_tv_home_content_pref", this.homeContentPref);
+  onStartupPageChange() {
+    localStorage.setItem("fred_tv_startup_page", this.startupPage);
   }
 
   getSettings() {

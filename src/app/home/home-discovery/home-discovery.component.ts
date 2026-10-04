@@ -1,6 +1,9 @@
 import {
+  AfterViewInit,
+  ChangeDetectorRef,
   Component,
   EventEmitter,
+  HostListener,
   OnDestroy,
   OnInit,
   Output,
@@ -111,7 +114,7 @@ export const MIXED_GENRES: MixedGenreDef[] = [
   templateUrl: "./home-discovery.component.html",
   styleUrl: "./home-discovery.component.css",
 })
-export class HomeDiscoveryComponent implements OnInit, OnDestroy {
+export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy {
   @Output() play = new EventEmitter<Channel>();
   @Output() openSeries = new EventEmitter<Channel>();
   @Output() navigateTab = new EventEmitter<NavTab>();
@@ -128,6 +131,10 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
   isHeroHovered: boolean = false;
 
   selectedContentPref: ContentPreference = 'all';
+
+  // State tracking for row horizontal overflow / scroll arrows
+  rowCanScrollRight: { [rowId: string]: boolean } = {};
+  private resizeObserver?: ResizeObserver;
 
   // Hero pool state & transition
   isTransitioning: boolean = false;
@@ -154,6 +161,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
     public versionMatching: VersionMatchingService,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
@@ -180,11 +188,29 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     this.startHeroTimer();
   }
 
+  ngAfterViewInit(): void {
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.checkAllRowsScrollState();
+      });
+      const container = document.querySelector('.discovery-rows-container');
+      if (container) {
+        this.resizeObserver.observe(container);
+      }
+    }
+    setTimeout(() => this.checkAllRowsScrollState(), 100);
+    setTimeout(() => this.checkAllRowsScrollState(), 500);
+  }
+
   ngOnDestroy(): void {
     this.stopHeroTimer();
     if (this.transitionTimeout) {
       clearTimeout(this.transitionTimeout);
       this.transitionTimeout = undefined;
+    }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = undefined;
     }
     this.subs.forEach((s) => s.unsubscribe());
   }
@@ -269,6 +295,46 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     }
   }
 
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.checkAllRowsScrollState();
+  }
+
+  canScrollRight(rowId: string): boolean {
+    if (this.rowCanScrollRight[rowId] !== undefined) {
+      return this.rowCanScrollRight[rowId];
+    }
+    const el = document.getElementById(rowId);
+    if (el && el.clientWidth > 0) {
+      const maxScrollLeft = el.scrollWidth - el.clientWidth;
+      const canScroll = maxScrollLeft - el.scrollLeft > 6;
+      this.rowCanScrollRight[rowId] = canScroll;
+      return canScroll;
+    }
+    return false;
+  }
+
+  onRowScroll(rowId: string): void {
+    this.updateRowScrollState(rowId);
+  }
+
+  updateRowScrollState(rowId: string): void {
+    const el = document.getElementById(rowId);
+    if (!el) return;
+    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    const canScroll = maxScrollLeft - el.scrollLeft > 6;
+    if (this.rowCanScrollRight[rowId] !== canScroll) {
+      this.rowCanScrollRight[rowId] = canScroll;
+      this.cdr.markForCheck();
+    }
+  }
+
+  checkAllRowsScrollState(): void {
+    for (const row of this.discoveryRows) {
+      this.updateRowScrollState(row.id);
+    }
+  }
+
   scrollRow(rowId: string, direction: "left" | "right") {
     const el = document.getElementById(rowId);
     if (el) {
@@ -277,6 +343,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
         left: direction === "left" ? -scrollAmount : scrollAmount,
         behavior: "smooth",
       });
+      setTimeout(() => this.updateRowScrollState(rowId), 450);
     }
   }
 
@@ -464,7 +531,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
       this.loading = false;
 
-      // 5. Asynchronously load curated Trending and Mixed Genre rows in background without blocking
+      // 5. Asynchronously load curated Trending, Korean content, and Mixed Genre rows in background without blocking
       setTimeout(() => {
         this.loadCuratedTrendingAndGenres(
           enabledSourceIds,
@@ -472,6 +539,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
           seriesRes,
           categoriesRes
         );
+        this.loadKoreanContentRows(enabledSourceIds);
       }, 0);
 
       // 6. Non-blocking progressive TMDB background enrichment if enabled
@@ -621,6 +689,7 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     if (rowId === "row-popular-movies") return 50;
     if (rowId === "row-popular-series") return 60;
     if (rowId === "row-favorites") return 65;
+    if (rowId === "row-korean-series") return 75;
     if (rowId.startsWith("row-genre-")) {
       const idx = parseInt(rowId.replace("row-genre-", ""), 10);
       return isNaN(idx) ? 100 : 100 + idx;
@@ -648,6 +717,8 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       if (this.currentHeroIndex >= this.heroItems.length) {
         this.currentHeroIndex = 0;
       }
+      this.rowCanScrollRight = {};
+      setTimeout(() => this.checkAllRowsScrollState(), 50);
       return;
     }
 
@@ -681,6 +752,8 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     if (this.currentHeroIndex >= this.heroItems.length) {
       this.currentHeroIndex = 0;
     }
+    this.rowCanScrollRight = {};
+    setTimeout(() => this.checkAllRowsScrollState(), 50);
   }
 
   matchesContentPreference(channel: Channel, pref: ContentPreference): boolean {
@@ -730,7 +803,11 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
     }
 
     if (pref === "korean") {
-      if (origLang === "ko") {
+      if (
+        origLang === "ko" ||
+        (cached?.originCountry &&
+          cached.originCountry.some((c) => c.toUpperCase() === "KR"))
+      ) {
         return true;
       }
       return (
@@ -1091,6 +1168,321 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
     );
     this.applyContentPreferences();
+  }
+
+  private async loadKoreanContentRows(sourceIds: number[]): Promise<void> {
+    await this.loadKoreanSeriesRow(sourceIds);
+  }
+
+  private async loadKoreanSeriesRow(sourceIds: number[]): Promise<void> {
+    try {
+      const categoryIds = await this.findKoreanCategoryIds(
+        sourceIds,
+        MediaType.serie,
+        [
+          "ASIA SERIES (MULTI-SUBS)",
+          "ASIA SERIES",
+          "VIAPLAY SERIES",
+        ]
+      );
+      if (categoryIds.length === 0) return;
+
+      const pool = await this.fetchChannelsForCategories(
+        sourceIds,
+        categoryIds,
+        MediaType.serie
+      );
+      if (pool.length === 0) return;
+
+      const eligible: Channel[] = [];
+      const seenNorms = new Set<string>();
+
+      // 1. Identify channels directly from folders that match Korean metadata or tags
+      for (const ch of pool) {
+        const cached = this.tmdbEnrichment.getEnrichmentSync(ch);
+        const isKorean =
+          this.isTmdbKorean(cached) || this.hasKoreanNameTag(ch.name || "");
+        if (isKorean) {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(ch.name))
+          );
+          if (!seenNorms.has(norm)) {
+            seenNorms.add(norm);
+            eligible.push(ch);
+          }
+        }
+      }
+
+      // 2. Discover Korean series from TMDB to identify & enrich eligible titles from these folders
+      if (this.tmdbConfig.isEnabled()) {
+        try {
+          const tmdbPages = await Promise.allSettled([
+            this.tmdbEnrichment.getKoreanTv(1),
+            this.tmdbEnrichment.getKoreanTv(2),
+          ]);
+          const tmdbItems: any[] = [];
+          for (const res of tmdbPages) {
+            if (res.status === "fulfilled" && Array.isArray(res.value)) {
+              tmdbItems.push(...res.value);
+            }
+          }
+
+          for (const item of tmdbItems) {
+            const matched = this.matchItemToFolderPool(item, true, pool);
+            if (matched && matched.id) {
+              const norm = this.versionMatching.normalizeNumberTokens(
+                normalizeForComparison(cleanMediaTitle(matched.name))
+              );
+              if (!seenNorms.has(norm)) {
+                seenNorms.add(norm);
+                eligible.push(matched);
+                this.tmdbEnrichment.seedEnrichmentFromTrending(matched, item);
+              }
+            }
+          }
+        } catch (tmdbErr) {
+          console.warn("TMDB Korean series lookup error:", tmdbErr);
+        }
+      }
+
+      if (eligible.length > 0) {
+        const shuffled = this.shuffleRowSelection(
+          eligible,
+          "lighthouse_shuffled_korean_series",
+          24
+        );
+        this.upsertDiscoveryRow({
+          id: "row-korean-series",
+          title: "Korean Series",
+          icon: "tv",
+          items: shuffled,
+        });
+
+        // Enqueue visible items for background TMDB enrichment
+        for (const item of shuffled.slice(0, 10)) {
+          this.tmdbEnrichment.enqueue(item, "normal");
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load Korean Series row:", err);
+    }
+  }
+
+  private async findKoreanCategoryIds(
+    sourceIds: number[],
+    mediaType: MediaType,
+    targetFolderNames: string[]
+  ): Promise<number[]> {
+    const matchedCategoryIds: number[] = [];
+    const normalizedTargets = targetFolderNames.map((n) => n.trim().toUpperCase());
+
+    for (const [id, name] of this.groupsMap.entries()) {
+      if (normalizedTargets.includes(name.trim().toUpperCase())) {
+        matchedCategoryIds.push(id);
+      }
+    }
+
+    for (const target of targetFolderNames) {
+      try {
+        const categories = await this.fetchSafe({
+          source_ids: sourceIds,
+          view_type: ViewMode.Categories,
+          media_types: [mediaType],
+          query: target,
+          page: 1,
+          sort: SortType.alphabeticalAscending,
+          use_keywords: false,
+        });
+
+        for (const cat of categories) {
+          if (
+            cat.id &&
+            cat.name &&
+            normalizedTargets.includes(cat.name.trim().toUpperCase()) &&
+            !matchedCategoryIds.includes(cat.id)
+          ) {
+            matchedCategoryIds.push(cat.id);
+            this.groupsMap.set(cat.id, cat.name);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return matchedCategoryIds;
+  }
+
+  private async fetchChannelsForCategories(
+    sourceIds: number[],
+    categoryIds: number[],
+    mediaType: MediaType
+  ): Promise<Channel[]> {
+    const allChannels: Channel[] = [];
+    for (const catId of categoryIds) {
+      const page1 = await this.fetchSafe({
+        source_ids: sourceIds,
+        view_type: ViewMode.All,
+        group_id: catId,
+        media_types: [mediaType],
+        page: 1,
+        sort: SortType.provider,
+        use_keywords: false,
+      });
+
+      if (!page1 || page1.length === 0) continue;
+      allChannels.push(...page1);
+
+      if (page1.length >= 36) {
+        const pagePromises: Promise<Channel[]>[] = [];
+        for (let p = 2; p <= 15; p++) {
+          pagePromises.push(
+            this.fetchSafe({
+              source_ids: sourceIds,
+              view_type: ViewMode.All,
+              group_id: catId,
+              media_types: [mediaType],
+              page: p,
+              sort: SortType.provider,
+              use_keywords: false,
+            })
+          );
+        }
+        const remaining = await Promise.all(pagePromises);
+        for (const batch of remaining) {
+          if (batch && batch.length > 0) {
+            allChannels.push(...batch);
+          }
+        }
+      }
+    }
+    return allChannels;
+  }
+
+  private matchItemToFolderPool(
+    item: any,
+    isTv: boolean,
+    folderPool: Channel[]
+  ): Channel | null {
+    const candidateTitles: string[] = [];
+    if (isTv) {
+      if (item.name) candidateTitles.push(item.name);
+      if (item.original_name && item.original_name !== item.name) {
+        candidateTitles.push(item.original_name);
+      }
+    } else {
+      if (item.title) candidateTitles.push(item.title);
+      if (item.original_title && item.original_title !== item.title) {
+        candidateTitles.push(item.original_title);
+      }
+    }
+
+    if (candidateTitles.length === 0) return null;
+
+    const dateStr = item.release_date || item.first_air_date;
+    const targetYear =
+      dateStr && dateStr.length >= 4
+        ? parseInt(dateStr.substring(0, 4), 10)
+        : undefined;
+
+    for (const rawTitle of candidateTitles) {
+      const clean = cleanMediaTitle(rawTitle);
+      const norm = this.versionMatching.normalizeNumberTokens(
+        normalizeForComparison(clean)
+      );
+
+      const poolMatch = this.findBestCatalogMatch(
+        norm,
+        clean,
+        targetYear,
+        folderPool,
+        isTv
+      );
+      if (poolMatch) {
+        return poolMatch;
+      }
+    }
+
+    return null;
+  }
+
+  private isTmdbKorean(enrichment?: TmdbMediaEnrichment): boolean {
+    if (!enrichment) return false;
+    if (enrichment.originalLanguage?.toLowerCase() === "ko") return true;
+    if (
+      enrichment.originCountry &&
+      enrichment.originCountry.some((c) => c.toUpperCase() === "KR")
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private hasKoreanNameTag(name: string): boolean {
+    if (!name) return false;
+    return (
+      /\b(?:korean|k-drama|kdrama|korea)\b/i.test(name) ||
+      /(?:\[|\(|\b)(?:kr|kor)(?:\]|\)|\b)/i.test(name)
+    );
+  }
+
+  private shuffleRowSelection(
+    items: Channel[],
+    storageKey: string,
+    limit: number = 24
+  ): Channel[] {
+    if (!items || items.length === 0) return [];
+    if (items.length <= 1) return [...items];
+
+    let prevIds: number[] = [];
+    try {
+      const stored = sessionStorage.getItem(storageKey);
+      if (stored) {
+        prevIds = JSON.parse(stored);
+      }
+    } catch {
+      // ignore
+    }
+
+    const prevSet = new Set(prevIds);
+    const freshItems: Channel[] = [];
+    const repeatedItems: Channel[] = [];
+
+    for (const item of items) {
+      if (item.id && prevSet.has(item.id)) {
+        repeatedItems.push(item);
+      } else {
+        freshItems.push(item);
+      }
+    }
+
+    this.fisherYatesShuffle(freshItems);
+    this.fisherYatesShuffle(repeatedItems);
+
+    const combined = [...freshItems, ...repeatedItems];
+    const selection = combined.slice(0, limit);
+
+    if (freshItems.length === 0) {
+      this.fisherYatesShuffle(selection);
+    }
+
+    try {
+      const currentIds = selection
+        .map((ch) => ch.id)
+        .filter((id): id is number => id != null);
+      sessionStorage.setItem(storageKey, JSON.stringify(currentIds));
+    } catch {
+      // ignore
+    }
+
+    return selection;
+  }
+
+  private fisherYatesShuffle<T>(arr: T[]): void {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
   }
 
   deduplicateContinueWatching(history: Channel[]): Channel[] {
@@ -1723,6 +2115,47 @@ export class HomeDiscoveryComponent implements OnInit, OnDestroy {
       }
     } else {
       this.play.emit(channel);
+    }
+  }
+
+  onCardMouseEnter(event: MouseEvent): void {
+    const card = event.currentTarget as HTMLElement;
+    if (!card) return;
+    const wrap = card.querySelector('.overlay-title-wrap') as HTMLElement;
+    const text = card.querySelector('.overlay-title-text') as HTMLElement;
+    if (!wrap || !text) return;
+
+    wrap.classList.remove('is-overflowing');
+    text.style.removeProperty('--marquee-start');
+    text.style.removeProperty('--marquee-end');
+    text.style.removeProperty('--marquee-duration');
+
+    const containerWidth = wrap.clientWidth;
+    const textWidth = text.scrollWidth;
+
+    if (textWidth > containerWidth + 2) {
+      const distance = containerWidth + textWidth;
+      // Smooth, natural reading speed of ~45px/sec
+      const duration = Math.max(4.5, distance / 45);
+      text.style.setProperty('--marquee-start', `${containerWidth}px`);
+      text.style.setProperty('--marquee-end', `-${textWidth}px`);
+      text.style.setProperty('--marquee-duration', `${duration.toFixed(2)}s`);
+      wrap.classList.add('is-overflowing');
+    }
+  }
+
+  onCardMouseLeave(event: MouseEvent): void {
+    const card = event.currentTarget as HTMLElement;
+    if (!card) return;
+    const wrap = card.querySelector('.overlay-title-wrap') as HTMLElement;
+    const text = card.querySelector('.overlay-title-text') as HTMLElement;
+    if (wrap) {
+      wrap.classList.remove('is-overflowing');
+    }
+    if (text) {
+      text.style.removeProperty('--marquee-start');
+      text.style.removeProperty('--marquee-end');
+      text.style.removeProperty('--marquee-duration');
     }
   }
 

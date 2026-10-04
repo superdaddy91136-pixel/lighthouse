@@ -29,6 +29,17 @@
         <span>Watch History</span>
         <span class="pill-badge" *ngIf="historyChannels.length > 0">{{ historyChannels.length }}</span>
       </button>
+      <button 
+        type="button" 
+        class="profile-pill-btn" 
+        [class.active]="activeSection === 'hidden'" 
+        (click)="setSection('hidden')">
+        <svg class="pill-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.95,7.14C10.59,7.05 11.28,7 12,7Z" />
+        </svg>
+        <span>Hidden</span>
+        <span class="pill-badge" *ngIf="hiddenChannels.length > 0">{{ hiddenChannels.length }}</span>
+      </button>
     </div>
   </div>
 
@@ -69,7 +80,7 @@
     <div class="row g-2 g-md-3" *ngIf="filteredFavorites.length > 0 && favMediaType !== -1">
       <app-channel-tile 
         *ngFor="let channel of filteredFavorites; let i = index"
-        [class]="channel.media_type === mediaTypeEnum.livestream ? 'col-lg-4 col-md-6 col-12' : 'col-compact-card'" 
+        class="col-compact-card" 
         [id]="i" 
         [channel]="channel" 
         [viewMode]="viewModeEnum.Favorites">
@@ -122,7 +133,7 @@
         <div class="row g-2 g-md-3">
           <app-channel-tile 
             *ngFor="let channel of favoriteLiveTv; let i = index"
-            class="col-lg-4 col-md-6 col-12" 
+            class="col-compact-card" 
             [id]="i + 30000" 
             [channel]="channel" 
             [viewMode]="viewModeEnum.Favorites">
@@ -173,15 +184,176 @@
       <p class="text-secondary small">Channels and videos you watch will show up here.</p>
     </div>
 
-    <!-- History Channel Grid -->
-    <div class="row gy-3" *ngIf="filteredHistory.length > 0">
+    <!-- History Channel Grid (filtered to a single type) -->
+    <div class="row g-2 g-md-3" *ngIf="filteredHistory.length > 0 && historyMediaType !== -1">
       <app-channel-tile 
         *ngFor="let channel of filteredHistory; let i = index"
-        class="col-lg-4 col-md-6 col-12" 
+        class="col-compact-card" 
         [id]="i" 
         [channel]="channel" 
         [viewMode]="viewModeEnum.History">
       </app-channel-tile>
+    </div>
+
+    <!-- Grouped Watch History (All tab) -->
+    <div *ngIf="filteredHistory.length > 0 && historyMediaType === -1">
+
+      <!-- Movies -->
+      <div class="fav-group-section mb-4" *ngIf="historyMovies.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">Movies</h4>
+          <span class="fav-group-badge">{{ historyMovies.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of historyMovies; let i = index"
+            class="col-compact-card" 
+            [id]="i + 40000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.History">
+          </app-channel-tile>
+        </div>
+      </div>
+
+      <!-- TV Shows -->
+      <div class="fav-group-section mb-4" *ngIf="historyTvShows.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">TV Shows</h4>
+          <span class="fav-group-badge">{{ historyTvShows.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of historyTvShows; let i = index"
+            class="col-compact-card" 
+            [id]="i + 50000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.History">
+          </app-channel-tile>
+        </div>
+      </div>
+
+      <!-- Live TV -->
+      <div class="fav-group-section mb-4" *ngIf="historyLiveTv.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">Live TV</h4>
+          <span class="fav-group-badge">{{ historyLiveTv.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of historyLiveTv; let i = index"
+            class="col-compact-card" 
+            [id]="i + 60000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.History">
+          </app-channel-tile>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SECTION 3: HIDDEN TITLES -->
+  <div *ngIf="activeSection === 'hidden'" class="hidden-section">
+    <div class="fav-controls-row mb-4">
+      <div class="fav-search-wrapper">
+        <input 
+          type="text" 
+          [(ngModel)]="hiddenSearchQuery" 
+          (ngModelChange)="filterHidden()" 
+          placeholder="Filter hidden titles..." 
+          class="form-control fav-search-input" />
+      </div>
+      <div class="fav-filter-pills">
+        <button class="fav-filter-btn" [class.active]="hiddenMediaType === -1" (click)="setHiddenMediaType(-1)">All</button>
+        <button class="fav-filter-btn" [class.active]="hiddenMediaType === 0" (click)="setHiddenMediaType(0)">Live TV</button>
+        <button class="fav-filter-btn" [class.active]="hiddenMediaType === 1" (click)="setHiddenMediaType(1)">Movies</button>
+        <button class="fav-filter-btn" [class.active]="hiddenMediaType === 2" (click)="setHiddenMediaType(2)">Series</button>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center fav-reload-btn" (click)="loadHidden()" title="Reload Hidden Titles">
+        <svg class="refresh-sm" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="filteredHidden.length === 0 && !loadingHidden" class="empty-fav-card text-center py-5">
+      <svg class="empty-star mb-3" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.95,7.14C10.59,7.05 11.28,7 12,7Z" />
+      </svg>
+      <h5 class="text-white mb-2">No Hidden Titles</h5>
+      <p class="text-secondary small">Titles and channels you hide will appear here for easy management.</p>
+    </div>
+
+    <!-- Hidden Grid (filtered to a single type) -->
+    <div class="row g-2 g-md-3" *ngIf="filteredHidden.length > 0 && hiddenMediaType !== -1">
+      <app-channel-tile 
+        *ngFor="let channel of filteredHidden; let i = index"
+        class="col-compact-card" 
+        [id]="i + 70000" 
+        [channel]="channel" 
+        [viewMode]="viewModeEnum.Hidden"
+        (unhidden)="onChannelUnhidden($event)">
+      </app-channel-tile>
+    </div>
+
+    <!-- Grouped Hidden (All tab) -->
+    <div *ngIf="filteredHidden.length > 0 && hiddenMediaType === -1">
+
+      <!-- Movies -->
+      <div class="fav-group-section mb-4" *ngIf="hiddenMovies.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">Movies</h4>
+          <span class="fav-group-badge">{{ hiddenMovies.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of hiddenMovies; let i = index"
+            class="col-compact-card" 
+            [id]="i + 80000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.Hidden"
+            (unhidden)="onChannelUnhidden($event)">
+          </app-channel-tile>
+        </div>
+      </div>
+
+      <!-- TV Shows -->
+      <div class="fav-group-section mb-4" *ngIf="hiddenTvShows.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">TV Shows</h4>
+          <span class="fav-group-badge">{{ hiddenTvShows.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of hiddenTvShows; let i = index"
+            class="col-compact-card" 
+            [id]="i + 90000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.Hidden"
+            (unhidden)="onChannelUnhidden($event)">
+          </app-channel-tile>
+        </div>
+      </div>
+
+      <!-- Live TV -->
+      <div class="fav-group-section mb-4" *ngIf="hiddenLiveTv.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">Live TV</h4>
+          <span class="fav-group-badge">{{ hiddenLiveTv.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of hiddenLiveTv; let i = index"
+            class="col-compact-card" 
+            [id]="i + 100000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.Hidden"
+            (unhidden)="onChannelUnhidden($event)">
+          </app-channel-tile>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>

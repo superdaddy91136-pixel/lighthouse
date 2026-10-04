@@ -356,11 +356,20 @@ export class TmdbEnrichmentService {
       rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : undefined,
       voteCount: item.vote_count,
       originalLanguage: item.original_language || undefined,
+      originCountry: Array.isArray(item.origin_country) ? item.origin_country : undefined,
       lastUpdated: Date.now(),
     };
 
     await this.cacheService.saveEnrichment(enrichment);
     this.enrichmentUpdated$.next(enrichment);
+  }
+
+  /**
+   * Fetches Korean TV shows from TMDB with config enabled check.
+   */
+  async getKoreanTv(page: number = 1): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.getKoreanTv(page);
   }
 }
 

@@ -87,6 +87,7 @@ export interface TmdbMediaEnrichment {
   director?: string;
   imdbId?: string;
   originalLanguage?: string;
+  originCountry?: string[];
   trailers?: TmdbVideo[];
   numberOfSeasons?: number;
   numberOfEpisodes?: number;

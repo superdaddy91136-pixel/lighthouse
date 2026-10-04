@@ -2,10 +2,14 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  EventEmitter,
   Input,
+  OnChanges,
   OnDestroy,
   OnInit,
+  Output,
   Renderer2,
+  SimpleChanges,
   ViewChild,
 } from "@angular/core";
 import { MatMenuTrigger } from "@angular/material/menu";
@@ -43,7 +47,7 @@ import { cleanMediaTitle } from "../utils/media-presentation";
   templateUrl: "./channel-tile.component.html",
   styleUrl: "./channel-tile.component.css",
 })
-export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
+export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, OnChanges {
   constructor(
     public memory: MemoryService,
     private toastr: ToastrService,
@@ -59,6 +63,8 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
   @Input() channel?: Channel;
   @Input() id!: number;
   @Input() viewMode: number = 0;
+  @Input() isLiveTvCard?: boolean;
+  @Output() unhidden = new EventEmitter<Channel>();
   @ViewChild(MatMenuTrigger, { static: true }) matMenuTrigger!: MatMenuTrigger;
   menuTopLeftPosition = { x: 0, y: 0 };
   showImage: boolean = true;
@@ -75,8 +81,18 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
   static epgInFlight: Set<number> = new Set();
 
   ngOnInit(): void {
-    if (this.isLivestream() && this.showEPG()) {
+    if ((this.isLivestream() || this.isLiveTv()) && !this.isGroup() && this.showEPG()) {
       this.loadNowPlayingEPG();
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['channel'] && !changes['channel'].firstChange) {
+      this.nowPlayingEpg = undefined;
+      this.showImage = true;
+      if ((this.isLivestream() || this.isLiveTv()) && !this.isGroup() && this.showEPG()) {
+        this.loadNowPlayingEPG();
+      }
     }
   }
 
@@ -238,6 +254,25 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
+  async unhideItem(event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    const isGroup = this.channel?.media_type === MediaType.group;
+    const command = isGroup ? "hide_group" : "hide_channel";
+    const args = { id: this.channel!.id, hidden: false };
+
+    try {
+      await invoke(command, args);
+      this.channel!.hidden = false;
+      this.unhidden.emit(this.channel!);
+      this.toastr.success(`Unhidden "${this.channel?.name}"`);
+    } catch (e) {
+      this.error.handleError(e, `Failed to unhide "${this.channel?.name}"`);
+    }
+  }
+
   async hide() {
     const isGroup = this.channel?.media_type === MediaType.group;
     const hide = !this.channel!.hidden;
@@ -252,6 +287,9 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
     try {
       await invoke(command, args);
       this.channel!.hidden = hide;
+      if (this.viewMode == ViewMode.Hidden && !hide) {
+        this.unhidden.emit(this.channel!);
+      }
       this.fade = this.viewMode == ViewMode.Hidden ? !hide : hide;
       this.toastr.success(`${msg} (updates on reload)`);
     } catch (e) {
@@ -280,7 +318,7 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   isLiveTv(): boolean {
-    return this.memory.activeNavTab.value === NavTab.LiveTV;
+    return !!this.isLiveTvCard || this.memory.activeNavTab.value === NavTab.LiveTV;
   }
 
   isCardMode(): boolean {
@@ -288,27 +326,7 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
     if (tab === NavTab.Settings) {
       return false;
     }
-    // Live TV uses modern compact cards for both folders and channels
-    if (tab === NavTab.LiveTV) {
-      return true;
-    }
-    // Movies section: all cards (both category folders and movie posters)
-    if (tab === NavTab.Movies) {
-      return true;
-    }
-    // TV Shows section: all cards (both category folders and show posters)
-    if (tab === NavTab.TVShows) {
-      return true;
-    }
-    // Profile / Favorites section: reuse modern cards for movies, TV shows, and folders
-    if (tab === NavTab.Profile || this.viewMode === ViewMode.Favorites) {
-      return this.channel?.media_type !== MediaType.livestream;
-    }
-    // Movies and Series in search results
-    if (this.channel?.media_type === MediaType.movie || this.channel?.media_type === MediaType.serie) {
-      return true;
-    }
-    return false;
+    return true;
   }
 
   async loadNowPlayingEPG() {
@@ -388,9 +406,9 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
 
   showEPG(): boolean {
     return (
-      this.channel?.media_type == MediaType.livestream &&
+      (this.channel?.media_type == MediaType.livestream || (this.isLiveTv() && !this.isGroup())) &&
       !this.isCustom() &&
-      this.memory.XtreamSourceIds.has(this.channel.source_id!)
+      this.memory.XtreamSourceIds.has(this.channel?.source_id!)
     );
   }
 
