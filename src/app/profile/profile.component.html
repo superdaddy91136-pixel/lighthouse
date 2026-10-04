@@ -65,15 +65,71 @@
       <p class="text-secondary small">Right-click any channel card in Home, Live TV, Movies, or TV Shows to add it to your Favorites.</p>
     </div>
 
-    <!-- Favorite Channel Grid -->
-    <div class="row gy-3" *ngIf="filteredFavorites.length > 0">
+    <!-- Favorite Channel Grid (filtered to a single type) -->
+    <div class="row g-2 g-md-3" *ngIf="filteredFavorites.length > 0 && favMediaType !== -1">
       <app-channel-tile 
         *ngFor="let channel of filteredFavorites; let i = index"
-        class="col-lg-4 col-md-6 col-12" 
+        [class]="channel.media_type === mediaTypeEnum.livestream ? 'col-lg-4 col-md-6 col-12' : 'col-compact-card'" 
         [id]="i" 
         [channel]="channel" 
         [viewMode]="viewModeEnum.Favorites">
       </app-channel-tile>
+    </div>
+
+    <!-- Grouped Favorites (All tab) -->
+    <div *ngIf="filteredFavorites.length > 0 && favMediaType === -1">
+
+      <!-- Movies -->
+      <div class="fav-group-section mb-4" *ngIf="favoriteMovies.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">Movies</h4>
+          <span class="fav-group-badge">{{ favoriteMovies.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of favoriteMovies; let i = index"
+            class="col-compact-card" 
+            [id]="i + 10000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.Favorites">
+          </app-channel-tile>
+        </div>
+      </div>
+
+      <!-- TV Shows -->
+      <div class="fav-group-section mb-4" *ngIf="favoriteTvShows.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">TV Shows</h4>
+          <span class="fav-group-badge">{{ favoriteTvShows.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of favoriteTvShows; let i = index"
+            class="col-compact-card" 
+            [id]="i + 20000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.Favorites">
+          </app-channel-tile>
+        </div>
+      </div>
+
+      <!-- Live TV -->
+      <div class="fav-group-section mb-4" *ngIf="favoriteLiveTv.length > 0">
+        <div class="fav-group-header mb-3">
+          <h4 class="fav-group-title mb-0">Live TV</h4>
+          <span class="fav-group-badge">{{ favoriteLiveTv.length }}</span>
+        </div>
+        <div class="row g-2 g-md-3">
+          <app-channel-tile 
+            *ngFor="let channel of favoriteLiveTv; let i = index"
+            class="col-lg-4 col-md-6 col-12" 
+            [id]="i + 30000" 
+            [channel]="channel" 
+            [viewMode]="viewModeEnum.Favorites">
+          </app-channel-tile>
+        </div>
+      </div>
+
     </div>
   </div>
 

@@ -110,9 +110,9 @@
             <h4 class="search-group-title mb-0">Movies</h4>
             <span class="search-group-badge">{{ searchResults.movies.length }}</span>
           </div>
-          <div class="row gy-3">
+          <div class="row g-2 g-md-3">
             <app-channel-tile *ngFor="let movie of searchResults.movies; let i = index"
-              class="col-lg-4 col-md-4" [id]="i + 1000" [channel]="movie" [viewMode]="viewModeEnum.All"></app-channel-tile>
+              class="col-compact-card" [id]="i + 1000" [channel]="movie" [viewMode]="viewModeEnum.All"></app-channel-tile>
           </div>
         </div>
 
@@ -122,9 +122,9 @@
             <h4 class="search-group-title mb-0">TV Shows</h4>
             <span class="search-group-badge">{{ searchResults.tvShows.length }}</span>
           </div>
-          <div class="row gy-3">
+          <div class="row g-2 g-md-3">
             <app-channel-tile *ngFor="let show of searchResults.tvShows; let i = index"
-              class="col-lg-4 col-md-4" [id]="i + 2000" [channel]="show" [viewMode]="viewModeEnum.All"></app-channel-tile>
+              class="col-compact-card" [id]="i + 2000" [channel]="show" [viewMode]="viewModeEnum.All"></app-channel-tile>
           </div>
         </div>
 
@@ -147,7 +147,8 @@
       </div>
     </ng-container>
 
-    <!-- DRILLDOWN / CATALOG GRID (When not in Discovery and not searching) -->
+
+    <!-- DRILLDOWN / CATALOG GRID (Live TV, Movies, TV Shows & other catalog browsing) -->
     <ng-container *ngIf="!isHomeDiscoveryMode && !isSearching">
       <div class="category-breadcrumb-bar mb-3 d-flex align-items-center" *ngIf="
           (filters?.view_type == viewModeEnum.Categories && filters?.group_id) || filters?.series_id
@@ -172,16 +173,16 @@
           <h4 class="pinned-section-title mb-0">Pinned</h4>
           <span class="pinned-count-badge">{{ currentPinnedItems.length }}</span>
         </div>
-        <div class="row gy-3">
+        <div class="row g-2 g-md-3">
           <app-channel-tile *ngFor="let item of currentPinnedItems; let i = index"
-            class="col-lg-4 col-md-4" [id]="i + 50000" [channel]="item" [viewMode]="viewType">
+            [class]="isCardGridMode ? 'col-compact-card' : 'col-lg-4 col-md-4'" [id]="i + 50000" [channel]="item" [viewMode]="viewType">
           </app-channel-tile>
         </div>
       </div>
 
-      <div class="row gy-3" [@fade]="channelsVisible ? 'visible' : 'hidden'">
+      <div class="row g-2 g-md-3" [@fade]="channelsVisible ? 'visible' : 'hidden'">
         <app-channel-tile [attr.id]="i == 0 ? 'first' : null" *ngFor="let channel of regularChannels; let i = index"
-          class="col-lg-4 col-md-4" [id]="i" [channel]="channel" [viewMode]="viewType"></app-channel-tile>
+          [class]="isCardGridMode ? 'col-compact-card' : 'col-lg-4 col-md-4'" [id]="i" [channel]="channel" [viewMode]="viewType"></app-channel-tile>
       </div>
 
       <div *ngIf="!loading && regularChannels.length === 0 && currentPinnedItems.length === 0" class="text-center py-5 text-muted">

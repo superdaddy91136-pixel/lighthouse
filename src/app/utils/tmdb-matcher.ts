@@ -25,15 +25,75 @@ export function extractImdbId(input?: string): string | undefined {
 }
 
 /**
+ * Extracts only the clean parent series name from a messy IPTV/VOD provider TV title.
+ * Strips provider prefixes, country markers, season/episode numbers, and episode names.
+ *
+ * Example: "D+ - Moving (KR) - S01E08 - Black" -> "Moving"
+ */
+export function extractCleanSeriesTitle(rawTitle?: string): string {
+  if (!rawTitle) return '';
+  let title = rawTitle.trim();
+
+  // Strip scene dots/underscores if present
+  if (/^[A-Za-z0-9]+([._][A-Za-z0-9]+){3,}$/.test(title)) {
+    title = title.replace(/[._]/g, ' ');
+  }
+
+  // 1. Strip provider / platform / category prefixes (e.g. "D+ - ", "[D+]", "NF - ", "4K-NF - ")
+  for (let pass = 0; pass < 3; pass++) {
+    const prev = title;
+    title = title.replace(
+      /^[\[\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+|DISNEY\+|APPLE\s*TV\+|NF|NETFLIX|ATVP|APPLE|AMZN|PRIME(?:\s*VIDEO)?|DSNP|DISNEY|HMAX|MAX|HBO(?:\s*MAX)?|HULU|PARAMOUNT|PEACOCK|BBC|SKY|CANAL|CRUNCHYROLL|CR|STARZ|SHOWTIME|MGM|VIP|PREMIUM|TOP|VOD|SERIES?|TV|SHOWS?)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i,
+      ''
+    );
+    title = title.replace(/^\|?[A-Za-z]{2,4}\|?\s*[-:|]\s*/g, '');
+    title = title.replace(/^\[[A-Za-z]{2,4}\]\s*[-:|]?\s*/g, '');
+    title = title.replace(/\|[A-Za-z]{2,4}\|\s*/g, '');
+    title = title.replace(/^[-*#~_+=|:–—\s/]+/, '');
+    if (title === prev) break;
+  }
+
+  // 2. Strip season/episode numbers and any trailing episode names
+  // e.g. " - S01E08 - Black", " S01E08 Black", " - 1x08 - Black", " Season 1 Episode 8 - Black", " - S01"
+  title = title.replace(
+    /\s*[-–—:|/]?\s*\b(?:S\d{1,2}\s*[-–—.]?\s*E\d{1,3}|\d{1,2}x\d{1,3}|(?:Season|Series)\s*\d+(?:\s*(?:Episode|Ep\.?)\s*\d+)?|(?:Episode|Ep\.?)\s*\d+|S\d{1,2}|E\d{1,3})\b.*$/i,
+    ''
+  );
+
+  // 3. Strip country / region / language markers anywhere in the title like (KR), [KR], (US), (UK), (Multi)
+  title = title.replace(/\s*[\(\[]\s*([A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR|Dual)\s*[\)\]]/gi, '');
+
+  // 4. Strip technical / resolution brackets e.g. [1080p], [4K]
+  title = title.replace(/\[\s*(4K|UHD|1080p|FHD|720p|HD|HEVC|HDR|HDR10|DV|Dolby)[^\]]*\]/gi, '');
+
+  // 5. Remove empty or leftover parentheses/brackets
+  title = title.replace(/\(\s*\)/g, '').replace(/\[\s*\]/g, '');
+
+  // 6. Strip leading and trailing non-alphanumeric separators
+  title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '').trim();
+
+  // Collapse multiple spaces
+  title = title.replace(/\s{2,}/g, ' ').trim();
+
+  return title.length > 0 ? title : rawTitle.trim();
+}
+
+/**
  * Prepares and normalizes an IPTV title for TMDB querying.
  * Extracts any year or external IDs and produces a clean, focused query string.
  */
-export function prepareSearchQuery(rawTitle?: string): PreparedSearchQuery {
+export function prepareSearchQuery(rawTitle?: string, mediaType?: 'movie' | 'tv'): PreparedSearchQuery {
   if (!rawTitle) return { query: '' };
 
   const imdbId = extractImdbId(rawTitle);
   const year = extractYear(rawTitle);
-  let clean = cleanMediaTitle(rawTitle);
+
+  // If it's a TV show or contains TV season/episode markers, extract the clean parent series name
+  const isTv =
+    mediaType === 'tv' ||
+    /\b(?:S\d{1,2}\s*[-–—.]?\s*E\d{1,3}|\d{1,2}x\d{1,3}|(?:Season|Series)\s*\d+)\b/i.test(rawTitle);
+
+  let clean = isTv ? extractCleanSeriesTitle(rawTitle) : cleanMediaTitle(rawTitle);
 
   // If year is in the clean title, strip it out for the search query to improve API match rate
   if (year) {

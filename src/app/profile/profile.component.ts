@@ -35,6 +35,18 @@ export class ProfileComponent implements OnInit {
   mediaTypeEnum = MediaType;
   viewModeEnum = ViewMode;
 
+  get favoriteMovies(): Channel[] {
+    return this.filteredFavorites.filter((c) => c.media_type === MediaType.movie);
+  }
+
+  get favoriteTvShows(): Channel[] {
+    return this.filteredFavorites.filter((c) => c.media_type === MediaType.serie);
+  }
+
+  get favoriteLiveTv(): Channel[] {
+    return this.filteredFavorites.filter((c) => c.media_type === MediaType.livestream);
+  }
+
   constructor(
     private router: Router,
     public memory: MemoryService,

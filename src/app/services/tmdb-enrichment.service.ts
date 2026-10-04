@@ -186,7 +186,7 @@ export class TmdbEnrichmentService {
     }
 
     // 2. Query preparation and title normalization
-    const { query, year } = prepareSearchQuery(channel.name);
+    const { query, year } = prepareSearchQuery(channel.name, mediaType);
     if (!query || query.length < 2) return;
 
     const searchKey = `${mediaType}:${query.toLowerCase()}:${year || ''}`;

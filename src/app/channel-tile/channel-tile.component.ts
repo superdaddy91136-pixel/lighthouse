@@ -4,6 +4,7 @@ import {
   ElementRef,
   Input,
   OnDestroy,
+  OnInit,
   Renderer2,
   ViewChild,
 } from "@angular/core";
@@ -42,7 +43,7 @@ import { cleanMediaTitle } from "../utils/media-presentation";
   templateUrl: "./channel-tile.component.html",
   styleUrl: "./channel-tile.component.css",
 })
-export class ChannelTileComponent implements OnDestroy, AfterViewInit {
+export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit {
   constructor(
     public memory: MemoryService,
     private toastr: ToastrService,
@@ -69,6 +70,15 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
   viewModeEnum = ViewMode;
   subscriptions: Subscription[] = [];
   fade = false;
+  nowPlayingEpg?: EPG;
+  static epgCache: Map<number, EPG | null> = new Map();
+  static epgInFlight: Set<number> = new Set();
+
+  ngOnInit(): void {
+    if (this.isLivestream() && this.showEPG()) {
+      this.loadNowPlayingEPG();
+    }
+  }
 
   ngAfterViewInit(): void {
     this.getExistingDownload();
@@ -263,6 +273,113 @@ export class ChannelTileComponent implements OnDestroy, AfterViewInit {
 
   isGroup(): boolean {
     return this.channel?.media_type == MediaType.group;
+  }
+
+  isTvShow(): boolean {
+    return this.channel?.media_type === MediaType.serie;
+  }
+
+  isLiveTv(): boolean {
+    return this.memory.activeNavTab.value === NavTab.LiveTV;
+  }
+
+  isCardMode(): boolean {
+    const tab = this.memory.activeNavTab.value;
+    if (tab === NavTab.Settings) {
+      return false;
+    }
+    // Live TV uses modern compact cards for both folders and channels
+    if (tab === NavTab.LiveTV) {
+      return true;
+    }
+    // Movies section: all cards (both category folders and movie posters)
+    if (tab === NavTab.Movies) {
+      return true;
+    }
+    // TV Shows section: all cards (both category folders and show posters)
+    if (tab === NavTab.TVShows) {
+      return true;
+    }
+    // Profile / Favorites section: reuse modern cards for movies, TV shows, and folders
+    if (tab === NavTab.Profile || this.viewMode === ViewMode.Favorites) {
+      return this.channel?.media_type !== MediaType.livestream;
+    }
+    // Movies and Series in search results
+    if (this.channel?.media_type === MediaType.movie || this.channel?.media_type === MediaType.serie) {
+      return true;
+    }
+    return false;
+  }
+
+  async loadNowPlayingEPG() {
+    if (!this.channel?.id || !this.showEPG()) return;
+    const cacheKey = this.channel.id;
+    if (ChannelTileComponent.epgCache.has(cacheKey)) {
+      this.nowPlayingEpg = ChannelTileComponent.epgCache.get(cacheKey) || undefined;
+      return;
+    }
+    if (ChannelTileComponent.epgInFlight.has(cacheKey)) return;
+    ChannelTileComponent.epgInFlight.add(cacheKey);
+
+    try {
+      const data: EPG[] = await invoke("get_epg", { channel: this.channel });
+      if (data && data.length > 0) {
+        const now = Math.floor(Date.now() / 1000);
+        const current = data.find((p) => p.now_playing) ||
+                        data.find((p) => p.start_timestamp <= now) ||
+                        data[0];
+        ChannelTileComponent.epgCache.set(cacheKey, current || null);
+        this.nowPlayingEpg = current;
+      } else {
+        ChannelTileComponent.epgCache.set(cacheKey, null);
+      }
+    } catch {
+      ChannelTileComponent.epgCache.set(cacheKey, null);
+    } finally {
+      ChannelTileComponent.epgInFlight.delete(cacheKey);
+    }
+  }
+
+  getEpgTimeDisplay(): string {
+    if (!this.nowPlayingEpg) return '';
+    if (this.nowPlayingEpg.start_time && this.nowPlayingEpg.end_time) {
+      const start = this.extractTimeOnly(this.nowPlayingEpg.start_time);
+      const end = this.extractTimeOnly(this.nowPlayingEpg.end_time);
+      return `${start} – ${end}`;
+    }
+    if (this.nowPlayingEpg.start_time) {
+      return this.extractTimeOnly(this.nowPlayingEpg.start_time);
+    }
+    return '';
+  }
+
+  private extractTimeOnly(timeStr: string): string {
+    if (!timeStr) return '';
+    if (timeStr.includes(',')) {
+      const parts = timeStr.split(',');
+      return parts[parts.length - 1].trim();
+    }
+    return timeStr.trim();
+  }
+
+  getEpgProgress(): number {
+    if (!this.nowPlayingEpg?.start_timestamp) return 0;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const start = this.nowPlayingEpg.start_timestamp;
+    if (nowSec <= start) return 0;
+    const defaultEnd = start + 3600;
+    const elapsed = nowSec - start;
+    const total = defaultEnd - start;
+    return Math.min(100, Math.max(5, Math.round((elapsed / total) * 100)));
+  }
+
+  getCleanTitle(): string {
+    return cleanMediaTitle(this.channel?.name || '');
+  }
+
+  toggleFavorite(event: MouseEvent) {
+    event.stopPropagation();
+    this.favorite();
   }
 
   isCustom(): boolean {

@@ -19,6 +19,7 @@ import {
 } from "rxjs";
 import { MemoryService } from "../memory.service";
 import { Channel } from "../models/channel";
+import { EPG } from "../models/epg";
 import { ViewMode } from "../models/viewMode";
 import { MediaType } from "../models/mediaType";
 import { ToastrService } from "ngx-toastr";
@@ -159,6 +160,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   get isCatalogTab(): boolean {
     const tab = this.memory.activeNavTab.value;
     return tab === NavTab.LiveTV || tab === NavTab.Movies || tab === NavTab.TVShows;
+  }
+
+  get isCardGridMode(): boolean {
+    const tab = this.memory.activeNavTab.value;
+    if (tab === NavTab.Settings || this.isHomeDiscoveryMode) {
+      return false;
+    }
+    return tab === NavTab.LiveTV || tab === NavTab.Movies || tab === NavTab.TVShows || this.filters?.view_type === ViewMode.Favorites;
   }
 
   getActiveCategoryName(): string {

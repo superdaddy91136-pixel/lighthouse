@@ -99,7 +99,7 @@
 .favorite-icon {
   width: 1.25rem;
   height: 1.25rem;
-  color: #8B0000;
+  color: #f06292;
   filter: drop-shadow(0 1px 3px rgba(139, 0, 0, 0.6));
 }
 
@@ -127,3 +127,318 @@
   background: rgba(45, 52, 65, 0.9);
   border-color: rgba(255, 255, 255, 0.25);
 }
+
+/* ==========================================================================
+   LIGHTHOUSE POSTER & CATEGORY CARDS (Movies, TV Shows & Favorites)
+   ========================================================================== */
+
+:host {
+  display: block;
+}
+
+.lh-card {
+  width: 100%;
+  max-width: 220px;
+  margin: 0 auto;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.lh-card:hover {
+  transform: translateY(-5px);
+}
+
+.lh-card:focus {
+  outline: none;
+}
+
+.lh-card:focus .poster-container {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4), 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.lh-card .poster-container {
+  aspect-ratio: 2/3;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.lh-card:hover .poster-container {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.lh-card .poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.lh-card:hover .poster-img {
+  transform: scale(1.05);
+}
+
+/* Category Folder Fallback Card */
+.folder-fallback {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(155deg, rgba(38, 44, 58, 0.95) 0%, rgba(18, 21, 29, 0.98) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 8px;
+  position: relative;
+  border-radius: 12px;
+}
+
+.folder-icon-circle {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: all 0.25s ease;
+}
+
+.lh-card:hover .folder-icon-circle {
+  transform: scale(1.08);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.folder-icon-svg {
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.folder-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* TV Archive Badge */
+.card-archive-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.card-archive-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Card Fav Button Sizing for Compact Card */
+.lh-card .card-fav-btn {
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+}
+
+.lh-card .card-fav-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Play Circle Sizing for Compact Card */
+.lh-card .hover-play-circle {
+  width: 38px;
+  height: 38px;
+}
+
+.lh-card .hover-play-circle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.lh-card .folder-hover-circle svg {
+  margin-left: 0;
+}
+
+/* Fallback Artwork Sizing */
+.lh-card .poster-fallback {
+  padding: 8px;
+}
+
+.lh-card .fallback-icon {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.lh-card .fallback-title {
+  font-size: 0.72rem;
+}
+
+/* Card Info Typography */
+.lh-card .card-info {
+  margin-top: 6px;
+}
+
+.lh-card .card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  line-height: 1.25;
+  margin: 0;
+}
+
+.lh-card .card-meta-line {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+}
+
+.meta-type-tag {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+}
+
+.lh-card.playing .poster-container {
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pulse 2s infinite ease-in-out;
+}
+
+/* Live TV Landscape Poster Container */
+.lh-card .poster-container.live-poster {
+  aspect-ratio: 16/10;
+  background: rgba(16, 20, 28, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lh-card .poster-container.live-poster .poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 10px;
+}
+
+/* Live Badge */
+.meta-type-tag.live-tag {
+  color: #ff4d6d;
+  background: rgba(255, 77, 109, 0.12);
+  border-color: rgba(255, 77, 109, 0.25);
+  font-weight: 700;
+}
+
+/* Integrated EPG Section in Live TV Card */
+.card-epg-section {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.card-epg-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.62rem;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.card-epg-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #ff3b5c;
+  box-shadow: 0 0 6px rgba(255, 59, 92, 0.8);
+  animation: epg-live-pulse 1.8s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes epg-live-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+.card-epg-badge {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #ff4d6d;
+  font-size: 0.58rem;
+}
+
+.card-epg-time {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.card-epg-title {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+  line-height: 1.25;
+  margin-bottom: 5px;
+}
+
+.card-epg-progress-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.card-epg-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4d6d, #ff758f);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
