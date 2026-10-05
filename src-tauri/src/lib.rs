@@ -118,6 +118,8 @@ pub fn run() {
             remove_from_history,
             get_all_expiries,
             embedded_poc::start_embedded_poc,
+            embedded_poc::start_embedded_player,
+            embedded_poc::open_in_external_mpv,
             embedded_poc::send_embedded_poc_ipc,
             embedded_poc::stop_embedded_poc,
             embedded_poc::resize_embedded_poc

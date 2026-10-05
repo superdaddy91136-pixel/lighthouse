@@ -14,6 +14,8 @@ pub struct PocStreamInfo {
     pub user_agent: Option<String>,
     pub referrer: Option<String>,
     pub origin: Option<String>,
+    #[serde(default)]
+    pub ignore_ssl: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -459,7 +461,7 @@ fn find_poc_stream() -> Result<PocStreamInfo, String> {
     Err(format!("Catalog item '{}' not found in database", exact_title))
 }
 
-fn build_stream_info(
+pub fn build_stream_info(
     channel_id: i64,
     name: String,
     url: String,
@@ -471,6 +473,7 @@ fn build_stream_info(
         .or_else(|| source.as_ref().and_then(|s| s.stream_user_agent.clone()));
     let referrer = headers.as_ref().and_then(|h| h.referrer.clone());
     let origin = headers.as_ref().and_then(|h| h.http_origin.clone());
+    let ignore_ssl = headers.as_ref().and_then(|h| h.ignore_ssl);
 
     Ok(PocStreamInfo {
         channel_id,
@@ -480,12 +483,78 @@ fn build_stream_info(
         user_agent,
         referrer,
         origin,
+        ignore_ssl,
     })
 }
 
-#[tauri::command]
-pub async fn start_embedded_poc(
+pub fn build_stream_info_from_channel(channel: &crate::types::Channel) -> Result<PocStreamInfo, String> {
+    let channel_id = channel.id.ok_or_else(|| "Channel has no ID".to_string())?;
+    let url = channel.url.clone().ok_or_else(|| "Channel has no URL".to_string())?;
+    build_stream_info(channel_id, channel.name.clone(), url, channel.source_id)
+}
+
+pub fn build_embedded_mpv_args(
+    child_hwnd: usize,
+    pipe_name: &str,
+    stream: &PocStreamInfo,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    args.push(format!("--wid={}", child_hwnd));
+    args.push(format!("--input-ipc-server={}", pipe_name));
+    args.push("--vo=gpu-next".to_string());
+    args.push("--gpu-context=d3d11".to_string());
+    args.push("--hwdec=auto".to_string());
+    args.push("--msg-level=all=error".to_string());
+    args.push("--input-default-bindings=no".to_string());
+    args.push("--input-vo-keyboard=no".to_string());
+    args.push("--input-cursor=no".to_string());
+    args.push("--cursor-autohide=no".to_string());
+    args.push("--no-terminal".to_string());
+
+    if let Some(ref ua) = stream.user_agent {
+        args.push(format!("--user-agent={}", ua));
+    }
+    let mut headers_vec = Vec::new();
+    if let Some(ref orig) = stream.origin {
+        headers_vec.push(format!("origin:{}", orig));
+    }
+    if let Some(ref refer) = stream.referrer {
+        headers_vec.push(format!("referer:{}", refer));
+    }
+    if !headers_vec.is_empty() {
+        args.push(format!("--http-header-fields={}", headers_vec.join(",")));
+    }
+    if stream.ignore_ssl == Some(true) {
+        args.push("--ytdl-raw-options=no-check-certificates=True".to_string());
+    }
+
+    if let Ok(settings) = crate::settings::get_settings() {
+        if settings.use_stream_caching == Some(false) {
+            args.push("--cache=no".to_string());
+        }
+        if let Some(volume) = settings.volume {
+            args.push(format!("--volume={}", volume));
+        }
+        if let Some(ref mpv_params) = settings.mpv_params {
+            #[cfg(not(target_os = "windows"))]
+            if let Ok(params) = shell_words::split(mpv_params) {
+                args.extend(params);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let params = winsplit::split(mpv_params);
+                args.extend(params);
+            }
+        }
+    }
+
+    args.push(stream.url.clone());
+    args
+}
+
+pub async fn start_embedded_player_internal(
     window: WebviewWindow,
+    stream: PocStreamInfo,
     x: i32,
     y: i32,
     width: i32,
@@ -493,23 +562,20 @@ pub async fn start_embedded_poc(
     z_order: Option<String>,
     state: State<'_, EmbeddedPocState>,
 ) -> Result<PocStreamInfo, String> {
-    // 1. Clean up any previous POC playback
+    // 1. Clean up any previous embedded playback
     stop_embedded_poc_internal(&state).await;
-
-    // 2. Query known working stream from project DB
-    let stream = find_poc_stream()?;
 
     #[cfg(not(target_os = "windows"))]
     {
-        return Err("Embedded Win32 POC is only supported on Windows".to_string());
+        return Err("Embedded Win32 player is currently supported on Windows".to_string());
     }
 
     #[cfg(target_os = "windows")]
     {
         use tokio::net::windows::named_pipe::ClientOptions;
 
-        // 3. Find top-level Lighthouse HWND and create child HWND ON THE MAIN UI THREAD
-        let z_order_val = z_order.unwrap_or_else(|| "bottom".to_string());
+        // 2. Find top-level Lighthouse HWND and create child HWND ON THE MAIN UI THREAD
+        let z_order_val = z_order.unwrap_or_else(|| "top".to_string());
         let (tx_hwnd, rx_hwnd) = tokio::sync::oneshot::channel();
         let window_clone = window.clone();
         let z_order_clone = z_order_val.clone();
@@ -546,44 +612,21 @@ pub async fn start_embedded_poc(
             .await
             .map_err(|e| format!("Channel receive error: {:?}", e))??;
 
-        // 5. Locate bundled mpv.exe
+        // 3. Locate bundled mpv.exe
         let mpv_path = crate::utils::get_bin("mpv");
         let pipe_name = format!(r"\\.\pipe\lighthouse-mpv-poc-{}", std::process::id());
 
-        // 6. Build MPV arguments with --wid and headers
-        let mut cmd = tokio::process::Command::new(&mpv_path);
-        cmd.arg(format!("--wid={}", child_hwnd));
-        cmd.arg(format!("--input-ipc-server={}", pipe_name));
-        cmd.arg("--vo=gpu-next");
-        cmd.arg("--gpu-context=d3d11");
-        cmd.arg("--hwdec=auto");
-        cmd.arg("--msg-level=all=error");
-        cmd.arg("--input-default-bindings=no");
-        cmd.arg("--input-vo-keyboard=no");
-        cmd.arg("--input-cursor=no");
-        cmd.arg("--cursor-autohide=no");
-        cmd.arg("--no-terminal");
+        // 4. Build MPV arguments with identical stream/header options to external MPV
+        let args = build_embedded_mpv_args(child_hwnd, &pipe_name, &stream);
 
-        if let Some(ref ua) = stream.user_agent {
-            cmd.arg(format!("--user-agent={}", ua));
-        }
-        let mut headers_vec = Vec::new();
-        if let Some(ref orig) = stream.origin {
-            headers_vec.push(format!("Origin: {}", orig));
-        }
-        if let Some(ref refer) = stream.referrer {
-            headers_vec.push(format!("Referer: {}", refer));
-        }
-        if !headers_vec.is_empty() {
-            cmd.arg(format!("--http-header-fields={}", headers_vec.join(",")));
-        }
-        cmd.arg(&stream.url);
+        let mut cmd = tokio::process::Command::new(&mpv_path);
+        cmd.args(&args);
 
         let child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn mpv.exe at '{}': {:?}", mpv_path, e))?;
 
-        // 7. Connect to MPV Named Pipe JSON-IPC
+        // 5. Connect to MPV Named Pipe JSON-IPC
         let mut client_opt = None;
         for _ in 0..50 {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -640,7 +683,7 @@ pub async fn start_embedded_poc(
             .send(r#"{"command": ["observe_property", 3, "duration"]}"#.to_string())
             .await;
 
-        // 8. Ensure the embedded child window is presented on top and updated now that MPV has connected
+        // 6. Ensure the embedded child window is presented on top and updated now that MPV has connected
         let child_hwnd_val = child_hwnd;
         let _ = window.run_on_main_thread(move || {
             unsafe {
@@ -667,6 +710,50 @@ pub async fn start_embedded_poc(
 
         Ok(stream)
     }
+}
+
+#[tauri::command]
+pub async fn start_embedded_poc(
+    window: WebviewWindow,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    z_order: Option<String>,
+    state: State<'_, EmbeddedPocState>,
+) -> Result<PocStreamInfo, String> {
+    let stream = find_poc_stream()?;
+    start_embedded_player_internal(window, stream, x, y, width, height, z_order, state).await
+}
+
+#[tauri::command]
+pub async fn start_embedded_player(
+    window: WebviewWindow,
+    channel: crate::types::Channel,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    z_order: Option<String>,
+    state: State<'_, EmbeddedPocState>,
+) -> Result<PocStreamInfo, String> {
+    let stream = build_stream_info_from_channel(&channel)?;
+    start_embedded_player_internal(window, stream, x, y, width, height, z_order, state).await
+}
+
+#[tauri::command]
+pub async fn open_in_external_mpv(
+    channel: crate::types::Channel,
+    app_state: State<'_, Mutex<crate::types::AppState>>,
+    embedded_state: State<'_, EmbeddedPocState>,
+) -> Result<(), String> {
+    // 1. Terminate any active embedded player session to release child HWND & audio
+    stop_embedded_poc_internal(&embedded_state).await;
+
+    // 2. Play via existing, proven external MPV engine (100% untouched)
+    crate::mpv::play(channel, false, None, app_state)
+        .await
+        .map_err(|e| format!("External MPV playback error: {:?}", e))
 }
 
 #[tauri::command]
