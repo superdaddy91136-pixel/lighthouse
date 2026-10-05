@@ -20,6 +20,7 @@ use {
 };
 
 pub mod bulk_action_type;
+pub mod embedded_poc;
 pub mod epg;
 pub mod log;
 pub mod m3u;
@@ -115,12 +116,17 @@ pub fn run() {
             hide_channel,
             hide_group,
             remove_from_history,
-            get_all_expiries
+            get_all_expiries,
+            embedded_poc::start_embedded_poc,
+            embedded_poc::send_embedded_poc_ipc,
+            embedded_poc::stop_embedded_poc,
+            embedded_poc::resize_embedded_poc
         ])
         .setup(|app| {
             app.manage(Mutex::new(AppState {
                 ..Default::default()
             }));
+            app.manage(embedded_poc::EmbeddedPocState::new());
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             if *ENABLE_TRAY_ICON {
                 let _ = build_tray_icon(app);

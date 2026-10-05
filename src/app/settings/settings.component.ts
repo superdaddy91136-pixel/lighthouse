@@ -1,7 +1,8 @@
-import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
+import { ChangeDetectorRef, Component, ElementRef, HostListener, ViewChild } from "@angular/core";
 import { debounceTime, distinctUntilChanged, fromEvent, map, Subscription } from "rxjs";
 import { Settings } from "../models/settings";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { Router } from "@angular/router";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Source } from "../models/source";
@@ -36,6 +37,22 @@ export class SettingsComponent {
   tmdbTestSuccess: boolean | null = null;
   tmdbCacheStats: { enrichedCount: number; failedCount: number } = { enrichedCount: 0, failedCount: 0 };
 
+  // Embedded MPV Proof of Concept (Stage 2) state
+  pocActive: boolean = false;
+  pocLoading: boolean = false;
+  pocStatus: string = "Idle";
+  pocCurrentTime: number = 0;
+  pocDuration: number = 0;
+  pocPaused: boolean = false;
+  pocStreamName: string = "";
+  pocStreamUrl: string = "";
+  pocOverlayClicks: number = 0;
+  pocLastIpcEvent: string = "";
+  pocZOrder: "bottom" | "top" = "bottom";
+  pocUnlisten: UnlistenFn | null = null;
+  pocResizeObserver: ResizeObserver | null = null;
+  private pocSyncScheduled: boolean = false;
+
   settings: Settings = {
     use_stream_caching: true,
     default_view: ViewMode.All,
@@ -62,6 +79,7 @@ export class SettingsComponent {
     public tmdbConfig: TmdbConfigService,
     public tmdbCache: TmdbCacheService,
     private toastr: ToastrService,
+    private cdr: ChangeDetectorRef,
   ) { }
 
   _getSortTypeText(sortType: SortType) {
@@ -90,6 +108,22 @@ export class SettingsComponent {
         this.goBack();
       }
       event.preventDefault();
+    }
+  }
+
+  @HostListener("window:resize")
+  onWindowResize() {
+    if (this.pocActive) {
+      this.syncPocVideoBounds();
+      setTimeout(() => this.syncPocVideoBounds(), 50);
+      setTimeout(() => this.syncPocVideoBounds(), 150);
+    }
+  }
+
+  @HostListener("window:scroll")
+  onWindowScroll() {
+    if (this.pocActive) {
+      this.syncPocVideoBounds();
     }
   }
 
@@ -281,7 +315,158 @@ export class SettingsComponent {
     this.toastr.success("TMDB metadata cache cleared.");
   }
 
+  async startEmbeddedPoc() {
+    this.pocLoading = true;
+    this.pocStatus = "Initializing...";
+    this.pocOverlayClicks = 0;
+    try {
+      const el = document.getElementById("poc-video-canvas");
+      let x = 60, y = 140, width = 640, height = 360;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        x = Math.round(rect.x * dpr);
+        y = Math.round(rect.y * dpr);
+        width = Math.round(rect.width * dpr);
+        height = Math.round(rect.height * dpr);
+      }
+
+      if (this.pocUnlisten) {
+        this.pocUnlisten();
+        this.pocUnlisten = null;
+      }
+
+      this.pocUnlisten = await listen("embedded-poc-event", (event) => {
+        try {
+          const raw = event.payload as string;
+          this.pocLastIpcEvent = raw;
+          const parsed = JSON.parse(raw);
+          if (parsed.name === "time-pos" && typeof parsed.data === "number") {
+            this.pocCurrentTime = parsed.data;
+          } else if (parsed.name === "pause") {
+            this.pocPaused = !!parsed.data;
+          } else if (parsed.name === "duration" && typeof parsed.data === "number") {
+            this.pocDuration = parsed.data;
+          }
+          this.cdr.detectChanges();
+        } catch {
+          // ignore parse errors for non-json logs
+        }
+      });
+
+      document.body.classList.add("embedded-poc-active");
+
+      const res: any = await invoke("start_embedded_poc", {
+        x,
+        y,
+        width,
+        height,
+        zOrder: this.pocZOrder,
+      });
+
+      this.pocActive = true;
+      this.pocStatus = "Playing inside window";
+      this.pocStreamName = res.name || "Test Stream";
+      this.pocStreamUrl = res.url || "";
+      this.setupPocResizeObserver();
+      setTimeout(() => this.syncPocVideoBounds(), 50);
+      setTimeout(() => this.syncPocVideoBounds(), 150);
+      this.toastr.success(`Embedded MPV launched: ${this.pocStreamName}`);
+    } catch (err: any) {
+      this.pocStatus = `Failed: ${err}`;
+      this.toastr.error(`Embedded MPV failed: ${err}`);
+      document.body.classList.remove("embedded-poc-active");
+    } finally {
+      this.pocLoading = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  syncPocVideoBounds() {
+    if (!this.pocActive || this.pocSyncScheduled) return;
+    this.pocSyncScheduled = true;
+    requestAnimationFrame(() => {
+      this.pocSyncScheduled = false;
+      if (!this.pocActive) return;
+      const el = document.getElementById("poc-video-canvas");
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const x = Math.round(rect.x * dpr);
+      const y = Math.round(rect.y * dpr);
+      const width = Math.round(rect.width * dpr);
+      const height = Math.round(rect.height * dpr);
+      if (width <= 0 || height <= 0) return;
+
+      invoke("resize_embedded_poc", { x, y, width, height }).catch((err) => {
+        console.warn("resize_embedded_poc error", err);
+      });
+    });
+  }
+
+  setupPocResizeObserver() {
+    this.cleanupPocResizeObserver();
+    const el = document.getElementById("poc-video-canvas");
+    if (!el) return;
+    if (typeof ResizeObserver !== "undefined") {
+      this.pocResizeObserver = new ResizeObserver(() => {
+        this.syncPocVideoBounds();
+      });
+      this.pocResizeObserver.observe(el);
+      const parent = el.parentElement;
+      if (parent) {
+        this.pocResizeObserver.observe(parent);
+      }
+    }
+  }
+
+  cleanupPocResizeObserver() {
+    if (this.pocResizeObserver) {
+      this.pocResizeObserver.disconnect();
+      this.pocResizeObserver = null;
+    }
+  }
+
+  async stopEmbeddedPoc() {
+    this.cleanupPocResizeObserver();
+    try {
+      await invoke("stop_embedded_poc");
+    } catch (e) {
+      console.warn("stop_embedded_poc error", e);
+    }
+    if (this.pocUnlisten) {
+      this.pocUnlisten();
+      this.pocUnlisten = null;
+    }
+    document.body.classList.remove("embedded-poc-active");
+    this.pocActive = false;
+    this.pocStatus = "Stopped";
+    this.pocCurrentTime = 0;
+    this.pocDuration = 0;
+    this.cdr.detectChanges();
+  }
+
+  async togglePocPause() {
+    try {
+      await invoke("send_embedded_poc_ipc", {
+        command: JSON.stringify({ command: ["cycle", "pause"] }),
+      });
+    } catch (err: any) {
+      this.toastr.error(`IPC command error: ${err}`);
+    }
+  }
+
+  onPocOverlayClick() {
+    this.pocOverlayClicks++;
+    this.toastr.info(`Overlay clicked! Count: ${this.pocOverlayClicks}`);
+    this.togglePocPause();
+  }
+
   ngOnDestroy(): void {
+    this.cleanupPocResizeObserver();
+    if (this.pocActive) {
+      this.stopEmbeddedPoc();
+    }
     this.subscriptions.forEach((x) => x.unsubscribe());
   }
 }

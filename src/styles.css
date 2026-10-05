@@ -8,6 +8,14 @@ body {
   color: white;
 }
 
+body.embedded-poc-active {
+  background-color: transparent !important;
+}
+
+body.embedded-poc-active .settings-page {
+  background: transparent !important;
+}
+
 .help-modal__container {
   .help-modal {
     background-color: #202124 !important;

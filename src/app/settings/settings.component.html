@@ -14,6 +14,72 @@
   </header>
 
   <main class="settings-content-wrapper">
+    <!-- SECTION: EMBEDDED MPV PROOF OF CONCEPT (STAGE 2) -->
+    <section class="settings-card embedded-poc-card" style="border: 1px solid rgba(99, 102, 241, 0.4); background: rgba(30, 27, 75, 0.25);">
+      <div class="card-header-row">
+        <div class="header-icon-box" style="background: rgba(99, 102, 241, 0.2); color: #818cf8;">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title" style="color: #c7d2fe;">Embedded MPV Player - Stage 2 Proof of Concept</h2>
+          <p class="card-subtitle">Tests Win32 child HWND embedding with MPV --wid, Named Pipe JSON-IPC, and Angular click overlay</p>
+        </div>
+      </div>
+
+      <div class="settings-group" style="padding: 1rem 0;">
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+          <button type="button" class="btn-action-glass" [disabled]="pocActive || pocLoading" (click)="startEmbeddedPoc()" style="background: #4f46e5; border-color: #6366f1; color: white;">
+            <span>{{ pocLoading ? 'Starting...' : 'Start Embedded POC' }}</span>
+          </button>
+          <button type="button" class="btn-action-glass" [disabled]="!pocActive" (click)="stopEmbeddedPoc()" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+            <span>Stop Embedded POC</span>
+          </button>
+          <button type="button" class="btn-action-glass" [disabled]="!pocActive" (click)="togglePocPause()">
+            <span>Toggle Pause (IPC)</span>
+          </button>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #a5b4fc;">
+            <label>Z-Order:</label>
+            <select [(ngModel)]="pocZOrder" class="form-select-glass" style="width: auto; padding: 4px 8px;" [disabled]="pocActive">
+              <option value="bottom">Behind WebView2 (Transparent Overlay)</option>
+              <option value="top">On Top of WebView2</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Status readout -->
+        <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-bottom: 1rem; font-family: monospace; font-size: 0.82rem; color: #e2e8f0;">
+          <div><strong>POC Status:</strong> <span [style.color]="pocActive ? '#4ade80' : '#94a3b8'">{{ pocStatus }}</span></div>
+          <div *ngIf="pocStreamName"><strong>Test Stream:</strong> {{ pocStreamName }} ({{ pocStreamUrl }})</div>
+          <div *ngIf="pocActive"><strong>Playback Time:</strong> {{ pocCurrentTime | number:'1.1-2' }}s / {{ pocDuration | number:'1.1-2' }}s ({{ pocPaused ? 'PAUSED' : 'PLAYING' }})</div>
+          <div *ngIf="pocLastIpcEvent" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8;"><strong>Last IPC Event:</strong> {{ pocLastIpcEvent }}</div>
+        </div>
+
+        <!-- Dynamic Video Viewport Area with Clickable Overlay -->
+        <div class="poc-viewport-wrapper" style="position: relative; width: 100%; max-width: 960px; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 2px dashed #6366f1; background: transparent;">
+          <div id="poc-video-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; background: transparent;"></div>
+          
+          <!-- Overlay indicator when inactive -->
+          <div *ngIf="!pocActive" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #818cf8; background: rgba(15, 23, 42, 0.6); pointer-events: none;">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 48px; height: 48px; margin-bottom: 8px; opacity: 0.7;">
+              <path d="M21,3H3C1.9,3 1,3.9 1,5V17C1,18.1 1.9,19 3,19H8V21H16V19H21C22.1,19 23,18.1 23,17V5C23,3.9 22.1,3 21,3M21,17H3V5H21V17Z" />
+            </svg>
+            <span style="font-weight: 600;">Embedded Video Viewport</span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">Click "Start Embedded POC" above to launch embedded MPV</span>
+          </div>
+
+          <!-- PROOF OF CONCEPT REQUIREMENT 9: Clickable Angular Overlay on top of video -->
+          <div *ngIf="pocActive" style="position: absolute; top: 16px; left: 16px; z-index: 100; pointer-events: auto;">
+            <button type="button" (click)="onPocOverlayClick()" style="background: rgba(239, 68, 68, 0.9); color: white; border: 2px solid #ffffff; border-radius: 8px; padding: 10px 16px; font-weight: bold; font-size: 0.85rem; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer; display: flex; align-items: center; gap: 8px;">
+              <span>Angular Overlay Button</span>
+              <span style="background: white; color: #b91c1c; border-radius: 9999px; padding: 2px 8px; font-size: 0.75rem;">Clicks: {{ pocOverlayClicks }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- SECTION 1: INTERFACE & DISPLAY -->
     <section class="settings-card">
       <div class="card-header-row">
