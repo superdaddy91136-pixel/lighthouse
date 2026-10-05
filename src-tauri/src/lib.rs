@@ -135,29 +135,42 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_window_event(|_window, event| match event {
+        .on_window_event(|window, event| match event {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
+                    state.stop_sync();
+                }
                 if !*ENABLE_TRAY_ICON {
                     return;
                 }
 
-                _window.hide().unwrap();
+                window.hide().unwrap();
                 api.prevent_close();
+            }
+            tauri::WindowEvent::Destroyed => {
+                if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
+                    state.stop_sync();
+                }
             }
             _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|_app, event| match event {
+        .run(|app, event| match event {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
                 if !*ENABLE_TRAY_ICON {
                     return;
                 }
-                let window = _app.get_webview_window("main").expect("no main window");
+                let window = app.get_webview_window("main").expect("no main window");
                 let _ = window.show();
                 let _ = window.set_focus();
+            }
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+                if let Some(state) = app.try_state::<embedded_poc::EmbeddedPocState>() {
+                    state.stop_sync();
+                }
             }
             _ => {}
         });
@@ -173,6 +186,9 @@ fn build_tray_icon(app: &mut tauri::App) -> anyhow::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => {
+                if let Some(state) = app.try_state::<embedded_poc::EmbeddedPocState>() {
+                    state.stop_sync();
+                }
                 app.exit(0);
             }
             "show" => {

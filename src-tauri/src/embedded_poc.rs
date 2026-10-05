@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -25,14 +26,18 @@ pub struct PocIpcCommand {
     pub request_id: Option<u64>,
 }
 
+#[derive(Clone)]
 pub struct EmbeddedPocState {
     pub inner: Arc<Mutex<EmbeddedPocInner>>,
+    pub active_pid: Arc<AtomicU32>,
+    pub active_hwnd: Arc<AtomicUsize>,
 }
 
 pub struct EmbeddedPocInner {
     #[cfg(target_os = "windows")]
     pub child_hwnd: Option<usize>,
     pub child_process: Option<Child>,
+    pub child_pid: Option<u32>,
     pub ipc_tx: Option<mpsc::Sender<String>>,
     pub stream_info: Option<PocStreamInfo>,
     pub app_handle: Option<AppHandle>,
@@ -45,10 +50,33 @@ impl EmbeddedPocState {
                 #[cfg(target_os = "windows")]
                 child_hwnd: None,
                 child_process: None,
+                child_pid: None,
                 ipc_tx: None,
                 stream_info: None,
                 app_handle: None,
             })),
+            active_pid: Arc::new(AtomicU32::new(0)),
+            active_hwnd: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    pub fn stop_sync(&self) {
+        stop_embedded_player_sync(self);
+    }
+}
+
+impl Drop for EmbeddedPocInner {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child_process.take() {
+            let _ = child.start_kill();
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(pid) = self.child_pid.take() {
+            terminate_process_by_pid(pid);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(hwnd) = self.child_hwnd.take() {
+            destroy_child_window(hwnd);
         }
     }
 }
@@ -173,12 +201,22 @@ pub mod win32 {
         pub fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;
         pub fn InvalidateRect(hWnd: HWND, lpRect: *const RECT, bErase: BOOL) -> BOOL;
         pub fn UpdateWindow(hWnd: HWND) -> BOOL;
+        pub fn LoadCursorW(hInstance: HINSTANCE, lpCursorName: *const u16) -> *mut c_void;
     }
+
+    pub const IDC_ARROW: *const u16 = 32512 as *const u16;
+
+    pub const PROCESS_TERMINATE: u32 = 0x0001;
+    pub const SYNCHRONIZE: u32 = 0x00100000;
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
         pub fn GetCurrentProcessId() -> u32;
         pub fn GetModuleHandleW(lpModuleName: *const u16) -> HINSTANCE;
+        pub fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: BOOL, dwProcessId: u32) -> *mut c_void;
+        pub fn TerminateProcess(hProcess: *mut c_void, uExitCode: u32) -> BOOL;
+        pub fn WaitForSingleObject(hHandle: *mut c_void, dwMilliseconds: u32) -> u32;
+        pub fn CloseHandle(hObject: *mut c_void) -> BOOL;
     }
 }
 
@@ -231,6 +269,7 @@ pub fn register_embed_class() {
     if !REGISTERED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         let class_name: Vec<u16> = "LighthouseMpvEmbedClass\0".encode_utf16().collect();
         let hinstance = unsafe { win32::GetModuleHandleW(std::ptr::null()) };
+        let hcursor = unsafe { win32::LoadCursorW(std::ptr::null_mut(), win32::IDC_ARROW) };
         let wc = win32::WNDCLASSW {
             style: win32::CS_HREDRAW | win32::CS_VREDRAW | win32::CS_OWNDC,
             lpfnWndProc: Some(embed_wndproc),
@@ -238,7 +277,7 @@ pub fn register_embed_class() {
             cbWndExtra: 0,
             hInstance: hinstance,
             hIcon: std::ptr::null_mut(),
-            hCursor: std::ptr::null_mut(),
+            hCursor: hcursor,
             hbrBackground: std::ptr::null_mut(),
             lpszMenuName: std::ptr::null(),
             lpszClassName: class_name.as_ptr(),
@@ -313,9 +352,12 @@ pub fn create_child_window(
     let style = win32::WS_CHILD | win32::WS_VISIBLE | win32::WS_CLIPSIBLINGS | win32::WS_CLIPCHILDREN;
     let hinstance = unsafe { win32::GetModuleHandleW(std::ptr::null()) };
 
+    // No extended styles needed; window is fully opaque and handles its own mouse input
+    let ex_style = 0;
+
     let mut child_hwnd = unsafe {
         win32::CreateWindowExW(
-            0,
+            ex_style,
             custom_class.as_ptr(),
             win_name.as_ptr(),
             style,
@@ -333,7 +375,7 @@ pub fn create_child_window(
     if child_hwnd.is_null() {
         child_hwnd = unsafe {
             win32::CreateWindowExW(
-                0,
+                ex_style,
                 static_class.as_ptr(),
                 win_name.as_ptr(),
                 style,
@@ -372,9 +414,73 @@ pub fn create_child_window(
 
 #[cfg(target_os = "windows")]
 pub fn destroy_child_window(hwnd_usize: usize) {
+    if hwnd_usize == 0 {
+        return;
+    }
     let hwnd = hwnd_usize as win32::HWND;
     unsafe {
-        win32::DestroyWindow(hwnd);
+        let _ = win32::DestroyWindow(hwnd);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn destroy_child_window(_hwnd_usize: usize) {}
+
+#[cfg(target_os = "windows")]
+pub fn terminate_process_by_pid(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    unsafe {
+        let handle = win32::OpenProcess(
+            win32::PROCESS_TERMINATE | win32::SYNCHRONIZE,
+            0,
+            pid,
+        );
+        if !handle.is_null() {
+            let _ = win32::TerminateProcess(handle, 1);
+            let _ = win32::WaitForSingleObject(handle, 1000);
+            let _ = win32::CloseHandle(handle);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn terminate_process_by_pid(_pid: u32) {}
+
+pub fn stop_embedded_player_sync(state: &EmbeddedPocState) {
+    let atomic_pid = state.active_pid.swap(0, Ordering::SeqCst);
+    let atomic_hwnd = state.active_hwnd.swap(0, Ordering::SeqCst);
+
+    let (child_opt, child_pid, hwnd_opt) = {
+        if let Ok(mut inner) = state.inner.try_lock() {
+            let child = inner.child_process.take();
+            let pid = inner.child_pid.take();
+            #[cfg(target_os = "windows")]
+            let hwnd = inner.child_hwnd.take();
+            #[cfg(not(target_os = "windows"))]
+            let hwnd: Option<usize> = None;
+            inner.ipc_tx = None;
+            inner.stream_info = None;
+            inner.app_handle = None;
+            (child, pid, hwnd)
+        } else {
+            (None, None, None)
+        }
+    };
+
+    if let Some(mut child) = child_opt {
+        let _ = child.start_kill();
+    }
+
+    let target_pid = child_pid.or(if atomic_pid != 0 { Some(atomic_pid) } else { None });
+    if let Some(pid) = target_pid {
+        terminate_process_by_pid(pid);
+    }
+
+    let target_hwnd = hwnd_opt.or(if atomic_hwnd != 0 { Some(atomic_hwnd) } else { None });
+    if let Some(hwnd) = target_hwnd {
+        destroy_child_window(hwnd);
     }
 }
 
@@ -578,7 +684,7 @@ pub async fn start_embedded_player_internal(
         let z_order_val = z_order.unwrap_or_else(|| "top".to_string());
         let (tx_hwnd, rx_hwnd) = tokio::sync::oneshot::channel();
         let window_clone = window.clone();
-        let z_order_clone = z_order_val.clone();
+        let z_order_for_create = z_order_val.clone();
 
         window
             .run_on_main_thread(move || {
@@ -603,7 +709,7 @@ pub async fn start_embedded_player_internal(
                     );
                 }
 
-                let res = create_child_window(parent_hwnd, x, y, width, height, &z_order_clone);
+                let res = create_child_window(parent_hwnd, x, y, width, height, &z_order_for_create);
                 let _ = tx_hwnd.send(res);
             })
             .map_err(|e| format!("Failed to dispatch to main thread: {:?}", e))?;
@@ -626,6 +732,10 @@ pub async fn start_embedded_player_internal(
             .spawn()
             .map_err(|e| format!("Failed to spawn mpv.exe at '{}': {:?}", mpv_path, e))?;
 
+        let child_pid = child.id().unwrap_or(0);
+        state.active_pid.store(child_pid, Ordering::SeqCst);
+        state.active_hwnd.store(child_hwnd, Ordering::SeqCst);
+
         // 5. Connect to MPV Named Pipe JSON-IPC
         let mut client_opt = None;
         for _ in 0..50 {
@@ -638,10 +748,13 @@ pub async fn start_embedded_player_internal(
         let client = match client_opt {
             Some(c) => c,
             None => {
-                let mut inner = state.inner.lock().await;
-                inner.child_process = Some(child);
-                inner.child_hwnd = Some(child_hwnd);
-                inner.app_handle = Some(window.app_handle().clone());
+                {
+                    let mut inner = state.inner.lock().await;
+                    inner.child_process = Some(child);
+                    inner.child_pid = if child_pid != 0 { Some(child_pid) } else { None };
+                    inner.child_hwnd = Some(child_hwnd);
+                    inner.app_handle = Some(window.app_handle().clone());
+                }
                 stop_embedded_poc_internal(&state).await;
                 return Err("Timed out waiting for MPV Named Pipe server to initialize".to_string());
             }
@@ -682,6 +795,24 @@ pub async fn start_embedded_player_internal(
         let _ = tx
             .send(r#"{"command": ["observe_property", 3, "duration"]}"#.to_string())
             .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 4, "volume"]}"#.to_string())
+            .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 5, "mute"]}"#.to_string())
+            .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 6, "track-list"]}"#.to_string())
+            .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 7, "sid"]}"#.to_string())
+            .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 8, "aid"]}"#.to_string())
+            .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 9, "sub-scale"]}"#.to_string())
+            .await;
 
         // 6. Ensure the embedded child window is presented on top and updated now that MPV has connected
         let child_hwnd_val = child_hwnd;
@@ -704,6 +835,7 @@ pub async fn start_embedded_player_internal(
         let mut inner = state.inner.lock().await;
         inner.child_hwnd = Some(child_hwnd);
         inner.child_process = Some(child);
+        inner.child_pid = if child_pid != 0 { Some(child_pid) } else { None };
         inner.ipc_tx = Some(tx);
         inner.stream_info = Some(stream.clone());
         inner.app_handle = Some(window.app_handle().clone());
@@ -824,14 +956,35 @@ pub async fn stop_embedded_poc(
     Ok(())
 }
 
-async fn stop_embedded_poc_internal(state: &State<'_, EmbeddedPocState>) {
-    let mut inner = state.inner.lock().await;
-    if let Some(mut child) = inner.child_process.take() {
-        let _ = child.kill().await;
+pub async fn stop_embedded_poc_internal(state: &EmbeddedPocState) {
+    state.active_pid.store(0, Ordering::SeqCst);
+    state.active_hwnd.store(0, Ordering::SeqCst);
+
+    let (child_opt, child_pid, hwnd_opt, app_opt) = {
+        let mut inner = state.inner.lock().await;
+        let child = inner.child_process.take();
+        let pid = inner.child_pid.take();
+        #[cfg(target_os = "windows")]
+        let hwnd = inner.child_hwnd.take();
+        #[cfg(not(target_os = "windows"))]
+        let hwnd: Option<usize> = None;
+        let app = inner.app_handle.take();
+        inner.ipc_tx = None;
+        inner.stream_info = None;
+        (child, pid, hwnd, app)
+    };
+
+    if let Some(mut child) = child_opt {
+        let _ = child.start_kill();
+        let _ = child.wait().await;
     }
-    #[cfg(target_os = "windows")]
-    if let Some(hwnd) = inner.child_hwnd.take() {
-        if let Some(ref app) = inner.app_handle {
+
+    if let Some(pid) = child_pid {
+        terminate_process_by_pid(pid);
+    }
+
+    if let Some(hwnd) = hwnd_opt {
+        if let Some(ref app) = app_opt {
             let _ = app.run_on_main_thread(move || {
                 destroy_child_window(hwnd);
             });
@@ -839,7 +992,4 @@ async fn stop_embedded_poc_internal(state: &State<'_, EmbeddedPocState>) {
             destroy_child_window(hwnd);
         }
     }
-    inner.ipc_tx = None;
-    inner.stream_info = None;
-    inner.app_handle = None;
 }
