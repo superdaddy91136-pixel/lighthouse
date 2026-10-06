@@ -8,8 +8,10 @@
     <span>Back</span>
   </button>
 
-  <!-- EMBEDDED VIDEO HOST (STEP 2 POC & STEP 4 IN-APP PLAYER) -->
-  <div class="movie-embedded-host-wrapper" [class.fullscreen-player]="isFullscreen" *ngIf="isPlayingEmbedded">
+  <!-- EMBEDDED VIDEO HOST (THEATER & FULLSCREEN IN-APP PLAYER) -->
+  <div class="movie-embedded-host-wrapper"
+       [class.fullscreen-player]="isFullscreen"
+       *ngIf="isPlayingEmbedded">
     <div id="movie-video-canvas" class="movie-video-canvas"></div>
   </div>
 

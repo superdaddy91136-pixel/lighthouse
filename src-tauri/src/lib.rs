@@ -152,6 +152,9 @@ pub fn run() {
                     state.stop_sync();
                 }
                 if !*ENABLE_TRAY_ICON {
+                    if let Some(overlay) = window.app_handle().get_webview_window("player-overlay") {
+                        let _ = overlay.destroy();
+                    }
                     return;
                 }
 
@@ -191,6 +194,9 @@ pub fn run() {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.stop_sync();
                     }
+                    if let Some(overlay) = window.app_handle().get_webview_window("player-overlay") {
+                        let _ = overlay.destroy();
+                    }
                 }
             }
             _ => {}
@@ -211,6 +217,9 @@ pub fn run() {
                 if let Some(state) = app.try_state::<embedded_poc::EmbeddedPocState>() {
                     state.stop_sync();
                 }
+                if let Some(overlay) = app.get_webview_window("player-overlay") {
+                    let _ = overlay.destroy();
+                }
             }
             _ => {}
         });
@@ -228,6 +237,9 @@ fn build_tray_icon(app: &mut tauri::App) -> anyhow::Result<()> {
             "quit" => {
                 if let Some(state) = app.try_state::<embedded_poc::EmbeddedPocState>() {
                     state.stop_sync();
+                }
+                if let Some(overlay) = app.get_webview_window("player-overlay") {
+                    let _ = overlay.destroy();
                 }
                 app.exit(0);
             }

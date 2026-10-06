@@ -664,33 +664,6 @@
       const iconEnterFs = document.getElementById('iconEnterFs');
       const iconExitFs = document.getElementById('iconExitFs');
 
-      // MOUSE INPUT DIAGNOSTIC LOGS
-      let lastMouseMoveLog = 0;
-      document.addEventListener('mousemove', (e) => {
-        const now = Date.now();
-        if (now - lastMouseMoveLog > 500) {
-          lastMouseMoveLog = now;
-          const targetTag = e.target?.tagName || 'UNKNOWN';
-          const targetId = e.target?.id || '';
-          const targetClass = e.target?.className || '';
-          console.log(`[Overlay Mouse] mousemove at (${e.clientX}, ${e.clientY}), target: <${targetTag} id="${targetId}" class="${targetClass}">`);
-        }
-      }, { passive: true });
-
-      document.addEventListener('mousedown', (e) => {
-        const targetTag = e.target?.tagName || 'UNKNOWN';
-        const targetId = e.target?.id || '';
-        const targetClass = e.target?.className || '';
-        console.log(`[Overlay Mouse] mousedown at (${e.clientX}, ${e.clientY}), button: ${e.button}, target: <${targetTag} id="${targetId}" class="${targetClass}">`);
-      });
-
-      document.addEventListener('click', (e) => {
-        const targetTag = e.target?.tagName || 'UNKNOWN';
-        const targetId = e.target?.id || '';
-        const targetClass = e.target?.className || '';
-        console.log(`[Overlay Mouse] click at (${e.clientX}, ${e.clientY}), target: <${targetTag} id="${targetId}" class="${targetClass}">`);
-      });
-
       // TAURI HELPERS
       function getTauri() {
         if (window.__TAURI__) return Promise.resolve(window.__TAURI__);
@@ -842,21 +815,18 @@
 
       btnPlayPause.addEventListener('click', (e) => {
         e.stopPropagation();
-        console.log('[Overlay Action] Play/Pause button clicked');
         togglePlayPause();
       });
 
       // 10s SKIP & REPLAY
       btnReplay10.addEventListener('click', (e) => {
         e.stopPropagation();
-        console.log('[Overlay Action] Replay 10s button clicked');
         sendMpv(['seek', -10, 'relative']);
         showControls();
       });
 
       btnForward10.addEventListener('click', (e) => {
         e.stopPropagation();
-        console.log('[Overlay Action] Skip 10s button clicked');
         sendMpv(['seek', 10, 'relative']);
         showControls();
       });
@@ -865,7 +835,6 @@
       btnVolume.addEventListener('click', (e) => {
         e.stopPropagation();
         isMuted = !isMuted;
-        console.log('[Overlay Action] Volume mute toggle clicked, isMuted now:', isMuted);
         updateVolumeUI();
         sendMpv(['cycle', 'mute']);
         showControls();
@@ -874,7 +843,6 @@
       volumeSlider.addEventListener('input', (e) => {
         e.stopPropagation();
         const val = Number(e.target.value);
-        console.log('[Overlay Action] Volume slider adjusted to:', val);
         currentVolume = val;
         isMuted = val === 0;
         updateVolumeUI();
@@ -904,7 +872,6 @@
         isDragging = true;
         progressWrap.classList.add('dragging');
         const frac = getProgressFraction(e);
-        console.log('[Overlay Action] Seekbar mousedown at frac:', frac);
         progressFill.style.width = `${frac * 100}%`;
         progressThumb.style.left = `${frac * 100}%`;
         showControls();
@@ -926,7 +893,6 @@
           progressWrap.classList.remove('dragging');
           const frac = getProgressFraction(e);
           currentTime = frac * duration;
-          console.log('[Overlay Action] Seekbar seek released at time:', currentTime);
           sendMpv(['seek', currentTime, 'absolute']);
           resetHideTimer();
         }
@@ -934,13 +900,10 @@
 
       // FULLSCREEN
       async function toggleFullscreen() {
-        console.log('[Lighthouse Fullscreen][Hop 1] Overlay toggleFullscreen requested (button / F / double-click)');
         try {
-          console.log('[Lighthouse Fullscreen][Hop 2] Invoking Rust command toggle_player_fullscreen');
-          const res = await tauriInvoke('toggle_player_fullscreen');
-          console.log('[Lighthouse Fullscreen][Hop 2 Result] toggle_player_fullscreen returned:', res);
+          await tauriInvoke('toggle_player_fullscreen');
         } catch (err) {
-          console.error('[Lighthouse Fullscreen][Hop 2 Error] Failed to toggle fullscreen:', err);
+          console.error('Failed to toggle fullscreen:', err);
         }
         showControls();
       }
@@ -953,7 +916,6 @@
       // CLOSE / EXIT PLAYER
       btnClose.addEventListener('click', (e) => {
         e.stopPropagation();
-        console.log('[Overlay Action] Close (X) button clicked -> invoking stop_embedded_poc');
         tauriInvoke('stop_embedded_poc');
       });
 
@@ -965,7 +927,6 @@
 
       btnAudioTracks.addEventListener('click', (e) => {
         e.stopPropagation();
-        console.log('[Overlay Action] Audio tracks button clicked');
         const wasOpen = menuAudio.classList.contains('open');
         closeAllMenus();
         if (!wasOpen) menuAudio.classList.add('open');
@@ -974,7 +935,6 @@
 
       btnSubTracks.addEventListener('click', (e) => {
         e.stopPropagation();
-        console.log('[Overlay Action] Subtitle tracks button clicked');
         const wasOpen = menuSubs.classList.contains('open');
         closeAllMenus();
         if (!wasOpen) menuSubs.classList.add('open');
@@ -1004,7 +964,6 @@
             btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
-              console.log('[Overlay Action] Audio track selected:', t.id, label);
               currentAid = t.id;
               sendMpv(['set_property', 'aid', t.id]);
               renderTracks();
@@ -1021,7 +980,6 @@
         offBtn.innerHTML = `<span>Subtitles Off</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
         offBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          console.log('[Overlay Action] Subtitles Off selected');
           currentSid = 'no';
           sendMpv(['set_property', 'sid', 'no']);
           renderTracks();
@@ -1036,7 +994,6 @@
           btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            console.log('[Overlay Action] Subtitle track selected:', t.id, label);
             currentSid = t.id;
             sendMpv(['set_property', 'sid', t.id]);
             renderTracks();
@@ -1081,12 +1038,9 @@
           toggleFullscreen();
           e.preventDefault();
         } else if (e.key === 'Escape') {
-          console.log('[Lighthouse Fullscreen] Escape pressed in overlay. isFullscreen =', isFullscreen);
           if (isFullscreen) {
-            console.log('[Lighthouse Fullscreen] Exiting fullscreen first via toggleFullscreen');
             toggleFullscreen();
           } else {
-            console.log('[Lighthouse Fullscreen] Exiting player via stop_embedded_poc');
             tauriInvoke('stop_embedded_poc');
           }
           e.preventDefault();
@@ -1095,7 +1049,6 @@
 
       // LISTEN FOR FULLSCREEN CHANGES FROM BACKEND
       tauriListen('player-fullscreen-changed', (event) => {
-        console.log('[Lighthouse Fullscreen] Overlay received player-fullscreen-changed event:', event.payload);
         isFullscreen = !!event.payload;
         iconEnterFs.style.display = isFullscreen ? 'none' : 'block';
         iconExitFs.style.display = isFullscreen ? 'block' : 'none';

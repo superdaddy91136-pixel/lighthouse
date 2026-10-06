@@ -87,6 +87,8 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   isFullscreen: boolean = false;
   private unlistenStopped?: UnlistenFn;
   private unlistenFullscreen?: UnlistenFn;
+  private unlistenSyncBounds?: UnlistenFn;
+  private unlistenAspect?: UnlistenFn;
   private videoResizeObserver: ResizeObserver | null = null;
   private syncScheduled: boolean = false;
   private boundScrollHandler = () => this.syncVideoBounds();
@@ -127,6 +129,33 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  private savedScrollTop: number = 0;
+  private savedMainScrollTop: number = 0;
+
+  private saveScrollPosition(): void {
+    try {
+      this.savedScrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    } catch {
+      this.savedScrollTop = 0;
+    }
+    const main = document.querySelector('.app-main');
+    this.savedMainScrollTop = main ? main.scrollTop : 0;
+  }
+
+  private restoreScrollPosition(): void {
+    setTimeout(() => {
+      try {
+        window.scrollTo({ top: this.savedScrollTop, behavior: 'instant' as ScrollBehavior });
+      } catch {
+        window.scrollTo(0, this.savedScrollTop);
+      }
+      const main = document.querySelector('.app-main');
+      if (main) {
+        main.scrollTop = this.savedMainScrollTop;
+      }
+    }, 20);
+  }
+
   ngOnInit(): void {
     this.resetScrollPosition();
     const selected = this.movieDetailService.getSelectedMovie();
@@ -148,21 +177,34 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Listen for embedded player stopped event (from overlay or MPV EOF)
     listen('embedded-poc-stopped', () => {
-      console.log('[Lighthouse Fullscreen] embedded-poc-stopped event received in MovieDetail');
       this.cleanupVideoResizeObserver();
       this.isPlayingEmbedded = false;
+      document.body.classList.remove('theater-mode-active');
+      document.body.classList.remove('fullscreen-player-active');
       if (this.isFullscreen) {
         this.isFullscreen = false;
-        document.body.classList.remove('fullscreen-player-active');
       }
+      this.restoreScrollPosition();
       this.cdr.detectChanges();
     }).then((un) => (this.unlistenStopped = un));
 
     // Listen for fullscreen state changes from the Rust backend
     listen('player-fullscreen-changed', (event: any) => {
-      console.log('[Lighthouse Fullscreen][Hop 4] Main window received player-fullscreen-changed event:', event.payload);
       this.applyFullscreenState(!!event.payload);
     }).then((un) => (this.unlistenFullscreen = un));
+
+    // Listen for video bounds sync triggers from backend (e.g. window resize/restore)
+    listen('sync-video-bounds', () => {
+      this.syncVideoBounds();
+    }).then((un) => (this.unlistenSyncBounds = un));
+
+    // Listen for video display aspect ratio changes from MPV backend
+    listen('video-aspect-changed', (event: any) => {
+      const aspect = typeof event.payload === 'number' ? event.payload : parseFloat(event.payload);
+      if (aspect && !isNaN(aspect) && isFinite(aspect) && aspect > 0) {
+        this.updateVideoAspect(aspect);
+      }
+    }).then((un) => (this.unlistenAspect = un));
   }
 
   ngAfterViewInit(): void {
@@ -180,13 +222,22 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.unlistenFullscreen();
       this.unlistenFullscreen = undefined;
     }
+    if (this.unlistenSyncBounds) {
+      this.unlistenSyncBounds();
+      this.unlistenSyncBounds = undefined;
+    }
+    if (this.unlistenAspect) {
+      this.unlistenAspect();
+      this.unlistenAspect = undefined;
+    }
+    this.cleanupVideoResizeObserver();
+    document.body.classList.remove('theater-mode-active');
+    document.body.classList.remove('fullscreen-player-active');
     if (this.isFullscreen) {
       this.isFullscreen = false;
-      document.body.classList.remove('fullscreen-player-active');
       invoke('set_main_window_fullscreen', { fullscreen: false }).catch(console.warn);
     }
     if (this.isPlayingEmbedded) {
-      this.cleanupVideoResizeObserver();
       invoke('stop_embedded_poc').catch(console.error);
       this.isPlayingEmbedded = false;
     }
@@ -201,10 +252,8 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         (event.key === 'Backspace' && !isInputFocused())
       ) {
         if (this.isFullscreen) {
-          console.log('[Lighthouse Fullscreen] Escape in main window: Exiting fullscreen first');
           invoke('toggle_player_fullscreen').catch(console.error);
         } else {
-          console.log('[Lighthouse Fullscreen] Escape in main window while NOT fullscreen: Exiting player');
           this.stopEmbedded();
         }
         event.preventDefault();
@@ -232,7 +281,6 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
       if (event.key === 'f' || event.key === 'F') {
-        console.log('[Lighthouse Fullscreen] F key in main window: Invoking toggle_player_fullscreen');
         invoke('toggle_player_fullscreen').catch(console.error);
         event.preventDefault();
         return;
@@ -538,15 +586,19 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.toastr.info(`Starting embedded playback for "${this.cleanTitle}"...`);
       invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
 
-      // Render the embedded video canvas host in DOM
+      // Save scroll position before activating theater mode
+      this.saveScrollPosition();
+
+      // Render the embedded video canvas host in DOM in theater mode
       this.isPlayingEmbedded = true;
+      document.body.classList.add('theater-mode-active');
       this.cdr.detectChanges();
 
       // Wait a frame so layout/bounding rect computes
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
       const el = document.getElementById('movie-video-canvas');
-      let x = 64, y = 72, width = 640, height = 360;
+      let x = 0, y = 0, width = 800, height = 600;
       if (el) {
         const rect = el.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
@@ -554,7 +606,6 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         y = Math.round(rect.y * dpr);
         width = Math.round(rect.width * dpr);
         height = Math.round(rect.height * dpr);
-        console.log(`[Lighthouse Player] Initial video canvas rect: (${rect.x}, ${rect.y}, ${rect.width}x${rect.height}), dpr: ${dpr} -> client pixels: (${x}, ${y}, ${width}x${height})`);
       }
 
       await invoke('start_embedded_player', {
@@ -573,6 +624,9 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       console.error('Movie embedded playback error:', e);
       this.cleanupVideoResizeObserver();
       this.isPlayingEmbedded = false;
+      document.body.classList.remove('theater-mode-active');
+      document.body.classList.remove('fullscreen-player-active');
+      this.restoreScrollPosition();
       this.error.handleError(e, 'Failed to start embedded playback');
     } finally {
       this.isStartingPlayback = false;
@@ -641,13 +695,13 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   async stopEmbedded(): Promise<void> {
     this.cleanupVideoResizeObserver();
     if (this.isFullscreen) {
-      console.log('[Lighthouse Fullscreen] stopEmbedded: Restoring normal window mode');
       this.isFullscreen = false;
       document.body.classList.remove('fullscreen-player-active');
       try {
         await invoke('set_main_window_fullscreen', { fullscreen: false });
       } catch {}
     }
+    document.body.classList.remove('theater-mode-active');
     document.body.classList.remove('fullscreen-player-active');
     try {
       await invoke('stop_embedded_poc');
@@ -655,37 +709,37 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       console.warn('stop_embedded_poc error', e);
     }
     this.isPlayingEmbedded = false;
+    this.restoreScrollPosition();
     this.cdr.detectChanges();
   }
 
+  updateVideoAspect(_aspect: number): void {
+    // Theater mode fills the whole content area; MPV letterboxes automatically.
+  }
+
   applyFullscreenState(isFs: boolean): void {
-    console.log(`[Lighthouse Fullscreen][Hop 5] Applying fullscreen state in MovieDetail: ${isFs}`);
     this.isFullscreen = isFs;
     if (isFs) {
       document.body.classList.add('fullscreen-player-active');
     } else {
       document.body.classList.remove('fullscreen-player-active');
+      setTimeout(() => this.syncVideoBounds(true), 50);
     }
     this.cdr.detectChanges();
-    // Removed all delayed resyncs (50ms, 150ms, 350ms).
-    // Rust handles the single sync directly from the main window's Resized event.
   }
 
   async toggleFullscreen(): Promise<void> {
     if (!this.isPlayingEmbedded) return;
     try {
-      console.log('[Lighthouse Fullscreen] toggleFullscreen called: Invoking Rust toggle_player_fullscreen');
       await invoke('toggle_player_fullscreen');
     } catch (e) {
       console.warn('Failed to toggle fullscreen:', e);
     }
   }
 
-  syncVideoBounds(): void {
-    // When in fullscreen, Rust sizes MPV child HWND & overlay directly from GetClientRect on window resize.
-    if (!this.isPlayingEmbedded || this.syncScheduled || this.isFullscreen) return;
-    this.syncScheduled = true;
-    requestAnimationFrame(() => {
+  syncVideoBounds(immediate: boolean = false): void {
+    if (!this.isPlayingEmbedded || this.isFullscreen) return;
+    const doSync = () => {
       this.syncScheduled = false;
       if (!this.isPlayingEmbedded || this.isFullscreen) return;
       const el = document.getElementById('movie-video-canvas');
@@ -698,12 +752,19 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       const height = Math.round(rect.height * dpr);
       if (width <= 0 || height <= 0) return;
 
-      console.log(`[Lighthouse Fullscreen][Hop 6] syncVideoBounds -> client pixels: (${x}, ${y}, ${width}x${height}), rect: (${rect.x}, ${rect.y}, ${rect.width}x${rect.height}), dpr: ${dpr}, isFullscreen: ${this.isFullscreen}`);
-
       invoke('resize_embedded_poc', { x, y, width, height }).catch((err) => {
         console.warn('resize_embedded_poc error', err);
       });
-    });
+    };
+
+    if (immediate) {
+      doSync();
+      return;
+    }
+
+    if (this.syncScheduled) return;
+    this.syncScheduled = true;
+    requestAnimationFrame(doSync);
   }
 
   setupVideoResizeObserver(): void {
