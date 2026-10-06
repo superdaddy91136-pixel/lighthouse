@@ -23,7 +23,7 @@
       },
       {
         "label": "player-overlay",
-        "title": "Lighthouse Overlay",
+        "title": "",
         "url": "assets/overlay.html",
         "decorations": false,
         "transparent": true,

@@ -280,6 +280,20 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         event.preventDefault();
         return;
       }
+      if (event.key === 'ArrowUp') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['add', 'volume', 5] }),
+        }).catch(console.warn);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['add', 'volume', -5] }),
+        }).catch(console.warn);
+        event.preventDefault();
+        return;
+      }
       if (event.key === 'f' || event.key === 'F') {
         invoke('toggle_player_fullscreen').catch(console.error);
         event.preventDefault();

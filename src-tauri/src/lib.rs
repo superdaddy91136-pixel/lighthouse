@@ -162,8 +162,16 @@ pub fn run() {
                 api.prevent_close();
             }
             #[cfg(target_os = "windows")]
+            tauri::WindowEvent::Focused(_) => {
+                if window.label() == "player-overlay" {
+                    embedded_poc::ensure_overlay_borderless_by_window(window);
+                }
+            }
+            #[cfg(target_os = "windows")]
             tauri::WindowEvent::Moved(_) => {
-                if window.label() == "main" {
+                if window.label() == "player-overlay" {
+                    embedded_poc::ensure_overlay_borderless_by_window(window);
+                } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.sync_overlay_position_to_main_window();
                     }
@@ -171,7 +179,9 @@ pub fn run() {
             }
             #[cfg(target_os = "windows")]
             tauri::WindowEvent::Resized(_) => {
-                if window.label() == "main" {
+                if window.label() == "player-overlay" {
+                    embedded_poc::ensure_overlay_borderless_by_window(window);
+                } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         if window.is_minimized().unwrap_or(false) {
                             state.hide_overlay();
@@ -183,14 +193,21 @@ pub fn run() {
             }
             #[cfg(target_os = "windows")]
             tauri::WindowEvent::ScaleFactorChanged { .. } => {
-                if window.label() == "main" {
+                if window.label() == "player-overlay" {
+                    embedded_poc::ensure_overlay_borderless_by_window(window);
+                } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.handle_main_window_resized(window);
                     }
                 }
             }
             tauri::WindowEvent::Destroyed => {
-                if window.label() == "main" {
+                if window.label() == "player-overlay" {
+                    #[cfg(target_os = "windows")]
+                    if let Ok(raw) = window.hwnd() {
+                        embedded_poc::remove_overlay_subclass(raw.0 as usize);
+                    }
+                } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.stop_sync();
                     }

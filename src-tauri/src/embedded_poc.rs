@@ -146,6 +146,7 @@ impl EmbeddedPocState {
                         sync_overlay_rect(main_hwnd, overlay_hwnd, 0, 0, client_w, client_h, true);
 
                         // Show overlay again after the single sync
+                        ensure_overlay_borderless(overlay_hwnd);
                         unsafe {
                             win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_SHOW);
                         }
@@ -157,6 +158,7 @@ impl EmbeddedPocState {
                 // WINDOWED MODE: Do NOT compute an overlay size from last_bounds/windowed_bounds.
                 // Trigger the video resize path in Angular and sync overlay to current video rect.
                 let _ = window.emit("sync-video-bounds", ());
+                ensure_overlay_borderless(overlay_hwnd);
                 self.sync_overlay_to_video();
             }
         }
@@ -229,9 +231,14 @@ pub mod win32 {
     pub const GWLP_HWNDPARENT: i32 = -8;
     pub const GW_CHILD: u32 = 5;
 
+    pub const WS_POPUP: u32 = 0x80000000;
+    pub const WS_BORDER: u32 = 0x00800000;
+    pub const WS_DLGFRAME: u32 = 0x00400000;
+    pub const WS_CAPTION: u32 = 0x00C00000;
+    pub const WS_SYSMENU: u32 = 0x00080000;
     pub const WS_THICKFRAME: u32 = 0x00040000;
     pub const WS_SIZEBOX: u32 = 0x00040000;
-    pub const WS_CAPTION: u32 = 0x00C00000;
+    pub const WS_MINIMIZEBOX: u32 = 0x00020000;
     pub const WS_MAXIMIZEBOX: u32 = 0x00010000;
 
     pub const WS_EX_TRANSPARENT: u32 = 0x00000020;
@@ -245,6 +252,13 @@ pub mod win32 {
     pub const WM_PAINT: u32 = 0x000F;
     pub const WM_CLOSE: u32 = 0x0010;
     pub const WM_ERASEBKGND: u32 = 0x0014;
+    pub const WM_MOUSEACTIVATE: u32 = 0x0021;
+    pub const WM_NCDESTROY: u32 = 0x0082;
+    pub const WM_NCCALCSIZE: u32 = 0x0083;
+    pub const WM_NCPAINT: u32 = 0x0085;
+    pub const WM_NCACTIVATE: u32 = 0x0086;
+
+    pub const MA_NOACTIVATE: i32 = 3;
 
     pub const CS_VREDRAW: u32 = 0x0001;
     pub const CS_HREDRAW: u32 = 0x0002;
@@ -351,6 +365,41 @@ pub mod win32 {
         pub fn IsIconic(hWnd: HWND) -> BOOL;
         pub fn GetClientRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
         pub fn GetWindowRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
+        pub fn SetWindowTextW(hWnd: HWND, lpString: *const u16) -> BOOL;
+    }
+
+    pub type SUBCLASSPROC = Option<
+        unsafe extern "system" fn(
+            hWnd: HWND,
+            uMsg: u32,
+            wParam: usize,
+            lParam: isize,
+            uIdSubclass: usize,
+            dwRefData: usize,
+        ) -> isize,
+    >;
+
+    #[link(name = "comctl32")]
+    unsafe extern "system" {
+        pub fn SetWindowSubclass(
+            hWnd: HWND,
+            pfnSubclass: SUBCLASSPROC,
+            uIdSubclass: usize,
+            dwRefData: usize,
+        ) -> BOOL;
+
+        pub fn RemoveWindowSubclass(
+            hWnd: HWND,
+            pfnSubclass: SUBCLASSPROC,
+            uIdSubclass: usize,
+        ) -> BOOL;
+
+        pub fn DefSubclassProc(
+            hWnd: HWND,
+            uMsg: u32,
+            wParam: usize,
+            lParam: isize,
+        ) -> isize;
     }
 
     #[allow(non_snake_case)]
@@ -632,6 +681,147 @@ pub fn inspect_and_clean_overlay_exstyle(_stage: &str, overlay_hwnd: usize) {
 pub fn inspect_and_clean_overlay_exstyle(_stage: &str, _overlay_hwnd: usize) {}
 
 #[cfg(target_os = "windows")]
+pub fn ensure_overlay_borderless(overlay_hwnd: usize) {
+    if overlay_hwnd == 0 {
+        return;
+    }
+    unsafe {
+        let cur_style = win32::GetWindowLongW(overlay_hwnd as win32::HWND, win32::GWL_STYLE) as u32;
+        let remove_mask = win32::WS_CAPTION
+            | win32::WS_BORDER
+            | win32::WS_DLGFRAME
+            | win32::WS_THICKFRAME
+            | win32::WS_SIZEBOX
+            | win32::WS_SYSMENU
+            | win32::WS_MINIMIZEBOX
+            | win32::WS_MAXIMIZEBOX;
+        let clean_style = (cur_style & !remove_mask) | win32::WS_POPUP;
+
+        if clean_style == cur_style {
+            return;
+        }
+
+        win32::SetWindowLongPtrW(
+            overlay_hwnd as win32::HWND,
+            win32::GWL_STYLE,
+            clean_style as isize,
+        );
+
+        win32::SetWindowPos(
+            overlay_hwnd as win32::HWND,
+            win32::HWND_TOP,
+            0,
+            0,
+            0,
+            0,
+            win32::SWP_FRAMECHANGED
+                | win32::SWP_NOMOVE
+                | win32::SWP_NOSIZE
+                | win32::SWP_NOZORDER
+                | win32::SWP_NOACTIVATE,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn ensure_overlay_borderless(_overlay_hwnd: usize) {}
+
+pub fn ensure_overlay_borderless_by_window(window: &Window) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(raw) = window.hwnd() {
+            ensure_overlay_borderless(raw.0 as usize);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub const OVERLAY_SUBCLASS_ID: usize = 0x4F564C59; // 'OVLY'
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn overlay_subclass_proc(
+    hwnd: win32::HWND,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+    uid_subclass: usize,
+    _ref_data: usize,
+) -> isize {
+    match msg {
+        win32::WM_NCCALCSIZE => {
+            // When wParam is TRUE (non-zero), return 0 so the window has no non-client area at all.
+            if wparam != 0 {
+                return 0;
+            }
+            win32::DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        win32::WM_NCPAINT => {
+            // Suppress non-client frame painting completely.
+            0
+        }
+        win32::WM_NCACTIVATE => {
+            // Prevent Windows from repainting the non-client caption upon window activation.
+            // DefSubclassProc with lParam = -1 tells Windows not to repaint the non-client area.
+            win32::DefSubclassProc(hwnd, msg, wparam, -1);
+            1
+        }
+        win32::WM_MOUSEACTIVATE => {
+            // Return MA_NOACTIVATE (3) so clicks reach webview controls without activating the window.
+            win32::MA_NOACTIVATE as isize
+        }
+        win32::WM_NCDESTROY => {
+            // Automatically clean up subclass on window destruction.
+            win32::RemoveWindowSubclass(hwnd, Some(overlay_subclass_proc), uid_subclass);
+            win32::DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        _ => win32::DefSubclassProc(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn install_overlay_subclass(overlay_hwnd: usize) {
+    if overlay_hwnd == 0 {
+        return;
+    }
+    unsafe {
+        // Ensure not installed twice by removing any existing instance first
+        win32::RemoveWindowSubclass(
+            overlay_hwnd as win32::HWND,
+            Some(overlay_subclass_proc),
+            OVERLAY_SUBCLASS_ID,
+        );
+        win32::SetWindowSubclass(
+            overlay_hwnd as win32::HWND,
+            Some(overlay_subclass_proc),
+            OVERLAY_SUBCLASS_ID,
+            0,
+        );
+        let empty: [u16; 1] = [0];
+        win32::SetWindowTextW(overlay_hwnd as win32::HWND, empty.as_ptr());
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn install_overlay_subclass(_overlay_hwnd: usize) {}
+
+#[cfg(target_os = "windows")]
+pub fn remove_overlay_subclass(overlay_hwnd: usize) {
+    if overlay_hwnd == 0 {
+        return;
+    }
+    unsafe {
+        win32::RemoveWindowSubclass(
+            overlay_hwnd as win32::HWND,
+            Some(overlay_subclass_proc),
+            OVERLAY_SUBCLASS_ID,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn remove_overlay_subclass(_overlay_hwnd: usize) {}
+
+#[cfg(target_os = "windows")]
 pub fn ensure_overlay_ownership(main_hwnd: usize, overlay_hwnd: usize) {
     if main_hwnd == 0 || overlay_hwnd == 0 {
         return;
@@ -712,6 +902,7 @@ pub fn sync_overlay_to_video(state: &EmbeddedPocState) {
             return;
         }
 
+        ensure_overlay_borderless(overlay_hwnd);
         inspect_and_clean_overlay_exstyle("sync", overlay_hwnd);
 
         win32::SetWindowPos(
@@ -783,7 +974,8 @@ pub fn sync_overlay_rect(
         let mut pt = win32::POINT { x, y };
         win32::ClientToScreen(main_hwnd as win32::HWND, &mut pt);
 
-        // 4. Ensure WS_EX_TRANSPARENT/NOACTIVATE are cleared
+        // 4. Ensure overlay is borderless and WS_EX_TRANSPARENT/NOACTIVATE are cleared
+        ensure_overlay_borderless(overlay_hwnd);
         inspect_and_clean_overlay_exstyle("sync", overlay_hwnd);
 
         // Remove SWP_ASYNCWINDOWPOS to eliminate lag
@@ -815,7 +1007,9 @@ pub fn init_overlay_window(app: &AppHandle) {
     {
         if let Some(overlay_win) = app.get_webview_window("player-overlay") {
             let _ = overlay_win.set_ignore_cursor_events(false);
+            let _ = overlay_win.set_decorations(false);
             let _ = overlay_win.set_resizable(false);
+            let _ = overlay_win.set_title("");
             if let Ok(overlay_raw) = overlay_win.hwnd() {
                 let overlay_hwnd = overlay_raw.0 as usize;
                 let main_hwnd = app
@@ -828,36 +1022,9 @@ pub fn init_overlay_window(app: &AppHandle) {
                     ensure_overlay_ownership(main_hwnd, overlay_hwnd);
                 }
 
+                install_overlay_subclass(overlay_hwnd);
+                ensure_overlay_borderless(overlay_hwnd);
                 inspect_and_clean_overlay_exstyle("init", overlay_hwnd);
-
-                unsafe {
-                    let cur_style = win32::GetWindowLongW(overlay_hwnd as win32::HWND, win32::GWL_STYLE);
-                    let clean_style = cur_style
-                        & !(win32::WS_THICKFRAME as i32)
-                        & !(win32::WS_SIZEBOX as i32)
-                        & !(win32::WS_CAPTION as i32)
-                        & !(win32::WS_MAXIMIZEBOX as i32);
-                    if clean_style != cur_style {
-                        win32::SetWindowLongPtrW(
-                            overlay_hwnd as win32::HWND,
-                            win32::GWL_STYLE,
-                            clean_style as isize,
-                        );
-                    }
-                    win32::SetWindowPos(
-                        overlay_hwnd as win32::HWND,
-                        win32::HWND_TOP,
-                        0,
-                        0,
-                        0,
-                        0,
-                        win32::SWP_FRAMECHANGED
-                            | win32::SWP_NOMOVE
-                            | win32::SWP_NOSIZE
-                            | win32::SWP_NOZORDER
-                            | win32::SWP_NOACTIVATE,
-                    );
-                }
 
                 if let Some(state) = app.try_state::<EmbeddedPocState>() {
                     state.active_overlay_hwnd.store(overlay_hwnd, Ordering::SeqCst);
@@ -1185,9 +1352,13 @@ pub async fn start_embedded_player_internal(
             state.active_main_hwnd.store(parent_hwnd, Ordering::SeqCst);
         }
 
-        let overlay_hwnd = window
-            .app_handle()
-            .get_webview_window("player-overlay")
+        let overlay_win_opt = window.app_handle().get_webview_window("player-overlay");
+        if let Some(ref ow) = overlay_win_opt {
+            let _ = ow.set_decorations(false);
+            let _ = ow.set_resizable(false);
+            let _ = ow.set_title("");
+        }
+        let overlay_hwnd = overlay_win_opt
             .and_then(|w| w.hwnd().ok().map(|h| h.0 as usize))
             .unwrap_or(0);
 
@@ -1196,6 +1367,8 @@ pub async fn start_embedded_player_internal(
             if parent_hwnd != 0 {
                 ensure_overlay_ownership(parent_hwnd, overlay_hwnd);
             }
+            install_overlay_subclass(overlay_hwnd);
+            ensure_overlay_borderless(overlay_hwnd);
             state.sync_overlay_to_video();
         }
 
@@ -1259,6 +1432,7 @@ pub async fn start_embedded_player_internal(
 
         // Background task: read IPC events from MPV and forward to Angular
         let app_handle = window.app_handle().clone();
+        let tx_events = tx.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(reader).lines();
             let mut last_dw: Option<f64> = None;
@@ -1269,8 +1443,21 @@ pub async fn start_embedded_player_internal(
                 let _ = app_handle.emit("embedded-poc-event", &line);
 
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-                    if val.get("event").and_then(|v| v.as_str()) == Some("property-change") {
-                        if let Some(name) = val.get("name").and_then(|v| v.as_str()) {
+                    if let Some(event_name) = val.get("event").and_then(|v| v.as_str()) {
+                        match event_name {
+                            "file-loaded" | "playback-restart" | "tracks-changed" => {
+                                let _ = tx_events
+                                    .send(r#"{"command": ["get_property", "track-list"], "request_id": 200}"#.to_string())
+                                    .await;
+                                let _ = tx_events
+                                    .send(r#"{"command": ["get_property", "aid"], "request_id": 201}"#.to_string())
+                                    .await;
+                                let _ = tx_events
+                                    .send(r#"{"command": ["get_property", "sid"], "request_id": 202}"#.to_string())
+                                    .await;
+                            }
+                            "property-change" => {
+                                if let Some(name) = val.get("name").and_then(|v| v.as_str()) {
                             let mut aspect_opt: Option<f64> = None;
 
                             match name {
@@ -1332,10 +1519,13 @@ pub async fn start_embedded_player_internal(
                             }
                         }
                     }
+                    _ => {}
                 }
             }
-            let _ = app_handle.emit("embedded-poc-stopped", ());
-        });
+        }
+    }
+    let _ = app_handle.emit("embedded-poc-stopped", ());
+});
 
         // Observe playback properties
         let _ = tx

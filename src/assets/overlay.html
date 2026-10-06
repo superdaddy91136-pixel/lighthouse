@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Lighthouse Player Overlay</title>
+  <title></title>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -446,14 +446,30 @@
       font-weight: 600;
     }
 
+    .track-menu-item span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
     .track-check {
       width: 14px;
       height: 14px;
+      flex-shrink: 0;
       opacity: 0;
     }
 
     .track-menu-item.selected .track-check {
       opacity: 1;
+    }
+
+    .track-menu-empty {
+      font-size: 11px;
+      color: #94a3b8;
+      padding: 8px 10px;
+      font-style: italic;
+      user-select: none;
     }
 
     /* Guarantee interactive controls receive mouse events and override container */
@@ -478,10 +494,6 @@
     <!-- TOP BAR -->
     <header class="top-bar" id="topBar">
       <div class="top-left">
-        <div class="top-badge">
-          <span class="top-badge-dot"></span>
-          <span>In-App MPV</span>
-        </div>
         <span class="stream-title" id="streamTitle">Loading movie stream...</span>
       </div>
       <div class="top-right">
@@ -698,9 +710,13 @@
         if (window.__TAURI_INTERNALS__?.emit) return window.__TAURI_INTERNALS__.emit(event, payload);
       }
 
-      function sendMpv(cmdArray) {
+      function sendMpv(cmdArray, requestId) {
+        const payload = { command: cmdArray };
+        if (requestId != null) {
+          payload.request_id = requestId;
+        }
         tauriInvoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: cmdArray })
+          command: JSON.stringify(payload)
         }).catch((err) => console.warn('MPV IPC error:', err));
       }
 
@@ -925,11 +941,20 @@
         menuSubs.classList.remove('open');
       }
 
+      function requestTrackInfo() {
+        sendMpv(['get_property', 'track-list'], 200);
+        sendMpv(['get_property', 'aid'], 201);
+        sendMpv(['get_property', 'sid'], 202);
+      }
+
       btnAudioTracks.addEventListener('click', (e) => {
         e.stopPropagation();
         const wasOpen = menuAudio.classList.contains('open');
         closeAllMenus();
-        if (!wasOpen) menuAudio.classList.add('open');
+        if (!wasOpen) {
+          menuAudio.classList.add('open');
+          requestTrackInfo();
+        }
         showControls();
       });
 
@@ -937,7 +962,10 @@
         e.stopPropagation();
         const wasOpen = menuSubs.classList.contains('open');
         closeAllMenus();
-        if (!wasOpen) menuSubs.classList.add('open');
+        if (!wasOpen) {
+          menuSubs.classList.add('open');
+          requestTrackInfo();
+        }
         showControls();
       });
 
@@ -948,25 +976,107 @@
         }
       });
 
+      const ISO_LANG_MAP = {
+        eng: 'English', en: 'English',
+        spa: 'Spanish', es: 'Spanish',
+        fre: 'French', fra: 'French', fr: 'French',
+        ger: 'German', deu: 'German', de: 'German',
+        ita: 'Italian', it: 'Italian',
+        por: 'Portuguese', pt: 'Portuguese',
+        rus: 'Russian', ru: 'Russian',
+        jpn: 'Japanese', ja: 'Japanese',
+        kor: 'Korean', ko: 'Korean',
+        chi: 'Chinese', zho: 'Chinese', zh: 'Chinese',
+        hin: 'Hindi', hi: 'Hindi',
+        ara: 'Arabic', ar: 'Arabic',
+        ben: 'Bengali', bn: 'Bengali',
+        pan: 'Punjabi', pa: 'Punjabi',
+        tam: 'Tamil', ta: 'Tamil',
+        tel: 'Telugu', te: 'Telugu',
+        kan: 'Kannada', kn: 'Kannada',
+        mal: 'Malayalam', ml: 'Malayalam',
+        mar: 'Marathi', mr: 'Marathi',
+        guj: 'Gujarati', gu: 'Gujarati',
+        urd: 'Urdu', ur: 'Urdu',
+        tur: 'Turkish', tr: 'Turkish',
+        vie: 'Vietnamese', vi: 'Vietnamese',
+        tha: 'Thai', th: 'Thai',
+        pol: 'Polish', pl: 'Polish',
+        dut: 'Dutch', nld: 'Dutch', nl: 'Dutch',
+        swe: 'Swedish', sv: 'Swedish',
+        nor: 'Norwegian', no: 'Norwegian',
+        dan: 'Danish', da: 'Danish',
+        fin: 'Finnish', fi: 'Finnish',
+        ces: 'Czech', cze: 'Czech', cs: 'Czech',
+        ell: 'Greek', gre: 'Greek', el: 'Greek',
+        heb: 'Hebrew', he: 'Hebrew',
+        hun: 'Hungarian', hu: 'Hungarian',
+        ind: 'Indonesian', id: 'Indonesian',
+        ukr: 'Ukrainian', uk: 'Ukrainian',
+        ron: 'Romanian', rum: 'Romanian', ro: 'Romanian',
+        fas: 'Persian', per: 'Persian', fa: 'Persian',
+        und: 'Undetermined'
+      };
+
+      function formatTrackLabel(track, defaultPrefix) {
+        if (!track) return defaultPrefix;
+        const langKey = (track.lang || '').toLowerCase().trim();
+        const langName = ISO_LANG_MAP[langKey] || (track.lang ? track.lang.toUpperCase() : '');
+
+        if (track.title && track.title.trim()) {
+          const title = track.title.trim();
+          if (langName && langName !== 'Undetermined' && !title.toLowerCase().includes(langName.toLowerCase())) {
+            return `${title} (${langName})`;
+          }
+          return title;
+        }
+
+        if (langName && langName !== 'Undetermined') {
+          return langName;
+        }
+
+        return `${defaultPrefix} ${track.id || ''}`.trim();
+      }
+
+      function isSubOff(sid) {
+        return sid === 'no' || sid === false || sid == null || sid === 0 || sid === 'off';
+      }
+
       function renderTracks() {
         const audioTracks = tracks.filter((t) => t.type === 'audio');
         const subTracks = tracks.filter((t) => t.type === 'sub');
 
+        let activeAid = currentAid;
+        if (activeAid == null && audioTracks.length > 0) {
+          const sel = audioTracks.find((t) => t.selected);
+          if (sel) activeAid = sel.id;
+        }
+
+        let activeSid = currentSid;
+        if (activeSid == null && subTracks.length > 0) {
+          const sel = subTracks.find((t) => t.selected);
+          activeSid = sel ? sel.id : 'no';
+        }
+
         // Render Audio Tracks
         audioTrackList.innerHTML = '';
         if (audioTracks.length === 0) {
-          audioTrackList.innerHTML = '<div style="font-size: 11px; color: #94a3b8; padding: 6px 10px;">Default Audio Track</div>';
+          const empty = document.createElement('div');
+          empty.className = 'track-menu-empty';
+          empty.textContent = 'No audio tracks';
+          audioTrackList.appendChild(empty);
         } else {
           audioTracks.forEach((t) => {
+            const isSelected = activeAid != null ? String(t.id) === String(activeAid) : !!t.selected;
             const btn = document.createElement('button');
-            btn.className = `track-menu-item ${t.id === currentAid || t.selected ? 'selected' : ''}`;
-            const label = t.title || (t.lang ? `Audio (${t.lang.toUpperCase()})` : `Audio Track ${t.id}`);
+            btn.className = `track-menu-item ${isSelected ? 'selected' : ''}`;
+            const label = formatTrackLabel(t, 'Audio Track');
             btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
               currentAid = t.id;
-              sendMpv(['set_property', 'aid', t.id]);
               renderTracks();
+              sendMpv(['set_property', 'aid', t.id]);
               closeAllMenus();
             });
             audioTrackList.appendChild(btn);
@@ -975,32 +1085,42 @@
 
         // Render Subtitle Tracks
         subTrackList.innerHTML = '';
+        const subsDisabled = isSubOff(activeSid);
+
         const offBtn = document.createElement('button');
-        offBtn.className = `track-menu-item ${currentSid === 'no' || !currentSid ? 'selected' : ''}`;
+        offBtn.className = `track-menu-item ${subsDisabled ? 'selected' : ''}`;
         offBtn.innerHTML = `<span>Subtitles Off</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
         offBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           currentSid = 'no';
-          sendMpv(['set_property', 'sid', 'no']);
           renderTracks();
+          sendMpv(['set_property', 'sid', 'no']);
           closeAllMenus();
         });
         subTrackList.appendChild(offBtn);
 
-        subTracks.forEach((t) => {
-          const btn = document.createElement('button');
-          btn.className = `track-menu-item ${t.id === currentSid || (t.selected && currentSid !== 'no') ? 'selected' : ''}`;
-          const label = t.title || (t.lang ? `Subtitle (${t.lang.toUpperCase()})` : `Subtitle ${t.id}`);
-          btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            currentSid = t.id;
-            sendMpv(['set_property', 'sid', t.id]);
-            renderTracks();
-            closeAllMenus();
+        if (subTracks.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'track-menu-empty';
+          empty.textContent = 'No subtitles available';
+          subTrackList.appendChild(empty);
+        } else {
+          subTracks.forEach((t) => {
+            const isSelected = !subsDisabled && (String(t.id) === String(activeSid) || (activeSid == null && t.selected));
+            const btn = document.createElement('button');
+            btn.className = `track-menu-item ${isSelected ? 'selected' : ''}`;
+            const label = formatTrackLabel(t, 'Subtitle');
+            btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              currentSid = t.id;
+              renderTracks();
+              sendMpv(['set_property', 'sid', t.id]);
+              closeAllMenus();
+            });
+            subTrackList.appendChild(btn);
           });
-          subTrackList.appendChild(btn);
-        });
+        }
       }
 
       // KEYBOARD SHORTCUTS IN OVERLAY
@@ -1059,6 +1179,37 @@
         try {
           const raw = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
           const parsed = JSON.parse(raw);
+
+          // 1. MPV command responses (e.g. from get_property)
+          if (parsed.request_id === 200 && Array.isArray(parsed.data)) {
+            tracks = parsed.data;
+            renderTracks();
+            return;
+          }
+          if (parsed.request_id === 201) {
+            currentAid = parsed.data;
+            renderTracks();
+            return;
+          }
+          if (parsed.request_id === 202) {
+            currentSid = parsed.data;
+            renderTracks();
+            return;
+          }
+
+          // 2. Lifecycle events: demuxer finished / tracks ready
+          if (parsed.event === 'file-loaded' || parsed.event === 'playback-restart' || parsed.event === 'tracks-changed') {
+            requestTrackInfo();
+            return;
+          }
+
+          // 3. General track-list data fallback
+          if (Array.isArray(parsed.data) && parsed.data.length > 0 && parsed.data[0]?.type) {
+            tracks = parsed.data;
+            renderTracks();
+          }
+
+          // 4. Observed property changes
           if (parsed.event === 'property-change') {
             switch (parsed.name) {
               case 'time-pos':
@@ -1103,7 +1254,9 @@
                 break;
             }
           }
-        } catch {}
+        } catch (err) {
+          console.warn('MPV IPC event parse error:', err, event?.payload);
+        }
       });
 
       // STREAM TITLE INITIALIZATION
@@ -1116,15 +1269,28 @@
       }
 
       tauriListen('embedded-player-started', (event) => {
+        tracks = [];
+        currentAid = null;
+        currentSid = 'no';
+        renderTracks();
+        requestTrackInfo();
         if (event.payload?.name) {
           updateTitle(event.payload.name);
         }
+      });
+
+      tauriListen('embedded-poc-stopped', () => {
+        tracks = [];
+        currentAid = null;
+        currentSid = 'no';
+        renderTracks();
       });
 
       tauriInvoke('get_embedded_player_info').then((info) => {
         if (info?.name) {
           updateTitle(info.name);
         }
+        requestTrackInfo();
       }).catch(console.warn);
 
       // Start initial hide timer
