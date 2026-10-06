@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <title></title>
   <style>
+    :root {
+      --top-crop: 0px;
+    }
+
     *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
@@ -23,9 +27,12 @@
 
     .overlay-container {
       position: absolute;
-      inset: 0;
+      top: var(--top-crop, 0px);
+      left: 0;
       width: 100%;
-      height: 100%;
+      height: calc(100% - var(--top-crop, 0px));
+      padding-top: var(--top-crop, 0px);
+      box-sizing: border-box;
       background: transparent !important;
       overflow: hidden;
     }
@@ -388,6 +395,50 @@
       margin: 0 4px;
     }
 
+    /* LIVE BADGE */
+    .live-badge {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.6);
+      color: #ef4444;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-left: 10px;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+    }
+
+    .live-badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
+      animation: livePulse 2s infinite ease-in-out;
+    }
+
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* LIVE MODE OVERRIDES */
+    body.mode-live #progressWrap,
+    body.mode-live #btnReplay10,
+    body.mode-live #btnForward10,
+    body.mode-live #timeDisplay {
+      display: none !important;
+    }
+
+    body.mode-live #liveBadge {
+      display: inline-flex !important;
+    }
+
     /* POPUP MENUS (AUDIO & SUBS) */
     .menu-anchor {
       position: relative;
@@ -584,10 +635,16 @@
           </div>
 
           <!-- Time Display -->
-          <div class="time-display">
+          <div class="time-display" id="timeDisplay">
             <span id="timeCurrent">00:00</span>
             <span class="time-separator">/</span>
             <span id="timeDuration">00:00</span>
+          </div>
+
+          <!-- Live Indicator Badge -->
+          <div class="live-badge" id="liveBadge">
+            <span class="live-badge-dot"></span>
+            <span>LIVE</span>
           </div>
         </div>
 
@@ -650,6 +707,16 @@
       let currentAid = 1;
       let currentSid = 'no';
       let clickTimeout = null;
+      let currentContentMode = 'movie'; // 'movie' | 'episode' | 'live'
+
+      function setContentMode(mode) {
+        currentContentMode = (mode === 'live' || mode === 'episode') ? mode : 'movie';
+        if (currentContentMode === 'live') {
+          document.body.classList.add('mode-live');
+        } else {
+          document.body.classList.remove('mode-live');
+        }
+      }
 
       // DOM ELEMENTS
       const overlayContainer = document.getElementById('overlayContainer');
@@ -901,7 +968,7 @@
       });
 
       progressWrap.addEventListener('mousedown', (e) => {
-        if (!duration) return;
+        if (currentContentMode === 'live' || !duration) return;
         isDragging = true;
         progressWrap.classList.add('dragging');
         const frac = getProgressFraction(e);
@@ -1157,12 +1224,16 @@
           togglePlayPause();
           e.preventDefault();
         } else if (e.key === 'ArrowLeft') {
-          sendMpv(['seek', -10, 'relative']);
-          showControls();
+          if (currentContentMode !== 'live') {
+            sendMpv(['seek', -10, 'relative']);
+            showControls();
+          }
           e.preventDefault();
         } else if (e.key === 'ArrowRight') {
-          sendMpv(['seek', 10, 'relative']);
-          showControls();
+          if (currentContentMode !== 'live') {
+            sendMpv(['seek', 10, 'relative']);
+            showControls();
+          }
           e.preventDefault();
         } else if (e.key === 'ArrowUp') {
           currentVolume = Math.min(100, currentVolume + 5);
@@ -1296,6 +1367,30 @@
         }
       }
 
+      function setTopCrop(payload) {
+        let cropVal = 0;
+        if (typeof payload === 'number') {
+          cropVal = payload;
+        } else if (payload && typeof payload === 'object') {
+          if (typeof payload.crop === 'number') {
+            cropVal = payload.crop;
+          } else if (typeof payload.top_crop === 'number') {
+            cropVal = payload.top_crop;
+          }
+        }
+        document.documentElement.style.setProperty('--top-crop', `${cropVal}px`);
+      }
+
+      tauriListen('overlay-top-crop', (event) => {
+        setTopCrop(event?.payload);
+      });
+
+      tauriListen('embedded-player-mode', (event) => {
+        if (event?.payload?.mode) {
+          setContentMode(event.payload.mode);
+        }
+      });
+
       tauriListen('embedded-player-started', (event) => {
         tracks = [];
         currentAid = null;
@@ -1305,9 +1400,13 @@
         if (event.payload?.name) {
           updateTitle(event.payload.name);
         }
+        tauriEmit('request-player-mode');
+        tauriEmit('request-overlay-top-crop');
       });
 
       tauriListen('embedded-poc-stopped', () => {
+        setTopCrop(0);
+        setContentMode('movie');
         tracks = [];
         currentAid = null;
         currentSid = 'no';
@@ -1319,6 +1418,15 @@
           updateTitle(info.name);
         }
         requestTrackInfo();
+      }).catch(console.warn);
+
+      // Request current content mode & top crop on load so late-loading overlay is never in wrong mode or offset
+      tauriEmit('request-player-mode');
+      tauriEmit('request-overlay-top-crop');
+      tauriInvoke('get_overlay_top_crop').then((crop) => {
+        if (typeof crop === 'number') {
+          setTopCrop(crop);
+        }
       }).catch(console.warn);
 
       // Start initial hide timer

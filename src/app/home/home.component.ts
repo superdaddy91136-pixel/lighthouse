@@ -44,6 +44,7 @@ import { NavTab } from '../models/navTab';
 import { cleanMediaTitle } from '../utils/media-presentation';
 import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.component';
 import { PinService } from '../services/pin.service';
+import { EmbeddedPlayerService } from '../services/embedded-player.service';
 
 export interface UniversalSearchResults {
   channels: Channel[];
@@ -274,20 +275,34 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       await this.openSeries(channel);
       return;
     }
+    const isLive = channel.media_type === MediaType.livestream;
     const playChannel: Channel = {
       ...channel,
       media_type: channel.media_type,
       favorite: !!channel.favorite,
     };
-    const isLive = channel.media_type === MediaType.livestream;
     if (isLive) {
       this.livePlayingChannel = channel;
+      this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
+      invoke("add_last_watched", { id: channel.id }).catch(console.error);
+      try {
+        await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+          title: cleanMediaTitle(channel.name || 'Live TV'),
+          mode: 'live',
+        });
+        return;
+      } catch (err) {
+        console.warn('Failed to start embedded live player, falling back to external MPV:', err);
+      } finally {
+        this.livePlayingChannel = undefined;
+      }
     }
+
     try {
       this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
       invoke("add_last_watched", { id: channel.id }).catch(console.error);
 
-      // Open channel switcher panel for Live TV so user can browse while watching
+      // Open channel switcher panel for Live TV in external mode
       if (isLive && this.channelSwitcher) {
         this.channelSwitcher.open(channel);
       }
@@ -343,6 +358,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     private error: ErrorService,
     private tvDetailService: TvDetailService,
     public pinService: PinService,
+    public embeddedPlayer: EmbeddedPlayerService,
   ) {
     this.getSources();
     this.updatePinnedItems();
@@ -1189,6 +1205,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    if (this.embeddedPlayer.isPlayingEmbedded) {
+      this.embeddedPlayer.stopPlayer().catch(console.warn);
+    }
     this.subscriptions.forEach((x) => x.unsubscribe());
   }
 

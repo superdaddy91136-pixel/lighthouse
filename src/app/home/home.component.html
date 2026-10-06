@@ -1,5 +1,13 @@
 <ng-keyboard-shortcuts [shortcuts]="shortcuts"></ng-keyboard-shortcuts>
 <ng-keyboard-shortcuts-help [key]="'f1'" [closeKey]="'escape'" [title]="'Help'" />
+
+<!-- EMBEDDED VIDEO HOST (LIVE TV THEATER & FULLSCREEN IN-APP PLAYER) -->
+<div class="movie-embedded-host-wrapper embedded-player-host-wrapper"
+     [class.fullscreen-player]="embeddedPlayer.isFullscreen"
+     *ngIf="embeddedPlayer.isPlayingEmbedded">
+  <div id="home-video-canvas" class="movie-video-canvas embedded-video-canvas"></div>
+</div>
+
 <div class="mb-5">
   <div [class.container-lg]="!isHomeDiscoveryMode" [class.reserve-settings-space]="!isHomeDiscoveryMode" [class.home-discovery-layout]="isHomeDiscoveryMode">
     <!-- EXPANDABLE FROSTED GLASS SEARCH CONTROL -->

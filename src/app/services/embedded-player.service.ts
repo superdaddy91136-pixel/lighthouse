@@ -1,21 +1,26 @@
-import { Injectable, NgZone } from '@angular/core';
+import { Injectable, NgZone, OnDestroy } from '@angular/core';
+import { Router, NavigationStart } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ToastrService } from 'ngx-toastr';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { Channel } from '../models/channel';
 import { MediaType } from '../models/mediaType';
 import { cleanMediaTitle } from '../utils/media-presentation';
 import { isInputFocused } from '../utils';
 
+export type ContentMode = 'movie' | 'episode' | 'live';
+
 export interface EmbeddedPlayerOptions {
   title?: string;
+  mode?: ContentMode;
 }
 
 @Injectable({
   providedIn: 'root',
 })
-export class EmbeddedPlayerService {
+export class EmbeddedPlayerService implements OnDestroy {
   private isPlayingEmbeddedSubject = new BehaviorSubject<boolean>(false);
   public isPlayingEmbedded$: Observable<boolean> = this.isPlayingEmbeddedSubject.asObservable();
 
@@ -28,6 +33,11 @@ export class EmbeddedPlayerService {
 
   public get isFullscreen(): boolean {
     return this.isFullscreenSubject.value;
+  }
+
+  private currentMode: ContentMode = 'movie';
+  public get mode(): ContentMode {
+    return this.currentMode;
   }
 
   private hostTarget: HTMLElement | string | null = null;
@@ -45,6 +55,11 @@ export class EmbeddedPlayerService {
   private unlistenAspect?: UnlistenFn;
   private unlistenRequestExternal?: UnlistenFn;
   private unlistenPlayerStarted?: UnlistenFn;
+  private unlistenRequestMode?: UnlistenFn;
+  private unlistenRequestCrop?: UnlistenFn;
+  private unlistenGlobalStopped?: UnlistenFn;
+
+  private routerSubscription?: Subscription;
 
   private savedScrollTop: number = 0;
   private savedMainScrollTop: number = 0;
@@ -52,8 +67,16 @@ export class EmbeddedPlayerService {
   constructor(
     private ngZone: NgZone,
     private toastr: ToastrService,
+    private router: Router,
   ) {
     this.initGlobalListeners();
+    this.routerSubscription = this.router.events
+      .pipe(filter((event) => event instanceof NavigationStart))
+      .subscribe(() => {
+        if (this.isPlayingEmbedded) {
+          this.stopPlayer().catch(console.warn);
+        }
+      });
   }
 
   private async initGlobalListeners(): Promise<void> {
@@ -69,6 +92,30 @@ export class EmbeddedPlayerService {
             source_id: stream.source_id,
             media_type: MediaType.movie,
           };
+          if (!this.isPlayingEmbedded) {
+            this.currentMode = 'movie';
+            emit('embedded-player-mode', { mode: 'movie' }).catch(console.warn);
+          }
+        }
+      });
+    });
+
+    // Listen for mode request from overlay (on late-load or restart)
+    this.unlistenRequestMode = await listen('request-player-mode', () => {
+      emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
+    });
+
+    // Listen for top-crop request from overlay
+    this.unlistenRequestCrop = await listen('request-overlay-top-crop', () => {
+      const crop = this.isPlayingEmbedded && !this.isFullscreen ? 32 : 0;
+      emit('overlay-top-crop', { crop }).catch(console.warn);
+    });
+
+    // Global listener for player stopped (catches exits/crashes cleanly without black screen)
+    this.unlistenGlobalStopped = await listen('embedded-poc-stopped', () => {
+      this.ngZone.run(() => {
+        if (this.isPlayingEmbedded) {
+          this.handlePlayerStopped();
         }
       });
     });
@@ -202,18 +249,22 @@ export class EmbeddedPlayerService {
     }
 
     if (event.key === 'ArrowLeft') {
-      invoke('send_embedded_poc_ipc', {
-        command: JSON.stringify({ command: ['seek', -10, 'relative'] }),
-      }).catch(console.warn);
+      if (this.currentMode !== 'live') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['seek', -10, 'relative'] }),
+        }).catch(console.warn);
+      }
       event.preventDefault();
       event.stopPropagation();
       return;
     }
 
     if (event.key === 'ArrowRight') {
-      invoke('send_embedded_poc_ipc', {
-        command: JSON.stringify({ command: ['seek', 10, 'relative'] }),
-      }).catch(console.warn);
+      if (this.currentMode !== 'live') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['seek', 10, 'relative'] }),
+        }).catch(console.warn);
+      }
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -326,6 +377,7 @@ export class EmbeddedPlayerService {
 
   private applyFullscreenState(isFs: boolean): void {
     this.isFullscreenSubject.next(isFs);
+    emit('overlay-top-crop', { crop: isFs ? 0 : 32 }).catch(console.warn);
     if (isFs) {
       document.body.classList.add('fullscreen-player-active');
     } else {
@@ -348,6 +400,10 @@ export class EmbeddedPlayerService {
     this.removeKeyHandler();
     this.cleanupTauriListeners();
 
+    this.currentMode = 'movie';
+    emit('embedded-player-mode', { mode: 'movie' }).catch(console.warn);
+    emit('overlay-top-crop', { crop: 0 }).catch(console.warn);
+
     this.currentChannel = undefined;
     this.activeFallbackChannel = undefined;
 
@@ -365,6 +421,10 @@ export class EmbeddedPlayerService {
     this.cleanupVideoResizeObserver();
     this.removeKeyHandler();
     this.cleanupTauriListeners();
+
+    this.currentMode = 'movie';
+    emit('embedded-player-mode', { mode: 'movie' }).catch(console.warn);
+    emit('overlay-top-crop', { crop: 0 }).catch(console.warn);
 
     if (this.isFullscreen) {
       this.isFullscreenSubject.next(false);
@@ -442,6 +502,7 @@ export class EmbeddedPlayerService {
     this.saveScrollPosition();
     this.hostTarget = hostElementOrId;
     this.currentChannel = channel;
+    this.currentMode = options?.mode || 'movie';
 
     const playChannel: Channel = {
       ...channel,
@@ -452,6 +513,7 @@ export class EmbeddedPlayerService {
     document.body.classList.add('theater-mode-active');
 
     await this.setupTauriListeners();
+    emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
 
     try {
       // Wait a frame so layout/bounding rect computes
@@ -485,11 +547,17 @@ export class EmbeddedPlayerService {
         zOrder: 'top',
       });
 
+      emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
+      emit('overlay-top-crop', { crop: 32 }).catch(console.warn);
+
       this.attachKeyHandler();
       this.setupVideoResizeObserver();
       setTimeout(() => this.syncBounds(), 50);
       setTimeout(() => this.syncBounds(), 150);
     } catch (err) {
+      this.currentMode = 'movie';
+      emit('embedded-player-mode', { mode: 'movie' }).catch(console.warn);
+      emit('overlay-top-crop', { crop: 0 }).catch(console.warn);
       this.currentChannel = undefined;
       this.cleanupVideoResizeObserver();
       this.removeKeyHandler();
@@ -500,5 +568,16 @@ export class EmbeddedPlayerService {
       this.restoreScrollPosition();
       throw err;
     }
+  }
+
+  ngOnDestroy(): void {
+    if (this.routerSubscription) {
+      this.routerSubscription.unsubscribe();
+    }
+    if (this.unlistenRequestMode) this.unlistenRequestMode();
+    if (this.unlistenRequestCrop) this.unlistenRequestCrop();
+    if (this.unlistenGlobalStopped) this.unlistenGlobalStopped();
+    if (this.unlistenRequestExternal) this.unlistenRequestExternal();
+    if (this.unlistenPlayerStarted) this.unlistenPlayerStarted();
   }
 }

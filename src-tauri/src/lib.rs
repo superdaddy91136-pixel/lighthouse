@@ -125,7 +125,8 @@ pub fn run() {
             embedded_poc::resize_embedded_poc,
             embedded_poc::get_embedded_player_info,
             embedded_poc::toggle_player_fullscreen,
-            embedded_poc::set_main_window_fullscreen
+            embedded_poc::set_main_window_fullscreen,
+            embedded_poc::get_overlay_top_crop
         ])
         .setup(|app| {
             app.manage(Mutex::new(AppState {
@@ -165,12 +166,22 @@ pub fn run() {
             tauri::WindowEvent::Focused(_) => {
                 if window.label() == "player-overlay" {
                     embedded_poc::ensure_overlay_borderless_by_window(window);
+                    if let Ok(raw) = window.hwnd() {
+                        let h = raw.0 as usize;
+                        embedded_poc::apply_overlay_client_region(h, None);
+                        embedded_poc::log_overlay_state("WindowEvent::Focused", h);
+                    }
                 }
             }
             #[cfg(target_os = "windows")]
             tauri::WindowEvent::Moved(_) => {
                 if window.label() == "player-overlay" {
                     embedded_poc::ensure_overlay_borderless_by_window(window);
+                    if let Ok(raw) = window.hwnd() {
+                        let h = raw.0 as usize;
+                        embedded_poc::apply_overlay_client_region(h, None);
+                        embedded_poc::log_overlay_state("WindowEvent::Moved", h);
+                    }
                 } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.sync_overlay_position_to_main_window();
@@ -181,6 +192,11 @@ pub fn run() {
             tauri::WindowEvent::Resized(_) => {
                 if window.label() == "player-overlay" {
                     embedded_poc::ensure_overlay_borderless_by_window(window);
+                    if let Ok(raw) = window.hwnd() {
+                        let h = raw.0 as usize;
+                        embedded_poc::apply_overlay_client_region(h, None);
+                        embedded_poc::log_overlay_state("WindowEvent::Resized", h);
+                    }
                 } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         if window.is_minimized().unwrap_or(false) {
@@ -195,6 +211,11 @@ pub fn run() {
             tauri::WindowEvent::ScaleFactorChanged { .. } => {
                 if window.label() == "player-overlay" {
                     embedded_poc::ensure_overlay_borderless_by_window(window);
+                    if let Ok(raw) = window.hwnd() {
+                        let h = raw.0 as usize;
+                        embedded_poc::apply_overlay_client_region(h, None);
+                        embedded_poc::log_overlay_state("WindowEvent::ScaleFactorChanged", h);
+                    }
                 } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.handle_main_window_resized(window);

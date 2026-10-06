@@ -39,6 +39,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { MovieDetailService } from "../services/movie-detail.service";
 import { TvDetailService } from "../services/tv-detail.service";
 import { PinService } from "../services/pin.service";
+import { EmbeddedPlayerService } from "../services/embedded-player.service";
 import { NavTab } from "../models/navTab";
 import { cleanMediaTitle } from "../utils/media-presentation";
 
@@ -59,6 +60,7 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
     public pinService: PinService,
+    public embeddedPlayer: EmbeddedPlayerService,
   ) { }
   @Input() channel?: Channel;
   @Input() id!: number;
@@ -153,20 +155,34 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
     }
     this.starting = true;
     this.memory.SetFocus.next(this.id);
-    try {
-      const playChannel = {
-        ...this.channel,
-        media_type: this.channel?.media_type,
-        favorite: !!this.channel?.favorite,
-      };
-      await invoke("play", { channel: playChannel, record: record, recordPath: file });
-    } catch (e) {
-      this.error.handleError(e);
-    }
+    const playChannel = {
+      ...this.channel,
+      media_type: this.channel?.media_type,
+      favorite: !!this.channel?.favorite,
+    };
     invoke("add_last_watched", { id: this.channel?.id }).catch((e) => {
       console.error(e);
       this.error.handleError(e);
     });
+
+    if (!record && (this.channel?.media_type === MediaType.livestream || this.isLiveTv())) {
+      try {
+        await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+          title: cleanMediaTitle(this.channel?.name || 'Live TV'),
+          mode: 'live',
+        });
+        this.starting = false;
+        return;
+      } catch (err) {
+        console.warn('Failed to start embedded live player, falling back to external MPV:', err);
+      }
+    }
+
+    try {
+      await invoke("play", { channel: playChannel, record: record, recordPath: file });
+    } catch (e) {
+      this.error.handleError(e);
+    }
     this.starting = false;
   }
 
