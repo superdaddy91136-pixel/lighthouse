@@ -111,8 +111,9 @@ impl EmbeddedPocState {
 
             if is_fs {
                 ACTIVE_IS_FULLSCREEN.store(true, Ordering::SeqCst);
-                ACTIVE_TOP_CROP_PX.store(0, Ordering::SeqCst);
-                let _ = window.emit("overlay-top-crop", serde_json::json!({ "crop": 0 }));
+                let crop_px = get_overlay_top_crop_px(overlay_hwnd);
+                ACTIVE_TOP_CROP_PX.store(crop_px, Ordering::SeqCst);
+                let _ = window.emit("overlay-top-crop", serde_json::json!({ "crop": OVERLAY_TOP_CROP_LOGICAL_PX }));
 
                 let mut guard = None;
                 for _ in 0..10 {
@@ -155,15 +156,29 @@ impl EmbeddedPocState {
                             eprintln!("[STRIPE-DEBUG] Showing overlay in handle_main_window_resized: hwnd=0x{:X}", overlay_hwnd);
                             win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_SHOW);
                         }
-                        apply_overlay_client_region(overlay_hwnd, Some(0));
+                        apply_overlay_client_region(overlay_hwnd, Some(crop_px));
                         log_overlay_state("handle_main_window_resized after show", overlay_hwnd);
+
+                        let mut screen_pt = win32::POINT { x: 0, y: 0 };
+                        unsafe {
+                            win32::ClientToScreen(main_hwnd as win32::HWND, &mut screen_pt);
+                        }
+                        let expected_top = screen_pt.y - crop_px;
+                        log_fullscreen_stripe_debug(
+                            "handle_main_window_resized",
+                            main_hwnd,
+                            overlay_hwnd,
+                            child_hwnd,
+                            crop_px,
+                            expected_top,
+                        );
 
                         inner.last_bounds = Some((0, 0, client_w, client_h));
                     }
                 }
             } else {
                 ACTIVE_IS_FULLSCREEN.store(false, Ordering::SeqCst);
-                let crop_px = get_overlay_top_crop_px(overlay_hwnd, false);
+                let crop_px = get_overlay_top_crop_px(overlay_hwnd);
                 ACTIVE_TOP_CROP_PX.store(crop_px, Ordering::SeqCst);
                 let _ = window.emit("overlay-top-crop", serde_json::json!({ "crop": OVERLAY_TOP_CROP_LOGICAL_PX }));
                 // WINDOWED MODE: Do NOT compute an overlay size from last_bounds/windowed_bounds.
@@ -783,6 +798,76 @@ pub fn log_overlay_state(tag: &str, overlay_hwnd: usize) {
 #[cfg(not(target_os = "windows"))]
 pub fn log_overlay_state(_tag: &str, _overlay_hwnd: usize) {}
 
+#[cfg(target_os = "windows")]
+pub fn log_fullscreen_stripe_debug(
+    stage: &str,
+    main_hwnd: usize,
+    overlay_hwnd: usize,
+    child_hwnd: usize,
+    crop_px: i32,
+    expected_top: i32,
+) {
+    if overlay_hwnd == 0 {
+        return;
+    }
+    unsafe {
+        let mut ov_win_rc: win32::RECT = std::mem::zeroed();
+        let mut ov_client_rc: win32::RECT = std::mem::zeroed();
+        let mut child_rc: win32::RECT = std::mem::zeroed();
+        let mut main_rc: win32::RECT = std::mem::zeroed();
+
+        win32::GetWindowRect(overlay_hwnd as win32::HWND, &mut ov_win_rc);
+        win32::GetClientRect(overlay_hwnd as win32::HWND, &mut ov_client_rc);
+        if child_hwnd != 0 {
+            win32::GetWindowRect(child_hwnd as win32::HWND, &mut child_rc);
+        }
+        if main_hwnd != 0 {
+            win32::GetWindowRect(main_hwnd as win32::HWND, &mut main_rc);
+        }
+
+        let mut client_top_left = win32::POINT {
+            x: ov_client_rc.left,
+            y: ov_client_rc.top,
+        };
+        let mut client_bottom_right = win32::POINT {
+            x: ov_client_rc.right,
+            y: ov_client_rc.bottom,
+        };
+        win32::ClientToScreen(overlay_hwnd as win32::HWND, &mut client_top_left);
+        win32::ClientToScreen(overlay_hwnd as win32::HWND, &mut client_bottom_right);
+
+        let ov_client_w = ov_client_rc.right - ov_client_rc.left;
+        let ov_client_h = ov_client_rc.bottom - ov_client_rc.top;
+
+        let negative_top_accepted = ov_win_rc.top == expected_top;
+
+        eprintln!(
+            "[STRIPE-DEBUG] [{}] FULLSCREEN: crop_px={} expected_top={} actual_top={} negative_top_accepted={}\n  overlay_win_rect=({}, {}, {}, {}) [w={}, h={}]\n  overlay_client_screen=({}, {}, {}, {})\n  region_rect=(0, {}, {}, {})\n  video_child_rect=({}, {}, {}, {})\n  main_win_rect=({}, {}, {}, {})",
+            stage,
+            crop_px,
+            expected_top,
+            ov_win_rc.top,
+            negative_top_accepted,
+            ov_win_rc.left, ov_win_rc.top, ov_win_rc.right, ov_win_rc.bottom,
+            ov_win_rc.right - ov_win_rc.left, ov_win_rc.bottom - ov_win_rc.top,
+            client_top_left.x, client_top_left.y, client_bottom_right.x, client_bottom_right.y,
+            crop_px, ov_client_w, ov_client_h,
+            child_rc.left, child_rc.top, child_rc.right, child_rc.bottom,
+            main_rc.left, main_rc.top, main_rc.right, main_rc.bottom,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn log_fullscreen_stripe_debug(
+    _stage: &str,
+    _main_hwnd: usize,
+    _overlay_hwnd: usize,
+    _child_hwnd: usize,
+    _crop_px: i32,
+    _expected_top: i32,
+) {}
+
 pub const OVERLAY_TOP_CROP_LOGICAL_PX: i32 = 32;
 
 #[cfg(target_os = "windows")]
@@ -792,8 +877,8 @@ pub static ACTIVE_TOP_CROP_PX: std::sync::atomic::AtomicI32 = std::sync::atomic:
 pub static ACTIVE_IS_FULLSCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
-pub fn get_overlay_top_crop_px(overlay_hwnd: usize, is_fullscreen: bool) -> i32 {
-    if is_fullscreen || overlay_hwnd == 0 {
+pub fn get_overlay_top_crop_px(overlay_hwnd: usize) -> i32 {
+    if overlay_hwnd == 0 {
         return 0;
     }
     let dpi = unsafe { win32::GetDpiForWindow(overlay_hwnd as win32::HWND) };
@@ -802,17 +887,17 @@ pub fn get_overlay_top_crop_px(overlay_hwnd: usize, is_fullscreen: bool) -> i32 
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn get_overlay_top_crop_px(_overlay_hwnd: usize, _is_fullscreen: bool) -> i32 {
+pub fn get_overlay_top_crop_px(_overlay_hwnd: usize) -> i32 {
     0
 }
 
 pub fn get_current_logical_top_crop() -> i32 {
     #[cfg(target_os = "windows")]
     {
-        if ACTIVE_IS_FULLSCREEN.load(Ordering::SeqCst) {
-            0
-        } else {
+        if ACTIVE_TOP_CROP_PX.load(Ordering::SeqCst) > 0 {
             OVERLAY_TOP_CROP_LOGICAL_PX
+        } else {
+            0
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -843,17 +928,13 @@ pub fn apply_overlay_client_region(overlay_hwnd: usize, crop_param: Option<i32>)
             c
         }
         None => {
-            if ACTIVE_IS_FULLSCREEN.load(Ordering::SeqCst) {
-                0
+            let saved = ACTIVE_TOP_CROP_PX.load(Ordering::SeqCst);
+            if saved != 0 {
+                saved
             } else {
-                let saved = ACTIVE_TOP_CROP_PX.load(Ordering::SeqCst);
-                if saved != 0 {
-                    saved
-                } else {
-                    let computed = get_overlay_top_crop_px(overlay_hwnd, false);
-                    ACTIVE_TOP_CROP_PX.store(computed, Ordering::SeqCst);
-                    computed
-                }
+                let computed = get_overlay_top_crop_px(overlay_hwnd);
+                ACTIVE_TOP_CROP_PX.store(computed, Ordering::SeqCst);
+                computed
             }
         }
     };
@@ -1143,11 +1224,16 @@ pub fn sync_overlay_to_video(state: &EmbeddedPocState) {
         };
 
         ACTIVE_IS_FULLSCREEN.store(is_fs, Ordering::SeqCst);
-        let crop_px = get_overlay_top_crop_px(overlay_hwnd, is_fs);
+        let crop_px = get_overlay_top_crop_px(overlay_hwnd);
         ACTIVE_TOP_CROP_PX.store(crop_px, Ordering::SeqCst);
 
         let (overlay_x, overlay_y, overlay_w, overlay_h) = if is_fs {
-            (video_rc.left, video_rc.top, video_w, video_h)
+            (
+                video_rc.left,
+                video_rc.top - crop_px,
+                video_w,
+                video_h + crop_px,
+            )
         } else {
             const INSET: i32 = 2;
             let base_x = video_rc.left + INSET;
@@ -1208,10 +1294,20 @@ pub fn sync_overlay_to_video(state: &EmbeddedPocState) {
         apply_overlay_client_region(overlay_hwnd, Some(crop_px));
         log_overlay_state("sync_overlay_to_video after SetWindowPos", overlay_hwnd);
 
+        if is_fs {
+            log_fullscreen_stripe_debug(
+                "sync_overlay_to_video",
+                main_hwnd,
+                overlay_hwnd,
+                child_hwnd,
+                crop_px,
+                overlay_y,
+            );
+        }
+
         if let Ok(inner) = state.inner.try_lock() {
             if let Some(ref app) = inner.app_handle {
-                let logical_crop = if is_fs { 0 } else { OVERLAY_TOP_CROP_LOGICAL_PX };
-                let _ = app.emit("overlay-top-crop", serde_json::json!({ "crop": logical_crop }));
+                let _ = app.emit("overlay-top-crop", serde_json::json!({ "crop": OVERLAY_TOP_CROP_LOGICAL_PX }));
             }
         }
     }
@@ -1245,7 +1341,7 @@ pub fn sync_overlay_rect(
         let client_w = client_rc.right - client_rc.left;
         let client_h = client_rc.bottom - client_rc.top;
 
-        let crop_px = get_overlay_top_crop_px(overlay_hwnd, is_fullscreen);
+        let crop_px = get_overlay_top_crop_px(overlay_hwnd);
         ACTIVE_IS_FULLSCREEN.store(is_fullscreen, Ordering::SeqCst);
         ACTIVE_TOP_CROP_PX.store(crop_px, Ordering::SeqCst);
 
@@ -1279,9 +1375,9 @@ pub fn sync_overlay_rect(
         win32::ClientToScreen(main_hwnd as win32::HWND, &mut pt);
 
         let target_x = pt.x;
-        let target_y = if is_fullscreen { pt.y } else { pt.y - crop_px };
+        let target_y = pt.y - crop_px;
         let target_w = width;
-        let target_h = if is_fullscreen { height } else { height + crop_px };
+        let target_h = height + crop_px;
 
         // 4. Ensure overlay is borderless and WS_EX_TRANSPARENT/NOACTIVATE are cleared
         ensure_overlay_borderless(overlay_hwnd);
@@ -1324,6 +1420,18 @@ pub fn sync_overlay_rect(
         );
         apply_overlay_client_region(overlay_hwnd, Some(crop_px));
         log_overlay_state("sync_overlay_rect after SetWindowPos", overlay_hwnd);
+
+        if is_fullscreen {
+            let child_hwnd = win32::GetWindow(main_hwnd as win32::HWND, win32::GW_CHILD) as usize;
+            log_fullscreen_stripe_debug(
+                "sync_overlay_rect",
+                main_hwnd,
+                overlay_hwnd,
+                child_hwnd,
+                crop_px,
+                target_y,
+            );
+        }
     }
 }
 
@@ -1721,7 +1829,7 @@ pub async fn start_embedded_player_internal(
             install_overlay_subclass(overlay_hwnd);
             ensure_overlay_borderless(overlay_hwnd);
             ACTIVE_IS_FULLSCREEN.store(false, Ordering::SeqCst);
-            let crop_px = get_overlay_top_crop_px(overlay_hwnd, false);
+            let crop_px = get_overlay_top_crop_px(overlay_hwnd);
             ACTIVE_TOP_CROP_PX.store(crop_px, Ordering::SeqCst);
             apply_overlay_client_region(overlay_hwnd, Some(crop_px));
             let _ = window.app_handle().emit("overlay-top-crop", serde_json::json!({ "crop": OVERLAY_TOP_CROP_LOGICAL_PX }));
@@ -2154,6 +2262,12 @@ pub async fn stop_embedded_poc_internal(state: &EmbeddedPocState) {
         if let Some(overlay_win) = app.get_webview_window("player-overlay") {
             let _ = overlay_win.hide();
         }
+        #[cfg(target_os = "windows")]
+        {
+            ACTIVE_IS_FULLSCREEN.store(false, Ordering::SeqCst);
+            ACTIVE_TOP_CROP_PX.store(0, Ordering::SeqCst);
+        }
+        let _ = app.emit("overlay-top-crop", serde_json::json!({ "crop": 0 }));
         let _ = app.emit("embedded-poc-stopped", ());
     }
 }

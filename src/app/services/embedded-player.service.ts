@@ -107,7 +107,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     // Listen for top-crop request from overlay
     this.unlistenRequestCrop = await listen('request-overlay-top-crop', () => {
-      const crop = this.isPlayingEmbedded && !this.isFullscreen ? 32 : 0;
+      const crop = this.isPlayingEmbedded ? 32 : 0;
       emit('overlay-top-crop', { crop }).catch(console.warn);
     });
 
@@ -377,7 +377,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
   private applyFullscreenState(isFs: boolean): void {
     this.isFullscreenSubject.next(isFs);
-    emit('overlay-top-crop', { crop: isFs ? 0 : 32 }).catch(console.warn);
+    emit('overlay-top-crop', { crop: 32 }).catch(console.warn);
     if (isFs) {
       document.body.classList.add('fullscreen-player-active');
     } else {
