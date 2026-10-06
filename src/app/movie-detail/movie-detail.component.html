@@ -8,6 +8,11 @@
     <span>Back</span>
   </button>
 
+  <!-- EMBEDDED VIDEO HOST (STEP 2 POC & STEP 4 IN-APP PLAYER) -->
+  <div class="movie-embedded-host-wrapper" [class.fullscreen-player]="isFullscreen" *ngIf="isPlayingEmbedded">
+    <div id="movie-video-canvas" class="movie-video-canvas"></div>
+  </div>
+
   <!-- ========================================== -->
   <!-- 1. CINEMATIC HERO BANNER                   -->
   <!-- ========================================== -->
@@ -106,9 +111,21 @@
               (click)="watchNow()" 
               [disabled]="isStartingPlayback">
               <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+                <path *ngIf="!isPlayingEmbedded" d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+                <path *ngIf="isPlayingEmbedded" d="M18,18H6V6H18V18Z" />
               </svg>
-              <span>{{ isStartingPlayback ? 'Starting...' : 'Watch Now' }}</span>
+              <span>{{ isStartingPlayback ? 'Starting...' : (isPlayingEmbedded ? 'Stop' : 'Watch Now') }}</span>
+            </button>
+
+            <button 
+              class="btn-detail-secondary" 
+              (click)="watchExternal()" 
+              [disabled]="isStartingPlayback"
+              title="Launch external MPV player in separate window">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z" />
+              </svg>
+              <span>External MPV</span>
             </button>
 
             <!-- VERSIONS DROPDOWN (Watch Now | Versions (N) ▾) -->

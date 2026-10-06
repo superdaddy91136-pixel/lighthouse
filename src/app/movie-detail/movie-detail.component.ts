@@ -1,6 +1,7 @@
 import { Location } from '@angular/common';
 import {
   AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   HostListener,
@@ -11,6 +12,8 @@ import {
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ToastrService } from 'ngx-toastr';
 import { Subscription } from 'rxjs';
 import { ErrorService } from '../error.service';
@@ -79,6 +82,15 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   backdropError: boolean = false;
   castImageErrors: Set<number> = new Set();
 
+  // Embedded player state (Step 2 POC & Step 4 Controls)
+  isPlayingEmbedded: boolean = false;
+  isFullscreen: boolean = false;
+  private unlistenStopped?: UnlistenFn;
+  private unlistenFullscreen?: UnlistenFn;
+  private videoResizeObserver: ResizeObserver | null = null;
+  private syncScheduled: boolean = false;
+  private boundScrollHandler = () => this.syncVideoBounds();
+
   private subs: Subscription[] = [];
   @ViewChild('similarTrack') similarTrack?: ElementRef<HTMLDivElement>;
 
@@ -94,6 +106,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private toastr: ToastrService,
     private error: ErrorService,
     private sanitizer: DomSanitizer,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   private resetScrollPosition(): void {
@@ -132,6 +145,24 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }),
     );
+
+    // Listen for embedded player stopped event (from overlay or MPV EOF)
+    listen('embedded-poc-stopped', () => {
+      console.log('[Lighthouse Fullscreen] embedded-poc-stopped event received in MovieDetail');
+      this.cleanupVideoResizeObserver();
+      this.isPlayingEmbedded = false;
+      if (this.isFullscreen) {
+        this.isFullscreen = false;
+        document.body.classList.remove('fullscreen-player-active');
+      }
+      this.cdr.detectChanges();
+    }).then((un) => (this.unlistenStopped = un));
+
+    // Listen for fullscreen state changes from the Rust backend
+    listen('player-fullscreen-changed', (event: any) => {
+      console.log('[Lighthouse Fullscreen][Hop 4] Main window received player-fullscreen-changed event:', event.payload);
+      this.applyFullscreenState(!!event.payload);
+    }).then((un) => (this.unlistenFullscreen = un));
   }
 
   ngAfterViewInit(): void {
@@ -141,10 +172,80 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
+    if (this.unlistenStopped) {
+      this.unlistenStopped();
+      this.unlistenStopped = undefined;
+    }
+    if (this.unlistenFullscreen) {
+      this.unlistenFullscreen();
+      this.unlistenFullscreen = undefined;
+    }
+    if (this.isFullscreen) {
+      this.isFullscreen = false;
+      document.body.classList.remove('fullscreen-player-active');
+      invoke('set_main_window_fullscreen', { fullscreen: false }).catch(console.warn);
+    }
+    if (this.isPlayingEmbedded) {
+      this.cleanupVideoResizeObserver();
+      invoke('stop_embedded_poc').catch(console.error);
+      this.isPlayingEmbedded = false;
+    }
   }
 
   @HostListener('document:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
+    if (this.isPlayingEmbedded) {
+      if (
+        event.key === 'Escape' ||
+        event.key === 'BrowserBack' ||
+        (event.key === 'Backspace' && !isInputFocused())
+      ) {
+        if (this.isFullscreen) {
+          console.log('[Lighthouse Fullscreen] Escape in main window: Exiting fullscreen first');
+          invoke('toggle_player_fullscreen').catch(console.error);
+        } else {
+          console.log('[Lighthouse Fullscreen] Escape in main window while NOT fullscreen: Exiting player');
+          this.stopEmbedded();
+        }
+        event.preventDefault();
+        return;
+      }
+      if (event.key === ' ' || event.code === 'Space') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['cycle', 'pause'] }),
+        }).catch(console.warn);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['seek', -10, 'relative'] }),
+        }).catch(console.warn);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['seek', 10, 'relative'] }),
+        }).catch(console.warn);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'f' || event.key === 'F') {
+        console.log('[Lighthouse Fullscreen] F key in main window: Invoking toggle_player_fullscreen');
+        invoke('toggle_player_fullscreen').catch(console.error);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'm' || event.key === 'M') {
+        invoke('send_embedded_poc_ipc', {
+          command: JSON.stringify({ command: ['cycle', 'mute'] }),
+        }).catch(console.warn);
+        event.preventDefault();
+        return;
+      }
+    }
+
     if (
       event.key === 'Escape' ||
       event.key === 'BrowserBack' ||
@@ -265,6 +366,9 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   selectVersion(ver: MediaVersion): void {
     if (!ver) return;
+    if (this.isPlayingEmbedded) {
+      this.stopEmbedded();
+    }
     this.showVersionsMenu = false;
 
     // Persist this selection for this grouped title
@@ -384,6 +488,12 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async watchNow(): Promise<void> {
     if (!this.movie || this.isStartingPlayback) return;
+
+    if (this.isPlayingEmbedded) {
+      await this.stopEmbedded();
+      return;
+    }
+
     this.isStartingPlayback = true;
 
     try {
@@ -425,16 +535,211 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
 
-      this.toastr.info(`Starting playback for "${this.cleanTitle}"...`);
+      this.toastr.info(`Starting embedded playback for "${this.cleanTitle}"...`);
+      invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
+
+      // Render the embedded video canvas host in DOM
+      this.isPlayingEmbedded = true;
+      this.cdr.detectChanges();
+
+      // Wait a frame so layout/bounding rect computes
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      const el = document.getElementById('movie-video-canvas');
+      let x = 64, y = 72, width = 640, height = 360;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        x = Math.round(rect.x * dpr);
+        y = Math.round(rect.y * dpr);
+        width = Math.round(rect.width * dpr);
+        height = Math.round(rect.height * dpr);
+        console.log(`[Lighthouse Player] Initial video canvas rect: (${rect.x}, ${rect.y}, ${rect.width}x${rect.height}), dpr: ${dpr} -> client pixels: (${x}, ${y}, ${width}x${height})`);
+      }
+
+      await invoke('start_embedded_player', {
+        channel: playChannel,
+        x,
+        y,
+        width,
+        height,
+        zOrder: 'top',
+      });
+
+      this.setupVideoResizeObserver();
+      setTimeout(() => this.syncVideoBounds(), 50);
+      setTimeout(() => this.syncVideoBounds(), 150);
+    } catch (e) {
+      console.error('Movie embedded playback error:', e);
+      this.cleanupVideoResizeObserver();
+      this.isPlayingEmbedded = false;
+      this.error.handleError(e, 'Failed to start embedded playback');
+    } finally {
+      this.isStartingPlayback = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  async watchExternal(): Promise<void> {
+    if (!this.movie || this.isStartingPlayback) return;
+    if (this.isPlayingEmbedded) {
+      await this.stopEmbedded();
+    }
+    this.isStartingPlayback = true;
+
+    try {
+      let playChannel: Channel = {
+        ...this.movie,
+        id: this.movie.id,
+        name: this.movie.name || this.cleanTitle,
+        url: this.movie.url,
+        media_type: MediaType.movie,
+        source_id: this.movie.source_id,
+        favorite: !!this.movie.favorite,
+      };
+
+      if (!playChannel.url || !playChannel.source_id) {
+        try {
+          const results = (await invoke('search', {
+            filters: {
+              source_ids: playChannel.source_id ? [playChannel.source_id] : Array.from(this.memory.Sources.keys()),
+              view_type: ViewMode.All,
+              media_types: [MediaType.movie],
+              query: playChannel.name,
+              page: 1,
+              sort: SortType.provider,
+              use_keywords: false,
+            },
+          })) as Channel[];
+          const fresh = results?.find((c) => c.id === playChannel.id);
+          if (fresh) {
+            playChannel = {
+              ...fresh,
+              media_type: MediaType.movie,
+              favorite: !!fresh.favorite,
+            };
+            this.movie = playChannel;
+          }
+        } catch (err) {
+          console.warn('Failed to query fresh channel record:', err);
+        }
+      }
+
+      this.toastr.info(`Launching external MPV for "${this.cleanTitle}"...`);
       invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
 
       await invoke('play', { channel: playChannel, record: false, recordPath: undefined });
     } catch (e) {
-      console.error('Movie playback error:', e);
-      this.error.handleError(e, 'Failed to start playback');
+      console.error('Movie external playback error:', e);
+      this.error.handleError(e, 'Failed to start external playback');
     } finally {
       this.isStartingPlayback = false;
+      this.cdr.detectChanges();
     }
+  }
+
+  async stopEmbedded(): Promise<void> {
+    this.cleanupVideoResizeObserver();
+    if (this.isFullscreen) {
+      console.log('[Lighthouse Fullscreen] stopEmbedded: Restoring normal window mode');
+      this.isFullscreen = false;
+      document.body.classList.remove('fullscreen-player-active');
+      try {
+        await invoke('set_main_window_fullscreen', { fullscreen: false });
+      } catch {}
+    }
+    document.body.classList.remove('fullscreen-player-active');
+    try {
+      await invoke('stop_embedded_poc');
+    } catch (e) {
+      console.warn('stop_embedded_poc error', e);
+    }
+    this.isPlayingEmbedded = false;
+    this.cdr.detectChanges();
+  }
+
+  applyFullscreenState(isFs: boolean): void {
+    console.log(`[Lighthouse Fullscreen][Hop 5] Applying fullscreen state in MovieDetail: ${isFs}`);
+    this.isFullscreen = isFs;
+    if (isFs) {
+      document.body.classList.add('fullscreen-player-active');
+    } else {
+      document.body.classList.remove('fullscreen-player-active');
+    }
+    this.cdr.detectChanges();
+    // Removed all delayed resyncs (50ms, 150ms, 350ms).
+    // Rust handles the single sync directly from the main window's Resized event.
+  }
+
+  async toggleFullscreen(): Promise<void> {
+    if (!this.isPlayingEmbedded) return;
+    try {
+      console.log('[Lighthouse Fullscreen] toggleFullscreen called: Invoking Rust toggle_player_fullscreen');
+      await invoke('toggle_player_fullscreen');
+    } catch (e) {
+      console.warn('Failed to toggle fullscreen:', e);
+    }
+  }
+
+  syncVideoBounds(): void {
+    // When in fullscreen, Rust sizes MPV child HWND & overlay directly from GetClientRect on window resize.
+    if (!this.isPlayingEmbedded || this.syncScheduled || this.isFullscreen) return;
+    this.syncScheduled = true;
+    requestAnimationFrame(() => {
+      this.syncScheduled = false;
+      if (!this.isPlayingEmbedded || this.isFullscreen) return;
+      const el = document.getElementById('movie-video-canvas');
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const x = Math.round(rect.x * dpr);
+      const y = Math.round(rect.y * dpr);
+      const width = Math.round(rect.width * dpr);
+      const height = Math.round(rect.height * dpr);
+      if (width <= 0 || height <= 0) return;
+
+      console.log(`[Lighthouse Fullscreen][Hop 6] syncVideoBounds -> client pixels: (${x}, ${y}, ${width}x${height}), rect: (${rect.x}, ${rect.y}, ${rect.width}x${rect.height}), dpr: ${dpr}, isFullscreen: ${this.isFullscreen}`);
+
+      invoke('resize_embedded_poc', { x, y, width, height }).catch((err) => {
+        console.warn('resize_embedded_poc error', err);
+      });
+    });
+  }
+
+  setupVideoResizeObserver(): void {
+    this.cleanupVideoResizeObserver();
+    const el = document.getElementById('movie-video-canvas');
+    if (!el) return;
+    if (typeof ResizeObserver !== 'undefined') {
+      this.videoResizeObserver = new ResizeObserver(() => {
+        this.syncVideoBounds();
+      });
+      this.videoResizeObserver.observe(el);
+      const parent = el.parentElement;
+      if (parent) {
+        this.videoResizeObserver.observe(parent);
+      }
+    }
+
+    const appMain = document.querySelector('.app-main');
+    if (appMain) {
+      appMain.addEventListener('scroll', this.boundScrollHandler, { passive: true });
+    }
+    window.addEventListener('scroll', this.boundScrollHandler, { passive: true });
+    window.addEventListener('resize', this.boundScrollHandler, { passive: true });
+  }
+
+  cleanupVideoResizeObserver(): void {
+    if (this.videoResizeObserver) {
+      this.videoResizeObserver.disconnect();
+      this.videoResizeObserver = null;
+    }
+    const appMain = document.querySelector('.app-main');
+    if (appMain) {
+      appMain.removeEventListener('scroll', this.boundScrollHandler);
+    }
+    window.removeEventListener('scroll', this.boundScrollHandler);
+    window.removeEventListener('resize', this.boundScrollHandler);
   }
 
   async toggleFavorite(event?: Event): Promise<void> {
@@ -520,6 +825,9 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   selectSimilarMovie(channel: Channel): void {
+    if (this.isPlayingEmbedded) {
+      this.stopEmbedded();
+    }
     this.initMovie(channel);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -565,6 +873,9 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   goBack(): void {
+    if (this.isPlayingEmbedded) {
+      this.stopEmbedded();
+    }
     if (window.history.length > 1) {
       this.location.back();
     } else {

@@ -9,8 +9,10 @@
     "beforeBuildCommand": "ng build --configuration=production"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Lighthouse (v1.9.1)",
         "width": 800,
         "height": 600,
@@ -18,6 +20,18 @@
         "fullscreen": false,
         "zoomHotkeysEnabled": true,
         "transparent": true
+      },
+      {
+        "label": "player-overlay",
+        "title": "Lighthouse Overlay",
+        "url": "assets/overlay.html",
+        "decorations": false,
+        "transparent": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false,
+        "resizable": true,
+        "alwaysOnTop": false
       }
     ],
     "security": {

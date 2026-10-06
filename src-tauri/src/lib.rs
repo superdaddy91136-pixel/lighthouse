@@ -122,13 +122,17 @@ pub fn run() {
             embedded_poc::open_in_external_mpv,
             embedded_poc::send_embedded_poc_ipc,
             embedded_poc::stop_embedded_poc,
-            embedded_poc::resize_embedded_poc
+            embedded_poc::resize_embedded_poc,
+            embedded_poc::get_embedded_player_info,
+            embedded_poc::toggle_player_fullscreen,
+            embedded_poc::set_main_window_fullscreen
         ])
         .setup(|app| {
             app.manage(Mutex::new(AppState {
                 ..Default::default()
             }));
             app.manage(embedded_poc::EmbeddedPocState::new());
+            embedded_poc::init_overlay_window(app.handle());
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             if *ENABLE_TRAY_ICON {
                 let _ = build_tray_icon(app);
@@ -138,6 +142,12 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                if window.label() == "player-overlay" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
+
                 if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                     state.stop_sync();
                 }
@@ -148,9 +158,39 @@ pub fn run() {
                 window.hide().unwrap();
                 api.prevent_close();
             }
+            #[cfg(target_os = "windows")]
+            tauri::WindowEvent::Moved(_) => {
+                if window.label() == "main" {
+                    if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
+                        state.sync_overlay_position_to_main_window();
+                    }
+                }
+            }
+            #[cfg(target_os = "windows")]
+            tauri::WindowEvent::Resized(_) => {
+                if window.label() == "main" {
+                    if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
+                        if window.is_minimized().unwrap_or(false) {
+                            state.hide_overlay();
+                        } else {
+                            state.handle_main_window_resized(window);
+                        }
+                    }
+                }
+            }
+            #[cfg(target_os = "windows")]
+            tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                if window.label() == "main" {
+                    if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
+                        state.handle_main_window_resized(window);
+                    }
+                }
+            }
             tauri::WindowEvent::Destroyed => {
-                if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
-                    state.stop_sync();
+                if window.label() == "main" {
+                    if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
+                        state.stop_sync();
+                    }
                 }
             }
             _ => {}

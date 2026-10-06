@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, Window, WebviewWindow};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Child;
 use tokio::sync::{mpsc, Mutex};
@@ -31,11 +31,17 @@ pub struct EmbeddedPocState {
     pub inner: Arc<Mutex<EmbeddedPocInner>>,
     pub active_pid: Arc<AtomicU32>,
     pub active_hwnd: Arc<AtomicUsize>,
+    pub active_overlay_hwnd: Arc<AtomicUsize>,
+    pub active_main_hwnd: Arc<AtomicUsize>,
 }
 
 pub struct EmbeddedPocInner {
     #[cfg(target_os = "windows")]
     pub child_hwnd: Option<usize>,
+    #[cfg(target_os = "windows")]
+    pub overlay_hwnd: Option<usize>,
+    pub last_bounds: Option<(i32, i32, i32, i32)>,
+    pub windowed_bounds: Option<(i32, i32, i32, i32)>,
     pub child_process: Option<Child>,
     pub child_pid: Option<u32>,
     pub ipc_tx: Option<mpsc::Sender<String>>,
@@ -49,6 +55,10 @@ impl EmbeddedPocState {
             inner: Arc::new(Mutex::new(EmbeddedPocInner {
                 #[cfg(target_os = "windows")]
                 child_hwnd: None,
+                #[cfg(target_os = "windows")]
+                overlay_hwnd: None,
+                last_bounds: None,
+                windowed_bounds: None,
                 child_process: None,
                 child_pid: None,
                 ipc_tx: None,
@@ -57,11 +67,171 @@ impl EmbeddedPocState {
             })),
             active_pid: Arc::new(AtomicU32::new(0)),
             active_hwnd: Arc::new(AtomicUsize::new(0)),
+            active_overlay_hwnd: Arc::new(AtomicUsize::new(0)),
+            active_main_hwnd: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub fn stop_sync(&self) {
         stop_embedded_player_sync(self);
+    }
+
+    pub fn sync_overlay_position_to_main_window(&self) {
+        #[cfg(target_os = "windows")]
+        {
+            let mut main_hwnd = self.active_main_hwnd.load(Ordering::SeqCst);
+            if main_hwnd == 0 {
+                if let Some(h) = find_main_window_hwnd() {
+                    self.active_main_hwnd.store(h, Ordering::SeqCst);
+                    main_hwnd = h;
+                }
+            }
+            let overlay_hwnd = self.active_overlay_hwnd.load(Ordering::SeqCst);
+            if main_hwnd == 0 || overlay_hwnd == 0 {
+                return;
+            }
+
+            unsafe {
+                if win32::IsIconic(main_hwnd as win32::HWND) != 0 {
+                    win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+                    return;
+                }
+            }
+
+            if let Ok(inner) = self.inner.try_lock() {
+                let is_fs = if let Some(ref app) = inner.app_handle {
+                    app.get_webview_window("main").and_then(|w| w.is_fullscreen().ok()).unwrap_or(false)
+                } else {
+                    false
+                };
+                if let Some((x, y, width, height)) = inner.last_bounds {
+                    sync_overlay_rect(main_hwnd, overlay_hwnd, x, y, width, height, is_fs);
+                }
+            }
+        }
+    }
+
+    pub fn handle_main_window_resized(&self, window: &Window) {
+        #[cfg(target_os = "windows")]
+        {
+            let mut main_hwnd = self.active_main_hwnd.load(Ordering::SeqCst);
+            if main_hwnd == 0 {
+                if let Some(h) = find_main_window_hwnd() {
+                    self.active_main_hwnd.store(h, Ordering::SeqCst);
+                    main_hwnd = h;
+                }
+            }
+            let overlay_hwnd = self.active_overlay_hwnd.load(Ordering::SeqCst);
+            let child_hwnd = self.active_hwnd.load(Ordering::SeqCst);
+            if main_hwnd == 0 || overlay_hwnd == 0 || child_hwnd == 0 {
+                return;
+            }
+
+            unsafe {
+                if win32::IsIconic(main_hwnd as win32::HWND) != 0 {
+                    win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+                    return;
+                }
+            }
+
+            let is_fs = window.is_fullscreen().unwrap_or(false);
+
+            let mut guard = None;
+            for _ in 0..10 {
+                if let Ok(inner) = self.inner.try_lock() {
+                    guard = Some(inner);
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+
+            if let Some(mut inner) = guard {
+                if is_fs {
+                    // FULLSCREEN: Size directly from main client rect (GetClientRect) without waiting for Angular
+                    let mut client_rc: win32::RECT = unsafe { std::mem::zeroed() };
+                    unsafe {
+                        win32::GetClientRect(main_hwnd as win32::HWND, &mut client_rc);
+                    }
+                    let client_w = client_rc.right - client_rc.left;
+                    let client_h = client_rc.bottom - client_rc.top;
+
+                    if client_w > 0 && client_h > 0 {
+                        unsafe {
+                            win32::SetWindowPos(
+                                child_hwnd as win32::HWND,
+                                win32::HWND_TOP,
+                                0,
+                                0,
+                                client_w,
+                                client_h,
+                                win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
+                            );
+                            win32::UpdateWindow(child_hwnd as win32::HWND);
+                        }
+
+                        // Size overlay directly to client rect (fullscreen = no 2px inset)
+                        sync_overlay_rect(main_hwnd, overlay_hwnd, 0, 0, client_w, client_h, true);
+
+                        // Show overlay again after the single sync
+                        unsafe {
+                            win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_SHOW);
+                        }
+
+                        inner.last_bounds = Some((0, 0, client_w, client_h));
+                        println!(
+                            "[Lighthouse Fullscreen] Resized (fullscreen) synced directly from client rect: {}x{}",
+                            client_w, client_h
+                        );
+                    }
+                } else {
+                    // WINDOWED MODE: Size directly to saved windowed bounds without waiting for Angular
+                    let target_bounds = inner.windowed_bounds.or(inner.last_bounds);
+                    if let Some((w_x, w_y, w_w, w_h)) = target_bounds {
+                        unsafe {
+                            win32::SetWindowPos(
+                                child_hwnd as win32::HWND,
+                                win32::HWND_TOP,
+                                w_x,
+                                w_y,
+                                w_w,
+                                w_h,
+                                win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
+                            );
+                            win32::UpdateWindow(child_hwnd as win32::HWND);
+                        }
+
+                        // Size overlay directly (windowed = keep 2px inset)
+                        sync_overlay_rect(main_hwnd, overlay_hwnd, w_x, w_y, w_w, w_h, false);
+
+                        // Show overlay again after the single sync
+                        unsafe {
+                            win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_SHOW);
+                        }
+
+                        inner.last_bounds = Some((w_x, w_y, w_w, w_h));
+                        println!(
+                            "[Lighthouse Fullscreen] Resized (windowed) synced directly to windowed bounds: ({}, {}) {}x{}",
+                            w_x, w_y, w_w, w_h
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn handle_main_window_resized(&self, _window: &Window) {}
+
+    pub fn hide_overlay(&self) {
+        #[cfg(target_os = "windows")]
+        {
+            let overlay_hwnd = self.active_overlay_hwnd.load(Ordering::SeqCst);
+            if overlay_hwnd != 0 {
+                unsafe {
+                    win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+                }
+            }
+        }
     }
 }
 
@@ -77,6 +247,12 @@ impl Drop for EmbeddedPocInner {
         #[cfg(target_os = "windows")]
         if let Some(hwnd) = self.child_hwnd.take() {
             destroy_child_window(hwnd);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(overlay) = self.overlay_hwnd.take() {
+            unsafe {
+                win32::ShowWindow(overlay as win32::HWND, win32::SW_HIDE);
+            }
         }
     }
 }
@@ -103,7 +279,17 @@ pub mod win32 {
     pub const HWND_BOTTOM: HWND = 1 as HWND;
 
     pub const GWL_STYLE: i32 = -16;
+    pub const GWL_EXSTYLE: i32 = -20;
+    pub const GWLP_HWNDPARENT: i32 = -8;
     pub const GW_CHILD: u32 = 5;
+
+    pub const WS_EX_LAYERED: u32 = 0x00080000;
+    pub const WS_EX_TRANSPARENT: u32 = 0x00000020;
+    pub const WS_EX_NOACTIVATE: u32 = 0x08000000;
+
+    pub const SW_HIDE: i32 = 0;
+    pub const SW_SHOW: i32 = 5;
+    pub const SW_SHOWNA: i32 = 8;
 
     pub const WM_SIZE: u32 = 0x0005;
     pub const WM_PAINT: u32 = 0x000F;
@@ -113,6 +299,12 @@ pub mod win32 {
     pub const CS_VREDRAW: u32 = 0x0001;
     pub const CS_HREDRAW: u32 = 0x0002;
     pub const CS_OWNDC: u32 = 0x0020;
+
+    #[repr(C)]
+    pub struct POINT {
+        pub x: i32,
+        pub y: i32,
+    }
 
     #[repr(C)]
     pub struct RECT {
@@ -189,6 +381,8 @@ pub mod win32 {
 
         pub fn GetWindowLongW(hWnd: HWND, nIndex: i32) -> i32;
         pub fn SetWindowLongW(hWnd: HWND, nIndex: i32, dwNewLong: i32) -> i32;
+        #[cfg(target_pointer_width = "64")]
+        pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: i32, dwNewLong: isize) -> isize;
         pub fn GetWindow(hWnd: HWND, uCmd: u32) -> HWND;
 
         pub fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: isize) -> BOOL;
@@ -202,6 +396,16 @@ pub mod win32 {
         pub fn InvalidateRect(hWnd: HWND, lpRect: *const RECT, bErase: BOOL) -> BOOL;
         pub fn UpdateWindow(hWnd: HWND) -> BOOL;
         pub fn LoadCursorW(hInstance: HINSTANCE, lpCursorName: *const u16) -> *mut c_void;
+        pub fn ClientToScreen(hWnd: HWND, lpPoint: *mut POINT) -> BOOL;
+        pub fn ShowWindow(hWnd: HWND, nCmdShow: i32) -> BOOL;
+        pub fn IsIconic(hWnd: HWND) -> BOOL;
+        pub fn GetClientRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
+    }
+
+    #[allow(non_snake_case)]
+    #[cfg(target_pointer_width = "32")]
+    pub unsafe fn SetWindowLongPtrW(hWnd: HWND, nIndex: i32, dwNewLong: isize) -> isize {
+        unsafe { SetWindowLongW(hWnd, nIndex, dwNewLong as i32) as isize }
     }
 
     pub const IDC_ARROW: *const u16 = 32512 as *const u16;
@@ -448,11 +652,194 @@ pub fn terminate_process_by_pid(pid: u32) {
 #[cfg(not(target_os = "windows"))]
 pub fn terminate_process_by_pid(_pid: u32) {}
 
+#[cfg(target_os = "windows")]
+pub fn inspect_and_clean_overlay_exstyle(stage: &str, overlay_hwnd: usize) {
+    if overlay_hwnd == 0 {
+        return;
+    }
+    unsafe {
+        let cur_ex = win32::GetWindowLongW(overlay_hwnd as win32::HWND, win32::GWL_EXSTYLE);
+        let has_transparent = (cur_ex & (win32::WS_EX_TRANSPARENT as i32)) != 0;
+        let has_noactivate = (cur_ex & (win32::WS_EX_NOACTIVATE as i32)) != 0;
+        let has_layered = (cur_ex & (win32::WS_EX_LAYERED as i32)) != 0;
+
+        println!(
+            "[Lighthouse Overlay HWND][{}] HWND: {:#x}, GWL_EXSTYLE: {:#x} (WS_EX_TRANSPARENT={}, WS_EX_NOACTIVATE={}, WS_EX_LAYERED={})",
+            stage, overlay_hwnd, cur_ex, has_transparent, has_noactivate, has_layered
+        );
+
+        // Strip WS_EX_TRANSPARENT and WS_EX_NOACTIVATE if present. Do NOT force WS_EX_LAYERED.
+        // Rely exclusively on Tauri's transparent window configuration to ensure WebView2 receives mouse input.
+        let mut clean_ex = cur_ex;
+        if has_transparent {
+            clean_ex &= !(win32::WS_EX_TRANSPARENT as i32);
+        }
+        if has_noactivate {
+            clean_ex &= !(win32::WS_EX_NOACTIVATE as i32);
+        }
+        if clean_ex != cur_ex {
+            win32::SetWindowLongW(overlay_hwnd as win32::HWND, win32::GWL_EXSTYLE, clean_ex);
+            println!(
+                "[Lighthouse Overlay HWND][{}] Cleared prohibited flags -> new GWL_EXSTYLE: {:#x}",
+                stage, clean_ex
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn inspect_and_clean_overlay_exstyle(_stage: &str, _overlay_hwnd: usize) {}
+
+#[cfg(target_os = "windows")]
+pub fn ensure_overlay_ownership(main_hwnd: usize, overlay_hwnd: usize) {
+    if main_hwnd == 0 || overlay_hwnd == 0 {
+        return;
+    }
+    unsafe {
+        win32::SetWindowLongPtrW(
+            overlay_hwnd as win32::HWND,
+            win32::GWLP_HWNDPARENT,
+            main_hwnd as isize,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn ensure_overlay_ownership(_main_hwnd: usize, _overlay_hwnd: usize) {}
+
+#[cfg(target_os = "windows")]
+pub fn sync_overlay_rect(
+    main_hwnd: usize,
+    overlay_hwnd: usize,
+    mut x: i32,
+    mut y: i32,
+    mut width: i32,
+    mut height: i32,
+    is_fullscreen: bool,
+) {
+    if main_hwnd == 0 || overlay_hwnd == 0 || width <= 0 || height <= 0 {
+        return;
+    }
+    unsafe {
+        if win32::IsIconic(main_hwnd as win32::HWND) != 0 {
+            win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+            return;
+        }
+
+        // 1. Get client area of main window
+        let mut client_rc: win32::RECT = std::mem::zeroed();
+        win32::GetClientRect(main_hwnd as win32::HWND, &mut client_rc);
+        let client_w = client_rc.right - client_rc.left;
+        let client_h = client_rc.bottom - client_rc.top;
+
+        // 2. Safety bounds:
+        // Keep the 2px inset ONLY in windowed mode. In fullscreen, fill the full client rect without inset.
+        if !is_fullscreen {
+            const INSET: i32 = 2;
+            if x < INSET {
+                width -= INSET - x;
+                x = INSET;
+            }
+            if y < INSET {
+                height -= INSET - y;
+                y = INSET;
+            }
+            if client_w > 0 && x + width > client_w - INSET {
+                width = (client_w - INSET - x).max(0);
+            }
+            if client_h > 0 && y + height > client_h - INSET {
+                height = (client_h - INSET - y).max(0);
+            }
+        }
+
+        if width <= 0 || height <= 0 {
+            win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+            return;
+        }
+
+        // 3. Convert (x, y) from client coordinates to physical screen coordinates
+        let mut pt = win32::POINT { x, y };
+        win32::ClientToScreen(main_hwnd as win32::HWND, &mut pt);
+
+        // 4. Log EXSTYLE and ensure WS_EX_TRANSPARENT/NOACTIVATE are cleared
+        inspect_and_clean_overlay_exstyle("sync", overlay_hwnd);
+
+        println!(
+            "[Lighthouse Overlay] bounds sync -> client: ({}, {}), size: {}x{}, screen: ({}, {}) [main client area: {}x{}, fs={}]",
+            x, y, width, height, pt.x, pt.y, client_w, client_h, is_fullscreen
+        );
+
+        // Remove SWP_ASYNCWINDOWPOS to eliminate lag
+        win32::SetWindowPos(
+            overlay_hwnd as win32::HWND,
+            win32::HWND_TOP,
+            pt.x,
+            pt.y,
+            width,
+            height,
+            win32::SWP_SHOWWINDOW,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn sync_overlay_rect(
+    _main_hwnd: usize,
+    _overlay_hwnd: usize,
+    _x: i32,
+    _y: i32,
+    _width: i32,
+    _height: i32,
+    _is_fullscreen: bool,
+) {}
+
+pub fn init_overlay_window(app: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(overlay_win) = app.get_webview_window("player-overlay") {
+            let _ = overlay_win.set_ignore_cursor_events(false);
+            if let Ok(overlay_raw) = overlay_win.hwnd() {
+                let overlay_hwnd = overlay_raw.0 as usize;
+                let main_hwnd = app
+                    .get_webview_window("main")
+                    .and_then(|w| w.hwnd().ok().map(|h| h.0 as usize))
+                    .or_else(find_main_window_hwnd)
+                    .unwrap_or(0);
+
+                if main_hwnd != 0 && overlay_hwnd != 0 {
+                    ensure_overlay_ownership(main_hwnd, overlay_hwnd);
+                }
+
+                inspect_and_clean_overlay_exstyle("init", overlay_hwnd);
+
+                if let Some(state) = app.try_state::<EmbeddedPocState>() {
+                    state.active_overlay_hwnd.store(overlay_hwnd, Ordering::SeqCst);
+                    if main_hwnd != 0 {
+                        state.active_main_hwnd.store(main_hwnd, Ordering::SeqCst);
+                    }
+                }
+
+                unsafe {
+                    win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+                }
+            }
+        }
+    }
+}
+
 pub fn stop_embedded_player_sync(state: &EmbeddedPocState) {
     let atomic_pid = state.active_pid.swap(0, Ordering::SeqCst);
     let atomic_hwnd = state.active_hwnd.swap(0, Ordering::SeqCst);
 
-    let (child_opt, child_pid, hwnd_opt) = {
+    let overlay_hwnd = state.active_overlay_hwnd.load(Ordering::SeqCst);
+    if overlay_hwnd != 0 {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+        }
+    }
+
+    let (child_opt, child_pid, hwnd_opt, app_opt) = {
         if let Ok(mut inner) = state.inner.try_lock() {
             let child = inner.child_process.take();
             let pid = inner.child_pid.take();
@@ -460,12 +847,18 @@ pub fn stop_embedded_player_sync(state: &EmbeddedPocState) {
             let hwnd = inner.child_hwnd.take();
             #[cfg(not(target_os = "windows"))]
             let hwnd: Option<usize> = None;
+            let app = inner.app_handle.take();
             inner.ipc_tx = None;
             inner.stream_info = None;
-            inner.app_handle = None;
-            (child, pid, hwnd)
+            inner.last_bounds = None;
+            inner.windowed_bounds = None;
+            #[cfg(target_os = "windows")]
+            {
+                inner.overlay_hwnd = None;
+            }
+            (child, pid, hwnd, app)
         } else {
-            (None, None, None)
+            (None, None, None, None)
         }
     };
 
@@ -481,6 +874,17 @@ pub fn stop_embedded_player_sync(state: &EmbeddedPocState) {
     let target_hwnd = hwnd_opt.or(if atomic_hwnd != 0 { Some(atomic_hwnd) } else { None });
     if let Some(hwnd) = target_hwnd {
         destroy_child_window(hwnd);
+    }
+
+    if let Some(ref app) = app_opt {
+        if let Some(main_win) = app.get_webview_window("main") {
+            if main_win.is_fullscreen().unwrap_or(false) {
+                println!("[Lighthouse Fullscreen] Restoring non-fullscreen in stop_embedded_player_sync");
+                let _ = main_win.set_fullscreen(false);
+                let _ = app.emit("player-fullscreen-changed", false);
+            }
+        }
+        let _ = app.emit("embedded-poc-stopped", ());
     }
 }
 
@@ -616,6 +1020,8 @@ pub fn build_embedded_mpv_args(
     args.push("--input-cursor=no".to_string());
     args.push("--cursor-autohide=no".to_string());
     args.push("--no-terminal".to_string());
+    args.push("--osc=no".to_string());
+    args.push("--save-position-on-quit".to_string());
 
     if let Some(ref ua) = stream.user_agent {
         args.push(format!("--user-agent={}", ua));
@@ -718,6 +1124,30 @@ pub async fn start_embedded_player_internal(
             .await
             .map_err(|e| format!("Channel receive error: {:?}", e))??;
 
+        let parent_hwnd = window
+            .hwnd()
+            .map(|h| h.0 as usize)
+            .or_else(|_| find_main_window_hwnd().ok_or(()))
+            .unwrap_or(0);
+
+        if parent_hwnd != 0 {
+            state.active_main_hwnd.store(parent_hwnd, Ordering::SeqCst);
+        }
+
+        let overlay_hwnd = window
+            .app_handle()
+            .get_webview_window("player-overlay")
+            .and_then(|w| w.hwnd().ok().map(|h| h.0 as usize))
+            .unwrap_or(0);
+
+        if overlay_hwnd != 0 {
+            state.active_overlay_hwnd.store(overlay_hwnd, Ordering::SeqCst);
+            if parent_hwnd != 0 {
+                ensure_overlay_ownership(parent_hwnd, overlay_hwnd);
+                sync_overlay_rect(parent_hwnd, overlay_hwnd, x, y, width, height, false);
+            }
+        }
+
         // 3. Locate bundled mpv.exe
         let mpv_path = crate::utils::get_bin("mpv");
         let pipe_name = format!(r"\\.\pipe\lighthouse-mpv-poc-{}", std::process::id());
@@ -783,6 +1213,7 @@ pub async fn start_embedded_player_internal(
             while let Ok(Some(line)) = lines.next_line().await {
                 let _ = app_handle.emit("embedded-poc-event", line);
             }
+            let _ = app_handle.emit("embedded-poc-stopped", ());
         });
 
         // Observe playback properties
@@ -816,6 +1247,8 @@ pub async fn start_embedded_player_internal(
 
         // 6. Ensure the embedded child window is presented on top and updated now that MPV has connected
         let child_hwnd_val = child_hwnd;
+        let parent_hwnd_val = parent_hwnd;
+        let overlay_hwnd_val = overlay_hwnd;
         let _ = window.run_on_main_thread(move || {
             unsafe {
                 win32::SetWindowPos(
@@ -825,20 +1258,28 @@ pub async fn start_embedded_player_internal(
                     y,
                     width,
                     height,
-                    win32::SWP_SHOWWINDOW | win32::SWP_NOACTIVATE | win32::SWP_ASYNCWINDOWPOS,
+                    win32::SWP_SHOWWINDOW | win32::SWP_NOACTIVATE,
                 );
                 win32::UpdateWindow(child_hwnd_val as win32::HWND);
+            }
+            if parent_hwnd_val != 0 && overlay_hwnd_val != 0 {
+                sync_overlay_rect(parent_hwnd_val, overlay_hwnd_val, x, y, width, height, false);
             }
         });
 
         // Store state
         let mut inner = state.inner.lock().await;
         inner.child_hwnd = Some(child_hwnd);
+        inner.overlay_hwnd = if overlay_hwnd != 0 { Some(overlay_hwnd) } else { None };
+        inner.last_bounds = Some((x, y, width, height));
+        inner.windowed_bounds = Some((x, y, width, height));
         inner.child_process = Some(child);
         inner.child_pid = if child_pid != 0 { Some(child_pid) } else { None };
         inner.ipc_tx = Some(tx);
         inner.stream_info = Some(stream.clone());
         inner.app_handle = Some(window.app_handle().clone());
+
+        let _ = window.app_handle().emit("embedded-player-started", &stream);
 
         Ok(stream)
     }
@@ -898,7 +1339,31 @@ pub async fn resize_embedded_poc(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let inner = state.inner.lock().await;
+        let mut main_hwnd = state.active_main_hwnd.load(Ordering::SeqCst);
+        if main_hwnd == 0 {
+            if let Some(h) = find_main_window_hwnd() {
+                state.active_main_hwnd.store(h, Ordering::SeqCst);
+                main_hwnd = h;
+            }
+        }
+        let overlay_hwnd = state.active_overlay_hwnd.load(Ordering::SeqCst);
+
+        let mut inner = state.inner.lock().await;
+
+        let is_fs = if let Some(ref app) = inner.app_handle {
+            app.get_webview_window("main").and_then(|w| w.is_fullscreen().ok()).unwrap_or(false)
+        } else {
+            false
+        };
+
+        // In fullscreen mode, ignore Angular measurements so we don't shrink the fullscreen video
+        if is_fs {
+            return Ok(());
+        }
+
+        inner.last_bounds = Some((x, y, width, height));
+        inner.windowed_bounds = Some((x, y, width, height));
+
         if let Some(child_hwnd) = inner.child_hwnd {
             if let Some(ref app) = inner.app_handle {
                 let _ = app.run_on_main_thread(move || {
@@ -910,9 +1375,12 @@ pub async fn resize_embedded_poc(
                             y,
                             width,
                             height,
-                            win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW | win32::SWP_ASYNCWINDOWPOS,
+                            win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
                         );
                         win32::UpdateWindow(child_hwnd as win32::HWND);
+                    }
+                    if main_hwnd != 0 && overlay_hwnd != 0 {
+                        sync_overlay_rect(main_hwnd, overlay_hwnd, x, y, width, height, false);
                     }
                 });
             } else {
@@ -924,9 +1392,12 @@ pub async fn resize_embedded_poc(
                         y,
                         width,
                         height,
-                        win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW | win32::SWP_ASYNCWINDOWPOS,
+                        win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
                     );
                     win32::UpdateWindow(child_hwnd as win32::HWND);
+                }
+                if main_hwnd != 0 && overlay_hwnd != 0 {
+                    sync_overlay_rect(main_hwnd, overlay_hwnd, x, y, width, height, false);
                 }
             }
         }
@@ -960,6 +1431,14 @@ pub async fn stop_embedded_poc_internal(state: &EmbeddedPocState) {
     state.active_pid.store(0, Ordering::SeqCst);
     state.active_hwnd.store(0, Ordering::SeqCst);
 
+    let overlay_hwnd = state.active_overlay_hwnd.load(Ordering::SeqCst);
+    if overlay_hwnd != 0 {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_HIDE);
+        }
+    }
+
     let (child_opt, child_pid, hwnd_opt, app_opt) = {
         let mut inner = state.inner.lock().await;
         let child = inner.child_process.take();
@@ -971,6 +1450,12 @@ pub async fn stop_embedded_poc_internal(state: &EmbeddedPocState) {
         let app = inner.app_handle.take();
         inner.ipc_tx = None;
         inner.stream_info = None;
+        inner.last_bounds = None;
+        inner.windowed_bounds = None;
+        #[cfg(target_os = "windows")]
+        {
+            inner.overlay_hwnd = None;
+        }
         (child, pid, hwnd, app)
     };
 
@@ -991,5 +1476,96 @@ pub async fn stop_embedded_poc_internal(state: &EmbeddedPocState) {
         } else {
             destroy_child_window(hwnd);
         }
+    }
+
+    if let Some(ref app) = app_opt {
+        if let Some(main_win) = app.get_webview_window("main") {
+            if main_win.is_fullscreen().unwrap_or(false) {
+                println!("[Lighthouse Fullscreen] Restoring non-fullscreen in stop_embedded_poc_internal");
+                let _ = main_win.set_fullscreen(false);
+                let _ = app.emit("player-fullscreen-changed", false);
+            }
+        }
+        let _ = app.emit("embedded-poc-stopped", ());
+    }
+}
+
+#[tauri::command]
+pub async fn get_embedded_player_info(
+    state: State<'_, EmbeddedPocState>,
+) -> Result<Option<PocStreamInfo>, String> {
+    let inner = state.inner.lock().await;
+    Ok(inner.stream_info.clone())
+}
+
+#[tauri::command]
+pub async fn toggle_player_fullscreen(
+    app: AppHandle,
+) -> Result<bool, String> {
+    println!("[Lighthouse Fullscreen] toggle_player_fullscreen called on backend");
+    if let Some(main_win) = app.get_webview_window("main") {
+        let current_fs = main_win.is_fullscreen().unwrap_or(false);
+        let new_fs = !current_fs;
+
+        // 1. Hide overlay before window transition so no intermediate sizing is visible
+        if let Some(state) = app.try_state::<EmbeddedPocState>() {
+            state.hide_overlay();
+            if new_fs {
+                if let Ok(mut inner) = state.inner.try_lock() {
+                    if inner.windowed_bounds.is_none() {
+                        inner.windowed_bounds = inner.last_bounds;
+                    }
+                }
+            }
+        }
+
+        println!(
+            "[Lighthouse Fullscreen] Current main is_fullscreen = {}, setting to {}",
+            current_fs, new_fs
+        );
+
+        // 2. Change fullscreen state
+        main_win.set_fullscreen(new_fs).map_err(|e| format!("Failed to set fullscreen: {:?}", e))?;
+        let resulting_fs = main_win.is_fullscreen().unwrap_or(new_fs);
+        println!(
+            "[Lighthouse Fullscreen] Resulting main is_fullscreen = {}",
+            resulting_fs
+        );
+
+        // 3. Emit event to frontend for UI icons/classes
+        let _ = app.emit("player-fullscreen-changed", resulting_fs);
+
+        // All timed resyncs (80ms, 200ms) removed.
+        // The main window's Resized event will execute the single, instant sync.
+        Ok(resulting_fs)
+    } else {
+        println!("[Lighthouse Fullscreen] Main window not found");
+        Err("Main window not found".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn set_main_window_fullscreen(
+    fullscreen: bool,
+    app: AppHandle,
+) -> Result<bool, String> {
+    println!("[Lighthouse Fullscreen] set_main_window_fullscreen called: {}", fullscreen);
+    if let Some(main_win) = app.get_webview_window("main") {
+        if let Some(state) = app.try_state::<EmbeddedPocState>() {
+            state.hide_overlay();
+            if fullscreen {
+                if let Ok(mut inner) = state.inner.try_lock() {
+                    if inner.windowed_bounds.is_none() {
+                        inner.windowed_bounds = inner.last_bounds;
+                    }
+                }
+            }
+        }
+        main_win.set_fullscreen(fullscreen).map_err(|e| format!("Failed to set fullscreen: {:?}", e))?;
+        let resulting = main_win.is_fullscreen().unwrap_or(fullscreen);
+        let _ = app.emit("player-fullscreen-changed", resulting);
+        Ok(resulting)
+    } else {
+        Err("Main window not found".to_string())
     }
 }
