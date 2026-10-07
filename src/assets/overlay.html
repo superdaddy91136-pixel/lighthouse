@@ -89,7 +89,7 @@
       right: 0;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       padding: 16px 24px;
       background: transparent !important;
       opacity: 0;
@@ -107,30 +107,11 @@
       transform: translateY(0);
     }
 
-    .top-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-width: 0;
-      flex: 1;
-      margin-right: 16px;
-    }
-
-    .stream-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: #ffffff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
-      letter-spacing: -0.2px;
-    }
-
     .top-right {
       display: flex;
       align-items: center;
       gap: 10px;
+      margin-left: auto;
     }
 
     .btn-top-action,
@@ -304,10 +285,12 @@
 
     /* CONTROLS ROW */
     .controls-row {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: space-between;
       width: 100%;
+      min-height: 48px;
     }
 
     .controls-left,
@@ -315,11 +298,12 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      z-index: 2;
     }
 
     .ctrl-btn {
-      width: 40px;
-      height: 40px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       background: transparent;
       border: none;
@@ -347,70 +331,292 @@
       transform: scale(0.96);
     }
 
+    /* PLAY/PAUSE: PURE ICON WITHOUT CASING/BACKGROUND */
     .btn-play-pause {
-      width: 44px;
-      height: 44px;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.24);
+      width: 48px;
+      height: 48px;
+      background: transparent !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      filter: none !important;
+      padding: 0;
       color: #ffffff;
-      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .btn-play-pause:hover {
-      background: rgba(255, 255, 255, 0.26);
-      border-color: rgba(255, 255, 255, 0.55);
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+      transform: scale(1.08);
     }
 
-    /* VOLUME */
-    .volume-group {
+    /* SEEK ROW & REMAINING TIME */
+    .seek-row {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding-right: 6px;
+      gap: 16px;
+      width: 100%;
+      margin-bottom: 8px;
     }
 
-    .volume-slider {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 72px;
-      height: 4px;
-      border-radius: 2px;
-      background: rgba(255, 255, 255, 0.28);
-      outline: none;
+    .seek-row .progress-bar-wrap {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .remaining-time-display {
+      font-size: 19px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.95);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      user-select: none;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+      min-width: 65px;
+      text-align: right;
+    }
+
+    /* VERTICAL VOLUME CONTROL */
+    .volume-control-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-volume {
+      width: 48px;
+      height: 48px;
+    }
+
+    .vertical-volume-popup {
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      padding-bottom: 12px;
+      display: none;
+      z-index: 120;
+    }
+
+    .volume-control-wrap:hover .vertical-volume-popup,
+    .volume-control-wrap.open .vertical-volume-popup,
+    .volume-control-wrap.dragging .vertical-volume-popup {
+      display: block;
+      animation: volFadeIn 0.15s ease-out;
+    }
+
+    @keyframes volFadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .vertical-vol-box {
+      background: rgba(20, 20, 20, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 14px 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(8px);
+    }
+
+    .vertical-vol-track {
+      position: relative;
+      width: 6px;
+      height: 100px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 3px;
       cursor: pointer;
-      transition: all 0.15s ease;
     }
 
-    .volume-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
+    .vertical-vol-fill {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--netflix-red);
+      border-radius: 3px;
+      pointer-events: none;
+    }
+
+    .vertical-vol-thumb {
+      position: absolute;
+      left: 50%;
+      bottom: 100%;
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #ffffff;
-      box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
-      cursor: pointer;
-      transition: transform 0.15s ease, background 0.15s ease;
-    }
-
-    .volume-slider:hover::-webkit-slider-thumb {
-      transform: scale(1.25);
       background: var(--netflix-red);
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
+      transform: translate(-50%, 50%);
+      pointer-events: none;
+      transition: transform 0.1s ease;
     }
 
-    /* TIME DISPLAY */
-    .time-display {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .vertical-vol-track:hover .vertical-vol-thumb,
+    .volume-control-wrap.dragging .vertical-vol-thumb {
+      transform: translate(-50%, 50%) scale(1.25);
+    }
+
+    /* CENTERED TITLE INDEPENDENT OF LEFT AND RIGHT CONTROLS */
+    .player-center-title {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 8px;
+      max-width: 42vw;
+      white-space: nowrap;
+      overflow: hidden;
+      user-select: none;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+      pointer-events: none;
+      z-index: 1;
+      text-align: center;
+    }
+
+    .player-center-title .title-primary,
+    .title-primary {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-center-title .title-secondary,
+    .title-secondary {
+      font-size: 20px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.82);
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* NEXT EPISODE BUTTON (TV ONLY) */
+    .btn-next-ep {
+      display: none;
+      width: 48px;
+      height: 48px;
+    }
+
+    body.mode-episode .btn-next-ep {
+      display: flex !important;
+    }
+
+    /* PLAYBACK SPEED */
+    .speed-control-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-speed {
+      width: 48px;
+      height: 48px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .speed-pill-indicator {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      padding: 1px 4px;
+      border-radius: 6px;
+      background: var(--netflix-red);
+      color: #ffffff;
+      font-size: 9.5px;
+      font-weight: 800;
+      line-height: 1.2;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+    }
+
+    .speed-menu {
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 6px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 130px;
+      z-index: 130;
+      backdrop-filter: blur(8px);
+    }
+
+    .speed-menu.open {
+      display: flex;
+      animation: speedFadeIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes speedFadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .speed-menu-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8c8c8c;
+      padding: 6px 10px 4px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 4px;
+    }
+
+    .speed-opt {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: rgba(255, 255, 255, 0.9);
-      margin-left: 8px;
-      white-space: nowrap;
+      color: #cccccc;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.14s ease;
+      text-align: left;
+      width: 100%;
     }
 
-    .time-separator {
-      color: rgba(255, 255, 255, 0.35);
-      margin: 0 4px;
+    .speed-opt:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .speed-opt.selected {
+      color: var(--netflix-red);
+      font-weight: 700;
+      background: rgba(229, 9, 20, 0.12);
     }
 
     /* LIVE BADGE */
@@ -446,10 +652,10 @@
     }
 
     /* MODE OVERRIDES */
-    body.mode-live #progressWrap,
+    body.mode-live #seekRow,
     body.mode-live #btnReplay10,
     body.mode-live #btnForward10,
-    body.mode-live #timeDisplay {
+    body.mode-live .speed-control-wrap {
       display: none !important;
     }
 
@@ -1314,9 +1520,6 @@
 
     <!-- TOP BAR -->
     <header class="top-bar" id="topBar">
-      <div class="top-left">
-        <span class="stream-title" id="streamTitle">Loading stream...</span>
-      </div>
       <div class="top-right">
         <button class="btn-close" id="btnClose" title="Exit Player (Esc)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -1335,65 +1538,68 @@
 
     <!-- BOTTOM CONTROLS DOCK -->
     <footer class="bottom-bar" id="bottomBar">
-      <!-- PROGRESS / SCRUB BAR -->
-      <div class="progress-bar-wrap" id="progressWrap">
-        <div class="progress-track">
-          <div class="progress-fill" id="progressFill"></div>
-          <div class="progress-thumb" id="progressThumb"></div>
+      <!-- PROGRESS / SEEK BAR & REMAINING TIME -->
+      <div class="seek-row" id="seekRow">
+        <div class="progress-bar-wrap" id="progressWrap">
+          <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+            <div class="progress-thumb" id="progressThumb"></div>
+          </div>
+          <div class="time-tooltip" id="timeTooltip">00:00</div>
         </div>
-        <div class="time-tooltip" id="timeTooltip">00:00</div>
+        <div class="remaining-time-display" id="remainingTimeDisplay">-00:00</div>
       </div>
 
       <!-- CONTROLS ROW -->
       <div class="controls-row">
-        <!-- LEFT: Play/Pause, Replay 10, Skip 10, Volume, Time / Live Badge -->
+        <!-- LEFT: Play/Pause, Replay 10, Skip 10, Volume, Live Badge -->
         <div class="controls-left">
           <!-- Play / Pause -->
           <button class="ctrl-btn btn-play-pause" id="btnPlayPause" title="Play/Pause (Space)">
-            <svg id="iconPlay" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <svg id="iconPlay" width="44" height="44" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z"/>
             </svg>
-            <svg id="iconPause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+            <svg id="iconPause" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
               <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
             </svg>
           </button>
 
           <!-- Replay 10s -->
           <button class="ctrl-btn" id="btnReplay10" title="Replay 10s (Left Arrow)">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12.5 3C17.15 3 21 6.85 21 11.5c0 4.65-3.85 8.5-8.5 8.5-3.66 0-6.77-2.34-7.96-5.63l1.9-0.64C7.27 16.29 9.69 18 12.5 18c3.59 0 6.5-2.91 6.5-6.5S16.09 5 12.5 5c-2.02 0-3.84 0.93-5.04 2.4L10 10H3V3l2.55 2.55C7.21 3.99 9.72 3 12.5 3z"/>
-              <text x="12.5" y="14" font-size="7" font-weight="700" text-anchor="middle" fill="currentColor">10</text>
+              <text x="12.5" y="14.2" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor">10</text>
             </svg>
           </button>
 
           <!-- Skip 10s -->
           <button class="ctrl-btn" id="btnForward10" title="Skip 10s (Right Arrow)">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M11.5 3C6.85 3 3 6.85 3 11.5 3 16.15 6.85 20 11.5 20c3.66 0 6.77-2.34 7.96-5.63l-1.9-0.64C16.73 16.29 14.31 18 11.5 18 7.91 18 5 15.09 5 11.5S7.91 5 11.5 5c2.02 0 3.84 0.93 5.04 2.4L14 10h7V3l-2.55 2.55C16.79 3.99 14.28 3 11.5 3z"/>
-              <text x="11.5" y="14" font-size="7" font-weight="700" text-anchor="middle" fill="currentColor">10</text>
+              <text x="11.5" y="14.2" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor">10</text>
             </svg>
           </button>
 
-          <!-- Volume Group -->
-          <div class="volume-group">
-            <button class="ctrl-btn" id="btnVolume" title="Mute/Unmute (M)">
+          <!-- Vertical Volume Control -->
+          <div class="volume-control-wrap" id="volumeControlWrap">
+            <div class="vertical-volume-popup" id="verticalVolumePopup">
+              <div class="vertical-vol-box">
+                <div class="vertical-vol-track" id="verticalVolTrack">
+                  <div class="vertical-vol-fill" id="verticalVolFill"></div>
+                  <div class="vertical-vol-thumb" id="verticalVolThumb"></div>
+                </div>
+              </div>
+            </div>
+            <button class="ctrl-btn btn-volume" id="btnVolume" title="Mute/Unmute (M)">
               <!-- Volume High -->
-              <svg id="iconVolHigh" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <svg id="iconVolHigh" width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
               </svg>
               <!-- Volume Muted -->
-              <svg id="iconVolMuted" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+              <svg id="iconVolMuted" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
                 <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
               </svg>
             </button>
-            <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="100" title="Volume">
-          </div>
-
-          <!-- Time Display -->
-          <div class="time-display" id="timeDisplay">
-            <span id="timeCurrent">00:00</span>
-            <span class="time-separator">/</span>
-            <span id="timeDuration">00:00</span>
           </div>
 
           <!-- Live Indicator Badge -->
@@ -1403,56 +1609,86 @@
           </div>
         </div>
 
-        <!-- RIGHT: Episodes (TV), Channels (Live), CH-/CH+, Audio & Subs, Fullscreen -->
+        <!-- CENTER: Title (Horizontally centered in player independent of controls) -->
+        <div class="player-center-title" id="bottomTitle"></div>
+
+        <!-- RIGHT: Channels (Live), Next Episode (TV), Episodes (TV), Speed, Info, Audio & Subs, Fullscreen -->
         <div class="controls-right">
           <!-- Previous Channel (Live TV mode) -->
           <button class="ctrl-btn" id="btnPrevChannel" title="Previous Channel">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
             </svg>
           </button>
 
           <!-- Next Channel (Live TV mode) -->
           <button class="ctrl-btn" id="btnNextChannel" title="Next Channel">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
             </svg>
           </button>
 
           <!-- In-Player Channel Switcher (Live TV mode) -->
           <button class="ctrl-btn" id="btnChannels" title="Channels">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zM5 7h5v4H5zm0 6h5v2H5zm7-6h7v2h-7zm0 4h7v2h-7zm0 4h7v2h-7z"/>
+            </svg>
+          </button>
+
+          <!-- Next Episode (TV only - immediately before Episodes Switcher) -->
+          <button class="ctrl-btn btn-next-ep" id="btnNextEpisode" title="Next Episode">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
             </svg>
           </button>
 
           <!-- In-Player Episode Switcher (TV Shows mode) -->
           <button class="ctrl-btn" id="btnEpisodes" title="Episodes">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/>
             </svg>
           </button>
 
+          <!-- Playback Speed Control -->
+          <div class="speed-control-wrap" id="speedControlWrap">
+            <button class="ctrl-btn btn-speed" id="btnSpeed" title="Playback Speed">
+              <svg id="iconSpeed" width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.28-10.43zM10.59 15.41a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/>
+              </svg>
+              <span class="speed-pill-indicator" id="speedPillIndicator" style="display: none;">1x</span>
+            </button>
+            <div class="speed-menu" id="speedMenu">
+              <div class="speed-menu-title">Playback Speed</div>
+              <button type="button" class="speed-opt" data-speed="0.5">0.5×</button>
+              <button type="button" class="speed-opt" data-speed="0.75">0.75×</button>
+              <button type="button" class="speed-opt selected" data-speed="1">1× (Normal)</button>
+              <button type="button" class="speed-opt" data-speed="1.25">1.25×</button>
+              <button type="button" class="speed-opt" data-speed="1.5">1.5×</button>
+              <button type="button" class="speed-opt" data-speed="1.75">1.75×</button>
+              <button type="button" class="speed-opt" data-speed="2">2×</button>
+            </div>
+          </div>
+
           <!-- Technical Details / Stats for Nerds -->
           <button class="ctrl-btn" id="btnInfo" title="Technical Details (I)">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
             </svg>
           </button>
 
           <!-- Unified Audio & Subtitles Menu Button -->
           <button class="ctrl-btn" id="btnAudioSubs" title="Audio & Subtitles">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
             </svg>
           </button>
 
           <!-- Fullscreen Toggle -->
           <button class="ctrl-btn" id="btnFullscreen" title="Fullscreen (F)">
-            <svg id="iconEnterFs" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg id="iconEnterFs" width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
             </svg>
-            <svg id="iconExitFs" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+            <svg id="iconExitFs" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
               <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
             </svg>
           </button>
@@ -1692,7 +1928,6 @@
       // DOM ELEMENTS
       const overlayContainer = document.getElementById('overlayContainer');
       const videoClickSurface = document.getElementById('videoClickSurface');
-      const streamTitleEl = document.getElementById('streamTitle');
       const btnClose = document.getElementById('btnClose');
       const centerHud = document.getElementById('centerHud');
       const hudIcon = document.getElementById('hudIcon');
@@ -1701,6 +1936,7 @@
       const progressFill = document.getElementById('progressFill');
       const progressThumb = document.getElementById('progressThumb');
       const timeTooltip = document.getElementById('timeTooltip');
+      const remainingTimeDisplay = document.getElementById('remainingTimeDisplay');
 
       const btnPlayPause = document.getElementById('btnPlayPause');
       const iconPlay = document.getElementById('iconPlay');
@@ -1709,13 +1945,20 @@
       const btnReplay10 = document.getElementById('btnReplay10');
       const btnForward10 = document.getElementById('btnForward10');
 
+      const volumeControlWrap = document.getElementById('volumeControlWrap');
       const btnVolume = document.getElementById('btnVolume');
       const iconVolHigh = document.getElementById('iconVolHigh');
       const iconVolMuted = document.getElementById('iconVolMuted');
-      const volumeSlider = document.getElementById('volumeSlider');
+      const verticalVolTrack = document.getElementById('verticalVolTrack');
+      const verticalVolFill = document.getElementById('verticalVolFill');
+      const verticalVolThumb = document.getElementById('verticalVolThumb');
 
-      const timeCurrent = document.getElementById('timeCurrent');
-      const timeDuration = document.getElementById('timeDuration');
+      const bottomTitle = document.getElementById('bottomTitle');
+      const btnNextEpisode = document.getElementById('btnNextEpisode');
+
+      const btnSpeed = document.getElementById('btnSpeed');
+      const speedPillIndicator = document.getElementById('speedPillIndicator');
+      const speedMenu = document.getElementById('speedMenu');
 
       const btnFullscreen = document.getElementById('btnFullscreen');
       const iconEnterFs = document.getElementById('iconEnterFs');
@@ -1776,6 +2019,12 @@
           document.body.classList.add('mode-live');
         } else if (currentContentMode === 'episode') {
           document.body.classList.add('mode-episode');
+        }
+        if (typeof renderFormattedTitles === 'function') {
+          renderFormattedTitles();
+        }
+        if (typeof updateNextEpisodeBtnState === 'function') {
+          updateNextEpisodeBtnState();
         }
       }
 
@@ -1853,9 +2102,25 @@
         }
       }
 
+      function formatRemainingTime(secs) {
+        if (!secs || isNaN(secs) || secs <= 0) return '-00:00';
+        const total = Math.floor(secs);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const mm = String(m).padStart(2, '0');
+        const ss = String(s).padStart(2, '0');
+        if (h > 0) {
+          return `-${h}:${mm}:${ss}`;
+        }
+        return `-${mm}:${ss}`;
+      }
+
       function updateTimeUI() {
-        timeCurrent.textContent = formatTime(currentTime);
-        timeDuration.textContent = formatTime(duration);
+        if (remainingTimeDisplay) {
+          const rem = Math.max(0, duration - currentTime);
+          remainingTimeDisplay.textContent = formatRemainingTime(rem);
+        }
         if (!isDragging && duration > 0) {
           const pct = Math.min(100, Math.max(0, (currentTime / duration) * 100));
           progressFill.style.width = `${pct}%`;
@@ -1864,14 +2129,15 @@
       }
 
       function updateVolumeUI() {
+        const volPct = isMuted ? 0 : Math.min(100, Math.max(0, Math.round(currentVolume)));
+        if (verticalVolFill) verticalVolFill.style.height = `${volPct}%`;
+        if (verticalVolThumb) verticalVolThumb.style.bottom = `${volPct}%`;
         if (isMuted || currentVolume === 0) {
           iconVolHigh.style.display = 'none';
           iconVolMuted.style.display = 'block';
-          volumeSlider.value = 0;
         } else {
           iconVolHigh.style.display = 'block';
           iconVolMuted.style.display = 'none';
-          volumeSlider.value = Math.round(currentVolume);
         }
       }
 
@@ -1890,7 +2156,8 @@
         return modalAudioSubs.classList.contains('open') ||
                drawerEpisodes.classList.contains('open') ||
                drawerChannels.classList.contains('open') ||
-               boxNerdStats.classList.contains('open');
+               boxNerdStats.classList.contains('open') ||
+               (speedMenu && speedMenu.classList.contains('open'));
       }
 
       function closeAllPanels() {
@@ -1898,9 +2165,12 @@
         drawerEpisodes.classList.remove('open');
         drawerChannels.classList.remove('open');
         boxNerdStats.classList.remove('open');
+        if (speedMenu) speedMenu.classList.remove('open');
+        if (volumeControlWrap) volumeControlWrap.classList.remove('open');
         btnChannels.classList.remove('active');
         btnEpisodes.classList.remove('active');
         btnAudioSubs.classList.remove('active');
+        if (btnSpeed) btnSpeed.classList.remove('active');
         if (btnInfo) btnInfo.classList.remove('active');
         clearInterval(nerdStatsInterval);
         nerdStatsInterval = null;
@@ -1972,24 +2242,61 @@
         showControls();
       });
 
-      // VOLUME
+      // VERTICAL VOLUME INTERACTION
+      function updateVolumeFromPointer(e) {
+        if (!verticalVolTrack) return;
+        const rect = verticalVolTrack.getBoundingClientRect();
+        const pos = Math.min(Math.max(0, rect.bottom - e.clientY), rect.height);
+        const frac = pos / rect.height;
+        const val = Math.round(frac * 100);
+        currentVolume = val;
+        isMuted = val === 0;
+        updateVolumeUI();
+        sendMpv(['set_property', 'volume', val]);
+        showControls();
+      }
+
+      if (verticalVolTrack) {
+        let isVolDragging = false;
+        verticalVolTrack.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          isVolDragging = true;
+          if (volumeControlWrap) volumeControlWrap.classList.add('dragging');
+          verticalVolTrack.setPointerCapture(e.pointerId);
+          updateVolumeFromPointer(e);
+        });
+        verticalVolTrack.addEventListener('pointermove', (e) => {
+          if (!isVolDragging) return;
+          e.stopPropagation();
+          updateVolumeFromPointer(e);
+        });
+        const stopVolDrag = (e) => {
+          if (!isVolDragging) return;
+          isVolDragging = false;
+          if (volumeControlWrap) volumeControlWrap.classList.remove('dragging');
+          try {
+            verticalVolTrack.releasePointerCapture(e.pointerId);
+          } catch {}
+          resetHideTimer();
+        };
+        verticalVolTrack.addEventListener('pointerup', stopVolDrag);
+        verticalVolTrack.addEventListener('pointercancel', stopVolDrag);
+      }
+
       btnVolume.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (volumeControlWrap) volumeControlWrap.classList.add('open');
         isMuted = !isMuted;
         updateVolumeUI();
         sendMpv(['cycle', 'mute']);
         showControls();
       });
 
-      volumeSlider.addEventListener('input', (e) => {
-        e.stopPropagation();
-        const val = Number(e.target.value);
-        currentVolume = val;
-        isMuted = val === 0;
-        updateVolumeUI();
-        sendMpv(['set_property', 'volume', val]);
-        showControls();
-      });
+      if (volumeControlWrap) {
+        volumeControlWrap.addEventListener('mouseleave', () => {
+          volumeControlWrap.classList.remove('open');
+        });
+      }
 
       // PROGRESS BAR / SEEKING
       function getProgressFraction(e) {
@@ -2329,6 +2636,130 @@
           });
 
           episodeListContainer.appendChild(card);
+        });
+        updateNextEpisodeBtnState();
+        renderFormattedTitles();
+      }
+
+      // NEXT EPISODE LOGIC (TV SHOWS)
+      function updateNextEpisodeBtnState() {
+        if (!btnNextEpisode) return;
+        if (!episodesData.episodes || episodesData.episodes.length === 0) {
+          btnNextEpisode.disabled = true;
+          btnNextEpisode.style.opacity = '0.35';
+          btnNextEpisode.style.cursor = 'not-allowed';
+          return;
+        }
+        const currentIndex = episodesData.episodes.findIndex(
+          (ep) => ep.id === episodesData.currentEpisodeId || ep.isCurrent
+        );
+        const hasNextEp = currentIndex !== -1 && currentIndex + 1 < episodesData.episodes.length;
+        const hasNextSeason = episodesData.seasons && episodesData.seasons.findIndex(
+          (s) => s.seasonNum === episodesData.currentSeasonNum
+        ) + 1 < episodesData.seasons.length;
+
+        if (hasNextEp || hasNextSeason) {
+          btnNextEpisode.disabled = false;
+          btnNextEpisode.style.opacity = '1';
+          btnNextEpisode.style.cursor = 'pointer';
+        } else {
+          btnNextEpisode.disabled = true;
+          btnNextEpisode.style.opacity = '0.35';
+          btnNextEpisode.style.cursor = 'not-allowed';
+        }
+      }
+
+      function playNextEpisode() {
+        if (!episodesData.episodes || episodesData.episodes.length === 0) return;
+        const currentIndex = episodesData.episodes.findIndex(
+          (ep) => ep.id === episodesData.currentEpisodeId || ep.isCurrent
+        );
+        if (currentIndex !== -1 && currentIndex + 1 < episodesData.episodes.length) {
+          const nextEp = episodesData.episodes[currentIndex + 1];
+          episodesData.currentEpisodeId = nextEp.id;
+          renderEpisodes();
+          tauriEmit('select-player-episode', {
+            episodeId: nextEp.id,
+            channel: nextEp.channel,
+          });
+          closeAllPanels();
+          showControls();
+        } else if (episodesData.seasons && episodesData.seasons.length > 0) {
+          const currentSeasonIdx = episodesData.seasons.findIndex(
+            (s) => s.seasonNum === episodesData.currentSeasonNum
+          );
+          if (currentSeasonIdx !== -1 && currentSeasonIdx + 1 < episodesData.seasons.length) {
+            const nextSeason = episodesData.seasons[currentSeasonIdx + 1];
+            tauriEmit('request-change-season', {
+              seasonId: nextSeason.id,
+              seasonNum: nextSeason.seasonNum,
+            });
+            closeAllPanels();
+            showControls();
+          }
+        }
+      }
+
+      if (btnNextEpisode) {
+        btnNextEpisode.addEventListener('click', (e) => {
+          e.stopPropagation();
+          playNextEpisode();
+        });
+      }
+
+      // PLAYBACK SPEED LOGIC
+      let currentSpeed = 1.0;
+
+      function updateSpeedUI(spd) {
+        const num = Number(spd) || 1.0;
+        currentSpeed = num;
+        if (speedPillIndicator) {
+          if (Math.abs(num - 1.0) < 0.01) {
+            speedPillIndicator.style.display = 'none';
+          } else {
+            speedPillIndicator.textContent = `${num}x`;
+            speedPillIndicator.style.display = 'block';
+          }
+        }
+        if (speedMenu) {
+          const opts = speedMenu.querySelectorAll('.speed-opt');
+          opts.forEach((opt) => {
+            const optVal = Number(opt.dataset.speed);
+            if (Math.abs(optVal - num) < 0.01) {
+              opt.classList.add('selected');
+            } else {
+              opt.classList.remove('selected');
+            }
+          });
+        }
+      }
+
+      function setPlaybackSpeed(spd) {
+        const num = Number(spd) || 1.0;
+        updateSpeedUI(num);
+        sendMpv(['set_property', 'speed', num]);
+        closeAllPanels();
+        showControls();
+      }
+
+      if (btnSpeed && speedMenu) {
+        btnSpeed.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const wasOpen = speedMenu.classList.contains('open');
+          closeAllPanels();
+          if (!wasOpen) {
+            speedMenu.classList.add('open');
+            btnSpeed.classList.add('active');
+          }
+          showControls();
+        });
+
+        speedMenu.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const target = e.target.closest('.speed-opt');
+          if (target && target.dataset.speed) {
+            setPlaybackSpeed(target.dataset.speed);
+          }
         });
       }
 
@@ -3224,6 +3655,11 @@
                   renderNerdStats();
                 }
                 break;
+              case 'speed':
+                if (typeof parsed.data === 'number') {
+                  updateSpeedUI(parsed.data);
+                }
+                break;
             }
           }
         } catch (err) {
@@ -3231,12 +3667,59 @@
         }
       });
 
-      // STREAM TITLE INITIALIZATION
-      function updateTitle(name) {
-        if (name && streamTitleEl) {
-          const cleaned = name.replace(/^[A-Z0-9\-_ ]+-\s*/i, '');
-          streamTitleEl.textContent = cleaned || name;
+      // STREAM TITLE & TYPOGRAPHY LOGIC
+      let currentRawTitle = '';
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>'"]/g, (tag) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag));
+      }
+
+      function renderFormattedTitles() {
+        let primary = '';
+        let secondary = '';
+
+        if (currentContentMode === 'episode') {
+          const curEp = episodesData.episodes?.find((e) => e.id === episodesData.currentEpisodeId || e.isCurrent);
+          if (episodesData.seriesTitle) {
+            primary = episodesData.seriesTitle;
+            if (curEp) {
+              const sNum = curEp.seasonNum != null ? String(curEp.seasonNum).padStart(2, '0') : '';
+              const eNum = curEp.episodeNum != null ? String(curEp.episodeNum).padStart(2, '0') : '';
+              const epCode = sNum && eNum ? `S${sNum}E${eNum}: ` : '';
+              secondary = `${epCode}${curEp.title || ''}`.trim();
+            }
+          }
         }
+
+        if (!primary && currentRawTitle) {
+          const splitIdx = currentRawTitle.indexOf(' - ');
+          if (splitIdx !== -1) {
+            primary = currentRawTitle.substring(0, splitIdx).trim();
+            secondary = currentRawTitle.substring(splitIdx + 3).trim();
+          } else {
+            primary = currentRawTitle.trim();
+            secondary = '';
+          }
+        }
+
+        const titleHtml = secondary
+          ? `<span class="title-primary">${escapeHtml(primary)}</span> <span class="title-secondary">${escapeHtml(secondary)}</span>`
+          : `<span class="title-primary">${escapeHtml(primary)}</span>`;
+
+        if (bottomTitle) bottomTitle.innerHTML = titleHtml;
+      }
+
+      function updateTitle(name) {
+        if (!name) return;
+        currentRawTitle = name;
+        renderFormattedTitles();
       }
 
       function setTopCrop(payload) {
@@ -3309,6 +3792,8 @@
         currentSid = 'no';
         renderTracks();
         requestTrackInfo();
+        sendMpv(['observe_property', 14, 'speed']);
+        updateSpeedUI(1.0);
         if (event.payload?.name) {
           updateTitle(event.payload.name);
         }
@@ -3329,6 +3814,13 @@
         currentAid = null;
         currentSid = 'no';
         renderTracks();
+        updateSpeedUI(1.0);
+        currentTime = 0;
+        duration = 0;
+        updateTimeUI();
+        if (remainingTimeDisplay) remainingTimeDisplay.textContent = '-00:00';
+        currentRawTitle = '';
+        renderFormattedTitles();
         nerdStats = {
           videoCodec: '',
           videoParams: null,
