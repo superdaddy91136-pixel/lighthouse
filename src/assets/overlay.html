@@ -22,11 +22,15 @@
     }
 
     html, body {
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
       background: transparent !important;
       background-color: transparent !important;
-      overflow: hidden;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      overflow-y: hidden !important;
       user-select: none;
       -webkit-user-select: none;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -41,12 +45,15 @@
       position: absolute;
       top: var(--top-crop, 0px);
       left: 0;
+      right: 0;
       width: 100%;
       height: calc(100% - var(--top-crop, 0px));
       box-sizing: border-box;
       background: transparent !important;
       background-color: transparent !important;
-      overflow: hidden;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      overflow-y: hidden !important;
       box-shadow: none !important;
       filter: none !important;
       backdrop-filter: none !important;
@@ -634,7 +641,7 @@
       right: 16px;
       bottom: 84px;
       width: 380px;
-      max-width: calc(100vw - 32px);
+      max-width: calc(100% - 32px);
       background: var(--bg-panel);
       border: 1px solid var(--border-subtle);
       border-radius: 12px;
@@ -879,17 +886,199 @@
       font-size: 11px;
     }
 
+    /* CHANNELS DRAWER TWO-PANE STYLING */
+    #drawerChannels.channels-drawer-two-pane {
+      width: 640px;
+      max-width: calc(100% - 32px);
+      background: rgba(18, 18, 18, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .channels-header-titles {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .channels-active-folder-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #cccccc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: #888888;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .search-clear-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .channels-two-pane-body {
+      display: flex;
+      flex-direction: row;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .folders-column {
+      width: 220px;
+      min-width: 170px;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .channels-column {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: transparent;
+    }
+
+    .pane-column-header {
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #888888;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    .pane-counter {
+      font-size: 10px;
+      font-weight: 600;
+      color: #777777;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+
+    .folders-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .folders-list::-webkit-scrollbar,
+    .channels-list::-webkit-scrollbar {
+      width: 5px;
+    }
+    .folders-list::-webkit-scrollbar-thumb,
+    .channels-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    .folder-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      color: #cccccc;
+      cursor: pointer;
+      background: transparent;
+      border: 1px solid transparent;
+      transition: all 0.14s ease;
+      user-select: none;
+      text-align: left;
+      width: 100%;
+    }
+
+    .folder-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+
+    .folder-item.active {
+      background: rgba(229, 9, 20, 0.2);
+      border-color: rgba(229, 9, 20, 0.5);
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .folder-icon {
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .folder-item.active .folder-icon {
+      opacity: 1;
+      color: var(--netflix-red);
+    }
+
+    .folder-name {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .channels-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
     /* CHANNEL ROW */
     .channel-row {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 9px 12px;
+      gap: 10px;
+      padding: 8px 10px;
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.06);
       cursor: pointer;
       transition: all 0.15s ease;
+      user-select: none;
     }
 
     .channel-row:hover {
@@ -899,12 +1088,12 @@
 
     .channel-row.current {
       border-color: var(--netflix-red);
-      background: rgba(229, 9, 20, 0.15);
+      background: rgba(229, 9, 20, 0.2);
     }
 
     .ch-logo-box {
-      width: 38px;
-      height: 38px;
+      width: 36px;
+      height: 36px;
       border-radius: 6px;
       background: #222222;
       flex-shrink: 0;
@@ -966,7 +1155,7 @@
     .drawer-empty {
       font-size: 13px;
       color: #888888;
-      padding: 24px 0;
+      padding: 24px 8px;
       text-align: center;
       font-style: italic;
     }
@@ -1312,12 +1501,15 @@
       <div class="drawer-list" id="episodeListContainer"></div>
     </div>
 
-    <!-- IN-PLAYER CHANNELS DRAWER -->
-    <div class="drawer-panel" id="drawerChannels">
+    <!-- IN-PLAYER CHANNELS DRAWER (TWO-PANE: FOLDERS + CHANNELS) -->
+    <div class="drawer-panel channels-drawer-two-pane" id="drawerChannels">
       <div class="drawer-header">
         <div class="drawer-header-row">
-          <span class="drawer-title" id="channelsDrawerTitle">Live Channels</span>
-          <button class="drawer-close-btn" id="btnCloseChannelsDrawer" title="Close">
+          <div class="channels-header-titles">
+            <span class="drawer-title" id="channelsDrawerTitle">Live Channels</span>
+            <span class="channels-active-folder-badge" id="channelsActiveFolderBadge">All Channels</span>
+          </div>
+          <button class="drawer-close-btn" id="btnCloseChannelsDrawer" title="Close (Esc)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
             </svg>
@@ -1328,10 +1520,31 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
           </svg>
-          <input type="text" class="drawer-search-input" id="channelSearchInput" placeholder="Search channels...">
+          <input type="text" class="drawer-search-input" id="channelSearchInput" placeholder="Search all folders & channels..." autocomplete="off">
+          <button type="button" class="search-clear-btn" id="btnChannelSearchClear" style="display: none;" title="Clear search">✕</button>
         </div>
       </div>
-      <div class="drawer-list" id="channelListContainer"></div>
+
+      <!-- TWO-PANE BODY -->
+      <div class="channels-two-pane-body">
+        <!-- LEFT COLUMN: FOLDERS / GROUPS -->
+        <div class="folders-column">
+          <div class="pane-column-header">
+            <span>Folders</span>
+            <span class="pane-counter" id="foldersCount">0</span>
+          </div>
+          <div class="folders-list" id="foldersListContainer"></div>
+        </div>
+
+        <!-- RIGHT COLUMN: CHANNELS -->
+        <div class="channels-column">
+          <div class="pane-column-header">
+            <span id="channelsPaneTitle">Channels</span>
+            <span class="pane-counter" id="channelsCount">0</span>
+          </div>
+          <div class="channels-list" id="channelListContainer"></div>
+        </div>
+      </div>
     </div>
 
     <!-- TECHNICAL DETAILS (STATS FOR NERDS) BOX -->
@@ -1432,10 +1645,32 @@
 
       let channelsData = {
         currentChannelId: null,
+        currentGroupId: null,
+        sourceIds: [],
         channels: []
       };
 
-      let channelSearchFilter = '';
+      const channelSwitcherState = {
+        isOpen: false,
+        sourceIds: [],
+        folders: [],
+        foldersPage: 1,
+        foldersHasMore: true,
+        foldersLoading: false,
+        selectedFolderId: null,
+        selectedFolderName: 'All Channels',
+        channels: [],
+        channelsPage: 1,
+        channelsHasMore: true,
+        channelsLoading: false,
+        currentChannelId: null,
+        currentGroupId: null,
+        searchQuery: '',
+        searchDebounceTimer: null,
+        isSearching: false,
+        matchingFolders: [],
+        matchingChannels: [],
+      };
 
       // NERD STATS (TECHNICAL DETAILS) STATE
       let nerdStats = {
@@ -1508,7 +1743,13 @@
       const drawerChannels = document.getElementById('drawerChannels');
       const btnCloseChannelsDrawer = document.getElementById('btnCloseChannelsDrawer');
       const channelSearchInput = document.getElementById('channelSearchInput');
+      const btnChannelSearchClear = document.getElementById('btnChannelSearchClear');
       const channelListContainer = document.getElementById('channelListContainer');
+      const foldersListContainer = document.getElementById('foldersListContainer');
+      const foldersCount = document.getElementById('foldersCount');
+      const channelsCount = document.getElementById('channelsCount');
+      const channelsActiveFolderBadge = document.getElementById('channelsActiveFolderBadge');
+      const channelsPaneTitle = document.getElementById('channelsPaneTitle');
 
       // NERD STATS (TECHNICAL DETAILS)
       const btnInfo = document.getElementById('btnInfo');
@@ -2091,86 +2332,272 @@
         });
       }
 
-      // CHANNELS DRAWER LOGIC
-      btnChannels.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const wasOpen = drawerChannels.classList.contains('open');
-        closeAllPanels();
-        if (!wasOpen) {
-          drawerChannels.classList.add('open');
-          btnChannels.classList.add('active');
-          tauriEmit('request-player-channels');
-          setTimeout(() => channelSearchInput.focus(), 100);
+      // CHANNELS DRAWER (TWO-PANE LIVE CHANNEL SWITCHER CONTROLLER)
+      async function ensureSourceIds() {
+        if (channelSwitcherState.sourceIds && channelSwitcherState.sourceIds.length > 0) {
+          return channelSwitcherState.sourceIds;
         }
-        showControls();
-      });
-
-      btnCloseChannelsDrawer.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeAllPanels();
-        showControls();
-      });
-
-      channelSearchInput.addEventListener('input', (e) => {
-        channelSearchFilter = (e.target.value || '').trim().toLowerCase();
-        renderChannels();
-      });
-
-      function switchChannelByIndexDelta(delta) {
-        if (!channelsData.channels || channelsData.channels.length === 0) return;
-        const curIdx = channelsData.channels.findIndex((c) => c.id === channelsData.currentChannelId);
-        let nextIdx = 0;
-        if (curIdx !== -1) {
-          nextIdx = (curIdx + delta + channelsData.channels.length) % channelsData.channels.length;
-        } else if (delta < 0) {
-          nextIdx = channelsData.channels.length - 1;
-        }
-        const target = channelsData.channels[nextIdx];
-        if (target) {
-          channelsData.currentChannelId = target.id;
-          if (target.name) {
-            updateTitle(target.name);
+        try {
+          let sources = await tauriInvoke('get_enabled_sources');
+          if (!sources || sources.length === 0) {
+            sources = await tauriInvoke('get_sources');
           }
-          renderChannels();
-          tauriEmit('select-player-channel', { channelId: target.id });
+          const enabledIds = (sources || [])
+            .filter((s) => s.enabled !== false)
+            .map((s) => s.id)
+            .filter((id) => id != null);
+          if (enabledIds.length > 0) {
+            channelSwitcherState.sourceIds = enabledIds;
+            return enabledIds;
+          }
+          const anyIds = (sources || []).map((s) => s.id).filter((id) => id != null);
+          if (anyIds.length > 0) {
+            channelSwitcherState.sourceIds = anyIds;
+            return anyIds;
+          }
+        } catch (e) {
+          console.warn('Failed to get sources for channel switcher:', e);
         }
+        return channelSwitcherState.sourceIds || [];
       }
 
-      btnPrevChannel.addEventListener('click', (e) => {
-        e.stopPropagation();
-        switchChannelByIndexDelta(-1);
-        showControls();
-      });
-
-      btnNextChannel.addEventListener('click', (e) => {
-        e.stopPropagation();
-        switchChannelByIndexDelta(1);
-        showControls();
-      });
-
-      function renderChannels() {
-        const filtered = (channelsData.channels || []).filter((ch) => {
-          if (!channelSearchFilter) return true;
-          return (ch.name || '').toLowerCase().includes(channelSearchFilter) ||
-                 (ch.group || '').toLowerCase().includes(channelSearchFilter);
-        });
-
-        channelListContainer.innerHTML = '';
-        if (filtered.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'drawer-empty';
-          empty.textContent = channelSearchFilter ? 'No channels match your search' : 'No channels available';
-          channelListContainer.appendChild(empty);
+      async function loadFolders() {
+        if (channelSwitcherState.foldersLoading) return;
+        channelSwitcherState.foldersLoading = true;
+        channelSwitcherState.foldersPage = 1;
+        const sourceIds = await ensureSourceIds();
+        if (!sourceIds || sourceIds.length === 0) {
+          channelSwitcherState.foldersLoading = false;
           return;
         }
 
-        filtered.forEach((ch) => {
-          const isCurrent = ch.id === channelsData.currentChannelId || ch.isCurrent;
+        try {
+          let allFolders = [];
+          // 1. Fetch first page of folders and render immediately for instant responsiveness
+          const firstFilters = {
+            source_ids: sourceIds,
+            media_types: [0], // livestream
+            view_type: 2,     // CATEGORIES (ViewMode.Categories = 2)
+            page: 1,
+            use_keywords: false,
+            sort: 2,          // SortType.provider = 2
+          };
+          const firstResults = (await tauriInvoke('search', { filters: firstFilters })) || [];
+          allFolders = (firstResults || []).filter((g) => g.id != null && g.name);
+          channelSwitcherState.folders = allFolders;
+          renderFoldersList();
+
+          // 2. Fetch remaining pages of folders so that no folders are missing
+          let page = 2;
+          let hasMore = firstResults.length >= 36;
+          while (hasMore && page <= 50) {
+            const nextFilters = {
+              source_ids: sourceIds,
+              media_types: [0],
+              view_type: 2,
+              page: page,
+              use_keywords: false,
+              sort: 2,
+            };
+            const nextResults = (await tauriInvoke('search', { filters: nextFilters })) || [];
+            const nextFolders = (nextResults || []).filter((g) => g.id != null && g.name);
+            if (nextFolders.length === 0) break;
+            allFolders = allFolders.concat(nextFolders);
+            channelSwitcherState.folders = allFolders;
+            hasMore = nextResults.length >= 36;
+            page++;
+          }
+          channelSwitcherState.folders = allFolders;
+          channelSwitcherState.foldersHasMore = false;
+          renderFoldersList();
+        } catch (e) {
+          console.warn('Failed to load folders:', e);
+        } finally {
+          channelSwitcherState.foldersLoading = false;
+        }
+      }
+
+      function scrollItemToCenter(container, item) {
+        if (!container || !item) return;
+        const containerRect = container.getBoundingClientRect();
+        const itemRect = item.getBoundingClientRect();
+        const relativeTop = itemRect.top - containerRect.top;
+        const targetScrollTop = container.scrollTop + relativeTop - (container.clientHeight / 2) + (item.clientHeight / 2);
+        container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+      }
+
+      function renderFoldersList() {
+        if (!foldersListContainer) return;
+        foldersListContainer.innerHTML = '';
+        const foldersToRender = channelSwitcherState.isSearching
+          ? channelSwitcherState.matchingFolders
+          : channelSwitcherState.folders;
+
+        if (foldersCount) {
+          foldersCount.textContent = String(foldersToRender.length);
+        }
+
+        // Show "All Channels" at top in browsing mode
+        if (!channelSwitcherState.isSearching) {
+          const allItem = document.createElement('div');
+          const isAllActive = channelSwitcherState.selectedFolderId == null;
+          allItem.className = `folder-item ${isAllActive ? 'active' : ''}`;
+          allItem.dataset.groupId = 'all';
+          allItem.innerHTML = `
+            <svg class="folder-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
+            </svg>
+            <span class="folder-name">All Channels</span>
+          `;
+          allItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectFolder(null, 'All Channels');
+          });
+          foldersListContainer.appendChild(allItem);
+        }
+
+        if (foldersToRender.length === 0) {
+          if (channelSwitcherState.isSearching) {
+            const empty = document.createElement('div');
+            empty.className = 'drawer-empty';
+            empty.textContent = 'No folders match';
+            foldersListContainer.appendChild(empty);
+          }
+          return;
+        }
+
+        foldersToRender.forEach((group) => {
+          const isSelected = channelSwitcherState.selectedFolderId === group.id;
+          const item = document.createElement('div');
+          item.className = `folder-item ${isSelected ? 'active' : ''}`;
+          item.dataset.groupId = String(group.id);
+          item.innerHTML = `
+            <svg class="folder-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+            </svg>
+            <span class="folder-name">${group.name}</span>
+          `;
+          item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (channelSwitcherState.isSearching) {
+              if (channelSearchInput) channelSearchInput.value = '';
+              if (btnChannelSearchClear) btnChannelSearchClear.style.display = 'none';
+              channelSwitcherState.isSearching = false;
+            }
+            selectFolder(group.id, group.name);
+          });
+          foldersListContainer.appendChild(item);
+        });
+
+        const activeEl = foldersListContainer.querySelector('.folder-item.active');
+        if (activeEl) {
+          scrollItemToCenter(foldersListContainer, activeEl);
+        }
+      }
+
+      function selectFolder(groupId, groupName) {
+        channelSwitcherState.selectedFolderId = groupId;
+        channelSwitcherState.selectedFolderName = groupName || 'All Channels';
+        if (channelsActiveFolderBadge) {
+          channelsActiveFolderBadge.textContent = channelSwitcherState.selectedFolderName;
+        }
+        if (channelsPaneTitle) {
+          channelsPaneTitle.textContent = channelSwitcherState.selectedFolderName;
+        }
+
+        if (foldersListContainer) {
+          foldersListContainer.querySelectorAll('.folder-item').forEach((el) => {
+            const gid = el.dataset.groupId;
+            const isActive = (groupId == null && gid === 'all') || (groupId != null && gid === String(groupId));
+            el.classList.toggle('active', isActive);
+            if (isActive) {
+              scrollItemToCenter(foldersListContainer, el);
+            }
+          });
+        }
+
+        loadFolderChannels(groupId, 1, false);
+      }
+
+      async function loadFolderChannels(groupId, page = 1, append = false) {
+        if (channelSwitcherState.channelsLoading) return;
+        channelSwitcherState.channelsLoading = true;
+        channelSwitcherState.channelsPage = page;
+        const sourceIds = await ensureSourceIds();
+        if (!sourceIds || sourceIds.length === 0) {
+          channelSwitcherState.channelsLoading = false;
+          return;
+        }
+
+        if (!append && channelListContainer) {
+          channelListContainer.innerHTML = '<div class="drawer-empty">Loading channels...</div>';
+        }
+
+        try {
+          const filters = {
+            source_ids: sourceIds,
+            media_types: [0], // livestream
+            view_type: 0,     // ALL CHANNELS (ViewMode.All = 0, view_type::ALL = 0)
+            page: page,
+            group_id: groupId != null ? groupId : undefined,
+            use_keywords: false,
+            sort: 2,          // SortType.provider = 2
+          };
+          const results = (await tauriInvoke('search', { filters })) || [];
+          const newChannels = (results || []).filter((c) => c.id != null && (c.media_type === 0 || c.media_type == null));
+
+          if (append) {
+            channelSwitcherState.channels = channelSwitcherState.channels.concat(newChannels);
+          } else {
+            channelSwitcherState.channels = newChannels;
+          }
+          channelSwitcherState.channelsHasMore = newChannels.length >= 36;
+          renderChannelsList(append, newChannels);
+        } catch (e) {
+          console.warn('Failed to load channels for folder:', e);
+          if (!append && channelListContainer) {
+            channelListContainer.innerHTML = '<div class="drawer-empty">Failed to load channels</div>';
+          }
+        } finally {
+          channelSwitcherState.channelsLoading = false;
+        }
+      }
+
+      function renderChannelsList(append = false, newItems = null) {
+        if (!channelListContainer) return;
+        const listToRender = channelSwitcherState.isSearching
+          ? channelSwitcherState.matchingChannels
+          : channelSwitcherState.channels;
+
+        if (channelsCount) {
+          channelsCount.textContent = String(listToRender.length);
+        }
+
+        if (!append) {
+          channelListContainer.innerHTML = '';
+        }
+
+        if (listToRender.length === 0) {
+          channelListContainer.innerHTML = `
+            <div class="drawer-empty">
+              ${channelSwitcherState.isSearching ? 'No channels match your search' : 'No channels in this folder'}
+            </div>
+          `;
+          return;
+        }
+
+        const itemsToAppend = append && newItems
+          ? newItems
+          : (append ? listToRender.slice(Math.max(0, channelSwitcherState.channels.length - 36)) : listToRender);
+
+        itemsToAppend.forEach((ch) => {
+          const isCurrent = ch.id === channelSwitcherState.currentChannelId;
           const row = document.createElement('div');
           row.className = `channel-row ${isCurrent ? 'current' : ''}`;
+          row.dataset.channelId = String(ch.id);
 
-          const logoContent = ch.logo
-            ? `<img class="ch-logo-img" src="${ch.logo}" alt="${ch.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="ch-logo-fallback" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></div>`
+          const logoContent = ch.image
+            ? `<img class="ch-logo-img" src="${ch.image}" alt="${ch.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="ch-logo-fallback" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></div>`
             : `<div class="ch-logo-fallback"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></div>`;
 
           row.innerHTML = `
@@ -2186,17 +2613,210 @@
 
           row.addEventListener('click', (e) => {
             e.stopPropagation();
-            channelsData.currentChannelId = ch.id;
-            if (ch.name) {
-              updateTitle(ch.name);
-            }
-            renderChannels();
-            tauriEmit('select-player-channel', { channelId: ch.id });
-            closeAllPanels();
-            showControls();
+            selectChannel(ch);
           });
 
           channelListContainer.appendChild(row);
+        });
+
+        if (!append) {
+          const currentEl = channelListContainer.querySelector('.channel-row.current');
+          if (currentEl) {
+            scrollItemToCenter(channelListContainer, currentEl);
+          }
+        }
+      }
+
+      async function selectChannel(ch) {
+        if (!ch || ch.id == null) return;
+        channelSwitcherState.currentChannelId = ch.id;
+        channelsData.currentChannelId = ch.id;
+        if (ch.group_id != null) {
+          channelSwitcherState.currentGroupId = ch.group_id;
+          channelsData.currentGroupId = ch.group_id;
+        }
+        updateTitle(ch.name || 'Live TV');
+
+        // Move highlight immediately in DOM
+        if (channelListContainer) {
+          channelListContainer.querySelectorAll('.channel-row').forEach((row) => {
+            const isCur = row.dataset.channelId === String(ch.id);
+            row.classList.toggle('current', isCur);
+            let badge = row.querySelector('.ch-playing-badge');
+            if (isCur && !badge) {
+              badge = document.createElement('div');
+              badge.className = 'ch-playing-badge';
+              badge.innerHTML = '<span class="live-badge-dot"></span><span>LIVE</span>';
+              row.appendChild(badge);
+            } else if (!isCur && badge) {
+              badge.remove();
+            }
+          });
+        }
+
+        // Seamless stream switch without closing drawer or exiting theater mode!
+        tauriEmit('select-player-channel', { channelId: ch.id, channel: ch });
+        try {
+          await tauriInvoke('switch_embedded_channel', { channel: ch });
+        } catch (e) {
+          console.warn('switch_embedded_channel direct invoke fallback to service:', e);
+        }
+        showControls();
+      }
+
+      function switchChannelByIndexDelta(delta) {
+        const pool = channelSwitcherState.channels.length > 0
+          ? channelSwitcherState.channels
+          : (channelsData.channels || []);
+        if (!pool || pool.length === 0) return;
+        const curIdx = pool.findIndex((c) => c.id === channelSwitcherState.currentChannelId);
+        let nextIdx = 0;
+        if (curIdx !== -1) {
+          nextIdx = (curIdx + delta + pool.length) % pool.length;
+        } else if (delta < 0) {
+          nextIdx = pool.length - 1;
+        }
+        const target = pool[nextIdx];
+        if (target) {
+          selectChannel(target);
+        }
+      }
+
+      btnPrevChannel.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchChannelByIndexDelta(-1);
+        showControls();
+      });
+
+      btnNextChannel.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchChannelByIndexDelta(1);
+        showControls();
+      });
+
+      async function openChannelsDrawer() {
+        drawerChannels.classList.add('open');
+        btnChannels.classList.add('active');
+        channelSwitcherState.isOpen = true;
+        if (channelSearchInput) channelSearchInput.value = '';
+        if (btnChannelSearchClear) btnChannelSearchClear.style.display = 'none';
+        channelSwitcherState.isSearching = false;
+
+        tauriEmit('request-player-channels');
+
+        await loadFolders();
+
+        if (channelSwitcherState.currentGroupId != null) {
+          const match = channelSwitcherState.folders.find((f) => f.id === channelSwitcherState.currentGroupId);
+          selectFolder(channelSwitcherState.currentGroupId, match?.name || 'Category');
+        } else {
+          selectFolder(null, 'All Channels');
+        }
+
+        if (channelSearchInput) {
+          setTimeout(() => channelSearchInput.focus(), 100);
+        }
+      }
+
+      btnChannels.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wasOpen = drawerChannels.classList.contains('open');
+        closeAllPanels();
+        if (!wasOpen) {
+          openChannelsDrawer();
+        }
+        showControls();
+      });
+
+      btnCloseChannelsDrawer.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeAllPanels();
+        showControls();
+      });
+
+      if (channelSearchInput) {
+        channelSearchInput.addEventListener('input', (e) => {
+          const val = (e.target.value || '').trim();
+          if (btnChannelSearchClear) {
+            btnChannelSearchClear.style.display = val ? 'flex' : 'none';
+          }
+
+          clearTimeout(channelSwitcherState.searchDebounceTimer);
+          channelSwitcherState.searchDebounceTimer = setTimeout(async () => {
+            if (!val) {
+              channelSwitcherState.isSearching = false;
+              channelSwitcherState.searchQuery = '';
+              renderFoldersList();
+              renderChannelsList(false);
+              return;
+            }
+
+            channelSwitcherState.isSearching = true;
+            channelSwitcherState.searchQuery = val;
+            const sourceIds = await ensureSourceIds();
+            if (!sourceIds || sourceIds.length === 0) return;
+
+            try {
+              const [folderResults, channelResults] = await Promise.all([
+                tauriInvoke('search', {
+                  filters: {
+                    source_ids: sourceIds,
+                    media_types: [0], // livestream
+                    view_type: 2,     // CATEGORIES (ViewMode.Categories = 2)
+                    query: val,
+                    page: 1,
+                    use_keywords: true,
+                    sort: 0,          // Alphabetical ascending for search
+                  },
+                }),
+                tauriInvoke('search', {
+                  filters: {
+                    source_ids: sourceIds,
+                    media_types: [0], // livestream
+                    view_type: 0,     // ALL CHANNELS (ViewMode.All = 0)
+                    query: val,
+                    page: 1,
+                    use_keywords: true,
+                    sort: 0,          // Alphabetical ascending for search
+                  },
+                }),
+              ]);
+
+              channelSwitcherState.matchingFolders = (folderResults || []).filter((g) => g.id != null && g.name);
+              channelSwitcherState.matchingChannels = (channelResults || []).filter(
+                (c) => c.id != null && (c.media_type === 0 || c.media_type == null)
+              );
+
+              renderFoldersList();
+              renderChannelsList(false);
+            } catch (err) {
+              console.warn('Channel switcher search error:', err);
+            }
+          }, 250);
+        });
+      }
+
+      if (btnChannelSearchClear) {
+        btnChannelSearchClear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          channelSearchInput.value = '';
+          btnChannelSearchClear.style.display = 'none';
+          channelSwitcherState.isSearching = false;
+          channelSwitcherState.searchQuery = '';
+          renderFoldersList();
+          renderChannelsList(false);
+          channelSearchInput.focus();
+        });
+      }
+
+      // Folders are fully populated by loadFolders() loop, infinite scroll only needed for channels
+
+      if (channelListContainer) {
+        channelListContainer.addEventListener('scroll', () => {
+          if (channelSwitcherState.isSearching || channelSwitcherState.channelsLoading || !channelSwitcherState.channelsHasMore) return;
+          if (channelListContainer.scrollTop + channelListContainer.clientHeight >= channelListContainer.scrollHeight - 60) {
+            loadFolderChannels(channelSwitcherState.selectedFolderId, channelSwitcherState.channelsPage + 1, true);
+          }
         });
       }
 
@@ -2413,8 +3033,22 @@
       // KEYBOARD SHORTCUTS IN OVERLAY
       document.addEventListener('keydown', (e) => {
         // If search input inside drawer is focused, allow typing without triggering player hotkeys
-        if (document.activeElement === channelSearchInput && e.key !== 'Escape') {
-          return;
+        if (document.activeElement === channelSearchInput) {
+          if (e.key === 'Escape') {
+            if (channelSearchInput.value) {
+              channelSearchInput.value = '';
+              if (btnChannelSearchClear) btnChannelSearchClear.style.display = 'none';
+              channelSwitcherState.isSearching = false;
+              channelSwitcherState.searchQuery = '';
+              renderFoldersList();
+              renderChannelsList(false);
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          } else {
+            return;
+          }
         }
 
         if (e.key === 'Escape') {
@@ -2646,9 +3280,26 @@
         if (event?.payload) {
           channelsData = {
             currentChannelId: event.payload.currentChannelId,
+            currentGroupId: event.payload.currentGroupId,
+            sourceIds: event.payload.sourceIds || [],
             channels: event.payload.channels || []
           };
-          renderChannels();
+          if (event.payload.currentChannelId != null) {
+            channelSwitcherState.currentChannelId = event.payload.currentChannelId;
+          }
+          if (event.payload.currentGroupId != null) {
+            channelSwitcherState.currentGroupId = event.payload.currentGroupId;
+            if (channelSwitcherState.selectedFolderId == null) {
+              channelSwitcherState.selectedFolderId = event.payload.currentGroupId;
+            }
+          }
+          if (Array.isArray(event.payload.sourceIds) && event.payload.sourceIds.length > 0) {
+            channelSwitcherState.sourceIds = event.payload.sourceIds;
+          }
+          if (drawerChannels && drawerChannels.classList.contains('open')) {
+            renderFoldersList();
+            renderChannelsList(false);
+          }
         }
       });
 
@@ -2700,6 +3351,31 @@
         }
         requestTrackInfo();
       }).catch(console.warn);
+
+      // Ensure overlay window & container never drift horizontally or vertically
+      window.addEventListener('scroll', () => {
+        if (window.scrollX !== 0 || window.scrollY !== 0) {
+          window.scrollTo(0, 0);
+        }
+        if (document.documentElement.scrollLeft !== 0) {
+          document.documentElement.scrollLeft = 0;
+        }
+        if (document.body && document.body.scrollLeft !== 0) {
+          document.body.scrollLeft = 0;
+        }
+      }, { passive: false });
+
+      const overlayContainerEl = document.querySelector('.overlay-container');
+      if (overlayContainerEl) {
+        overlayContainerEl.addEventListener('scroll', () => {
+          if (overlayContainerEl.scrollLeft !== 0) {
+            overlayContainerEl.scrollLeft = 0;
+          }
+          if (overlayContainerEl.scrollTop !== 0) {
+            overlayContainerEl.scrollTop = 0;
+          }
+        }, { passive: false });
+      }
 
       // INITIAL DATA REQUESTS ON LOAD
       tauriEmit('request-player-mode');

@@ -37,6 +37,7 @@ export interface SwitcherChannelData {
   name: string;
   logo?: string;
   group?: string;
+  group_id?: number;
   isCurrent?: boolean;
   channel?: Channel;
 }
@@ -53,6 +54,7 @@ export interface EmbeddedPlayerOptions {
   onSwitchEpisode?: (channel: Channel) => void | Promise<void>;
   // Live TV channel switcher options
   channels?: (Channel | SwitcherChannelData)[];
+  currentGroupId?: number;
   onSwitchChannel?: (channel: Channel) => void | Promise<void>;
 }
 
@@ -87,6 +89,7 @@ export class EmbeddedPlayerService implements OnDestroy {
   private boundScrollHandler = () => this.syncBounds();
   private boundKeyDownHandler = (e: KeyboardEvent) => this.handleKeyDown(e);
   private keyHandlerAttached: boolean = false;
+  private isRestartingPlayer: boolean = false;
 
   // TV Episode switcher state
   private seriesChannel?: Channel;
@@ -98,6 +101,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
   // Live TV switcher state
   private liveChannels: SwitcherChannelData[] = [];
+  private currentGroupId?: number;
   private onSwitchChannelCallback?: (channel: Channel) => void | Promise<void>;
 
   private unlistenStopped?: UnlistenFn;
@@ -229,19 +233,21 @@ export class EmbeddedPlayerService implements OnDestroy {
     // Listen for channel selection from overlay
     this.unlistenSelectChannel = await listen('select-player-channel', (event: any) => {
       const channelId = event?.payload?.channelId ?? event?.payload?.id;
-      const targetCh = this.liveChannels.find((c) => c.id === channelId);
-      if (targetCh && targetCh.channel) {
+      let targetCh: Channel | undefined = event?.payload?.channel;
+      if (!targetCh || !targetCh.url) {
+        const found = this.liveChannels.find((c) => c.id === channelId);
+        targetCh = found?.channel;
+      }
+      if (!targetCh && channelId != null) {
+        targetCh = { id: channelId, name: event?.payload?.name || 'Live Channel' } as Channel;
+      }
+      if (targetCh) {
+        if (event?.payload?.channel?.group_id != null) {
+          targetCh.group_id = event.payload.channel.group_id;
+          this.currentGroupId = event.payload.channel.group_id;
+        }
         this.ngZone.run(() => {
-          if (this.onSwitchChannelCallback) {
-            this.onSwitchChannelCallback(targetCh.channel!);
-          } else {
-            this.startPlayer(targetCh.channel!, this.hostTarget || 'home-video-canvas', {
-              mode: 'live',
-              title: cleanMediaTitle(targetCh.name || 'Live TV'),
-              channels: this.liveChannels,
-              onSwitchChannel: this.onSwitchChannelCallback,
-            });
-          }
+          this.switchChannel(targetCh!);
         });
       }
     });
@@ -527,6 +533,9 @@ export class EmbeddedPlayerService implements OnDestroy {
   }
 
   private handlePlayerStopped(): void {
+    if (this.isRestartingPlayer) {
+      return;
+    }
     this.cleanupVideoResizeObserver();
     this.removeKeyHandler();
     this.cleanupTauriListeners();
@@ -602,12 +611,14 @@ export class EmbeddedPlayerService implements OnDestroy {
   ): Promise<void> {
     const wasAlreadyPlaying = this.isPlayingEmbedded;
     if (wasAlreadyPlaying) {
+      this.isRestartingPlayer = true;
       try {
         await invoke('stop_embedded_poc');
       } catch (e) {
         console.warn('stop_embedded_poc error', e);
       }
       await new Promise((resolve) => setTimeout(resolve, 60));
+      this.isRestartingPlayer = false;
     } else {
       this.saveScrollPosition();
       this.hostTarget = hostElementOrId;
@@ -628,12 +639,14 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (options?.onSwitchEpisode) this.onSwitchEpisodeCallback = options.onSwitchEpisode;
 
     // Live TV channel switcher options
+    this.currentGroupId = options?.currentGroupId ?? channel.group_id;
     if (options?.channels && options.channels.length > 0) {
       this.liveChannels = options.channels.map((c: any) => ({
         id: c.id,
         name: cleanMediaTitle(c.name || 'Channel'),
         logo: c.logo || c.image,
         group: c.group,
+        group_id: c.group_id || c.channel?.group_id,
         isCurrent: c.id === channel.id,
         channel: c.channel || c,
       }));
@@ -725,13 +738,45 @@ export class EmbeddedPlayerService implements OnDestroy {
   }
 
   public emitChannelsData(): void {
+    const sourceIds = Array.from(this.memory.Sources.keys());
     emit('embedded-player-channels-data', {
       currentChannelId: this.currentChannel?.id,
+      currentGroupId: this.currentGroupId ?? this.currentChannel?.group_id,
+      sourceIds: sourceIds,
       channels: this.liveChannels.map((c) => ({
         ...c,
         isCurrent: c.id === this.currentChannel?.id,
       })),
     }).catch(console.warn);
+  }
+
+  public async switchChannel(channel: Channel, title?: string): Promise<void> {
+    if (!channel || channel.id == null) return;
+    this.currentChannel = channel;
+    if (channel.group_id != null) {
+      this.currentGroupId = channel.group_id;
+    }
+    const channelTitle = title || cleanMediaTitle(channel.name || 'Live TV');
+
+    if (this.onSwitchChannelCallback) {
+      try {
+        await this.onSwitchChannelCallback(channel);
+      } catch (e) {
+        console.warn('onSwitchChannelCallback error:', e);
+      }
+    }
+
+    try {
+      await invoke('switch_embedded_channel', { channel });
+    } catch (err) {
+      console.warn('switch_embedded_channel error, falling back to startPlayer:', err);
+      await this.startPlayer(channel, this.hostTarget || 'home-video-canvas', {
+        mode: 'live',
+        title: channelTitle,
+      });
+    }
+
+    this.emitChannelsData();
   }
 
   public async loadEpisodesForSeason(seasonId: number, seasonNum: number): Promise<void> {

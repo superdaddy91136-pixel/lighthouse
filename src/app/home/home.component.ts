@@ -290,14 +290,20 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       this.livePlayingChannel = channel;
       this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
       invoke("add_last_watched", { id: channel.id }).catch(console.error);
+      if (this.embeddedPlayer.isPlayingEmbedded) {
+        await this.embeddedPlayer.switchChannel(playChannel, cleanMediaTitle(channel.name || 'Live TV'));
+        return;
+      }
       try {
         await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
           title: cleanMediaTitle(channel.name || 'Live TV'),
           mode: 'live',
+          currentGroupId: channel.group_id ?? this.filters?.group_id,
           channels: this.channels.map((c) => ({
             id: c.id!,
             name: cleanMediaTitle(c.name || ''),
             logo: c.image,
+            group_id: c.group_id,
             channel: c,
           })),
           onSwitchChannel: (ch) => this.onSwitchChannel(ch),
@@ -324,20 +330,13 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   async onSwitchChannel(channel: Channel): Promise<void> {
-    const prev = this.livePlayingChannel;
-    // Cancel current live stream and start the new one
-    if (prev?.id && prev.source_id != null) {
-      try {
-        await invoke("cancel_play", {
-          sourceId: prev.source_id,
-          channelId: prev.id,
-        });
-      } catch (e) {
-        console.warn("Failed to cancel previous stream:", e);
-      }
+    this.livePlayingChannel = channel;
+    if (channel.id) {
+      invoke("add_last_watched", { id: channel.id }).catch(console.error);
     }
-    // Play the new channel (reuses the same playMedia flow)
-    this.playMedia(channel);
+    if (!this.embeddedPlayer.isPlayingEmbedded) {
+      this.playMedia(channel);
+    }
   }
 
   onChannelSwitcherClose(): void {

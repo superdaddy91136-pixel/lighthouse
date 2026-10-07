@@ -1070,9 +1070,9 @@ pub fn sync_overlay_to_video(state: &EmbeddedPocState) {
             let cur_ex_style = win32::GetWindowLongW(overlay_hwnd as win32::HWND, win32::GWL_EXSTYLE) as u32;
             if win32::AdjustWindowRectEx(&mut adj_rc, cur_style, 0, cur_ex_style) != 0 {
                 (
-                    adj_rc.left,
+                    overlay_x,
                     adj_rc.top,
-                    adj_rc.right - adj_rc.left,
+                    overlay_w,
                     adj_rc.bottom - adj_rc.top,
                 )
             } else {
@@ -1180,9 +1180,9 @@ pub fn sync_overlay_rect(
             let cur_ex_style = win32::GetWindowLongW(overlay_hwnd as win32::HWND, win32::GWL_EXSTYLE) as u32;
             if win32::AdjustWindowRectEx(&mut adj_rc, cur_style, 0, cur_ex_style) != 0 {
                 (
-                    adj_rc.left,
+                    target_x,
                     adj_rc.top,
-                    adj_rc.right - adj_rc.left,
+                    target_w,
                     adj_rc.bottom - adj_rc.top,
                 )
             } else {
@@ -1440,8 +1440,20 @@ pub fn build_stream_info(
 
 pub fn build_stream_info_from_channel(channel: &crate::types::Channel) -> Result<PocStreamInfo, String> {
     let channel_id = channel.id.ok_or_else(|| "Channel has no ID".to_string())?;
-    let url = channel.url.clone().ok_or_else(|| "Channel has no URL".to_string())?;
-    build_stream_info(channel_id, channel.name.clone(), url, channel.source_id)
+    let (url, name, source_id) = if let Some(ref u) = channel.url {
+        (u.clone(), channel.name.clone(), channel.source_id)
+    } else {
+        let conn = crate::sql::get_conn().map_err(|e| format!("{:?}", e))?;
+        let row = conn
+            .query_row(
+                "SELECT url, name, source_id FROM channels WHERE id = ?1",
+                [channel_id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?)),
+            )
+            .map_err(|e| format!("Channel not found: {:?}", e))?;
+        (row.0, row.1, row.2)
+    };
+    build_stream_info(channel_id, name, url, source_id)
 }
 
 pub fn build_embedded_mpv_args(
@@ -1863,6 +1875,60 @@ pub async fn start_embedded_player(
 ) -> Result<PocStreamInfo, String> {
     let stream = build_stream_info_from_channel(&channel)?;
     start_embedded_player_internal(window, stream, x, y, width, height, z_order, state).await
+}
+
+#[tauri::command]
+pub async fn switch_embedded_channel(
+    channel: crate::types::Channel,
+    state: State<'_, EmbeddedPocState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let stream = build_stream_info_from_channel(&channel)?;
+    if let Some(id) = channel.id {
+        let _ = crate::sql::add_last_watched(id);
+    }
+    let inner = state.inner.lock().await;
+    if let Some(ref tx) = inner.ipc_tx {
+        let mut headers_vec = Vec::new();
+        if let Some(ref orig) = stream.origin {
+            headers_vec.push(format!("origin:{}", orig));
+        }
+        if let Some(ref refer) = stream.referrer {
+            headers_vec.push(format!("referer:{}", refer));
+        }
+        if let Some(ref ua) = stream.user_agent {
+            let _ = tx
+                .send(serde_json::json!({
+                    "command": ["set_property", "user-agent", ua]
+                }).to_string())
+                .await;
+        }
+        if !headers_vec.is_empty() {
+            let _ = tx
+                .send(serde_json::json!({
+                    "command": ["set_property", "http-header-fields", headers_vec.join(",")]
+                }).to_string())
+                .await;
+        }
+        let _ = tx
+            .send(serde_json::json!({
+                "command": ["loadfile", stream.url, "replace"]
+            }).to_string())
+            .await;
+
+        let _ = app.emit(
+            "embedded-player-started",
+            serde_json::json!({
+                "name": &stream.name,
+                "channel_id": stream.channel_id,
+                "url": &stream.url,
+                "source_id": stream.source_id,
+            }),
+        );
+        Ok(())
+    } else {
+        Err("MPV IPC channel is not connected".to_string())
+    }
 }
 
 #[tauri::command]
