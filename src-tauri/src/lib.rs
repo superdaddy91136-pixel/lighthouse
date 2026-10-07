@@ -169,7 +169,6 @@ pub fn run() {
                     if let Ok(raw) = window.hwnd() {
                         let h = raw.0 as usize;
                         embedded_poc::apply_overlay_client_region(h, None);
-                        embedded_poc::log_overlay_state("WindowEvent::Focused", h);
                     }
                 }
             }
@@ -180,7 +179,6 @@ pub fn run() {
                     if let Ok(raw) = window.hwnd() {
                         let h = raw.0 as usize;
                         embedded_poc::apply_overlay_client_region(h, None);
-                        embedded_poc::log_overlay_state("WindowEvent::Moved", h);
                     }
                 } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
@@ -195,7 +193,6 @@ pub fn run() {
                     if let Ok(raw) = window.hwnd() {
                         let h = raw.0 as usize;
                         embedded_poc::apply_overlay_client_region(h, None);
-                        embedded_poc::log_overlay_state("WindowEvent::Resized", h);
                     }
                 } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
@@ -214,7 +211,6 @@ pub fn run() {
                     if let Ok(raw) = window.hwnd() {
                         let h = raw.0 as usize;
                         embedded_poc::apply_overlay_client_region(h, None);
-                        embedded_poc::log_overlay_state("WindowEvent::ScaleFactorChanged", h);
                     }
                 } else if window.label() == "main" {
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {

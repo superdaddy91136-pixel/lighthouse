@@ -153,25 +153,9 @@ impl EmbeddedPocState {
                         // Show overlay again after the single sync
                         ensure_overlay_borderless(overlay_hwnd);
                         unsafe {
-                            eprintln!("[STRIPE-DEBUG] Showing overlay in handle_main_window_resized: hwnd=0x{:X}", overlay_hwnd);
                             win32::ShowWindow(overlay_hwnd as win32::HWND, win32::SW_SHOW);
                         }
                         apply_overlay_client_region(overlay_hwnd, Some(crop_px));
-                        log_overlay_state("handle_main_window_resized after show", overlay_hwnd);
-
-                        let mut screen_pt = win32::POINT { x: 0, y: 0 };
-                        unsafe {
-                            win32::ClientToScreen(main_hwnd as win32::HWND, &mut screen_pt);
-                        }
-                        let expected_top = screen_pt.y - crop_px;
-                        log_fullscreen_stripe_debug(
-                            "handle_main_window_resized",
-                            main_hwnd,
-                            overlay_hwnd,
-                            child_hwnd,
-                            crop_px,
-                            expected_top,
-                        );
 
                         inner.last_bounds = Some((0, 0, client_w, client_h));
                     }
@@ -280,23 +264,13 @@ pub mod win32 {
     pub const WM_CLOSE: u32 = 0x0010;
     pub const WM_ERASEBKGND: u32 = 0x0014;
     pub const WM_MOUSEACTIVATE: u32 = 0x0021;
-    pub const WM_WINDOWPOSCHANGING: u32 = 0x0046;
     pub const WM_WINDOWPOSCHANGED: u32 = 0x0047;
-    pub const WM_STYLECHANGING: u32 = 0x007C;
-    pub const WM_STYLECHANGED: u32 = 0x007D;
     pub const WM_NCDESTROY: u32 = 0x0082;
     pub const WM_NCCALCSIZE: u32 = 0x0083;
     pub const WM_NCPAINT: u32 = 0x0085;
     pub const WM_NCACTIVATE: u32 = 0x0086;
 
     pub const MA_NOACTIVATE: i32 = 3;
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    pub struct STYLESTRUCT {
-        pub styleOld: u32,
-        pub styleNew: u32,
-    }
 
     pub const CS_VREDRAW: u32 = 0x0001;
     pub const CS_HREDRAW: u32 = 0x0002;
@@ -404,7 +378,6 @@ pub mod win32 {
         pub fn GetClientRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
         pub fn GetWindowRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
         pub fn SetWindowTextW(hWnd: HWND, lpString: *const u16) -> BOOL;
-        pub fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
         pub fn SetWindowRgn(hWnd: HWND, hRgn: HRGN, bRedraw: BOOL) -> i32;
         pub fn AdjustWindowRectEx(
             lpRect: *mut RECT,
@@ -733,141 +706,6 @@ pub fn inspect_and_clean_overlay_exstyle(_stage: &str, overlay_hwnd: usize) {
 #[cfg(not(target_os = "windows"))]
 pub fn inspect_and_clean_overlay_exstyle(_stage: &str, _overlay_hwnd: usize) {}
 
-#[cfg(target_os = "windows")]
-fn log_subclass_msg(msg: u32, msg_name: &str, details: &str) {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
-
-    static LAST_LOGS: std::sync::LazyLock<Mutex<HashMap<u32, (Instant, String)>>> =
-        std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
-
-    let now = Instant::now();
-    if let Ok(mut map) = LAST_LOGS.lock() {
-        let should_log = if let Some((last_time, last_details)) = map.get(&msg) {
-            now.duration_since(*last_time) >= Duration::from_millis(500) || last_details != details
-        } else {
-            true
-        };
-
-        if should_log {
-            map.insert(msg, (now, details.to_string()));
-            if details.is_empty() {
-                eprintln!("[STRIPE-DEBUG] [subclass] msg={} (0x{:04X})", msg_name, msg);
-            } else {
-                eprintln!(
-                    "[STRIPE-DEBUG] [subclass] msg={} (0x{:04X}) {}",
-                    msg_name, msg, details
-                );
-            }
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub fn log_overlay_state(tag: &str, overlay_hwnd: usize) {
-    if overlay_hwnd == 0 {
-        return;
-    }
-    unsafe {
-        let hwnd = overlay_hwnd as win32::HWND;
-        let style = win32::GetWindowLongW(hwnd, win32::GWL_STYLE) as u32;
-        let ex_style = win32::GetWindowLongW(hwnd, win32::GWL_EXSTYLE) as u32;
-        let mut win_rc: win32::RECT = std::mem::zeroed();
-        win32::GetWindowRect(hwnd, &mut win_rc);
-        let win_w = win_rc.right - win_rc.left;
-        let win_h = win_rc.bottom - win_rc.top;
-        let mut client_rc: win32::RECT = std::mem::zeroed();
-        win32::GetClientRect(hwnd, &mut client_rc);
-        let client_w = client_rc.right - client_rc.left;
-        let client_h = client_rc.bottom - client_rc.top;
-        let mut title_buf = [0u16; 256];
-        let len = win32::GetWindowTextW(hwnd, title_buf.as_mut_ptr(), 256);
-        let title = if len > 0 {
-            String::from_utf16_lossy(&title_buf[..(len as usize)])
-        } else {
-            String::new()
-        };
-        eprintln!(
-            "[STRIPE-DEBUG] [{tag}] hwnd=0x{:X} GWL_STYLE=0x{:08X} GWL_EXSTYLE=0x{:08X} win_rect=({}, {}, {}, {}, w={}, h={}) client_rect=(w={}, h={}) title='{}'",
-            overlay_hwnd, style, ex_style, win_rc.left, win_rc.top, win_rc.right, win_rc.bottom, win_w, win_h, client_w, client_h, title
-        );
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn log_overlay_state(_tag: &str, _overlay_hwnd: usize) {}
-
-#[cfg(target_os = "windows")]
-pub fn log_fullscreen_stripe_debug(
-    stage: &str,
-    main_hwnd: usize,
-    overlay_hwnd: usize,
-    child_hwnd: usize,
-    crop_px: i32,
-    expected_top: i32,
-) {
-    if overlay_hwnd == 0 {
-        return;
-    }
-    unsafe {
-        let mut ov_win_rc: win32::RECT = std::mem::zeroed();
-        let mut ov_client_rc: win32::RECT = std::mem::zeroed();
-        let mut child_rc: win32::RECT = std::mem::zeroed();
-        let mut main_rc: win32::RECT = std::mem::zeroed();
-
-        win32::GetWindowRect(overlay_hwnd as win32::HWND, &mut ov_win_rc);
-        win32::GetClientRect(overlay_hwnd as win32::HWND, &mut ov_client_rc);
-        if child_hwnd != 0 {
-            win32::GetWindowRect(child_hwnd as win32::HWND, &mut child_rc);
-        }
-        if main_hwnd != 0 {
-            win32::GetWindowRect(main_hwnd as win32::HWND, &mut main_rc);
-        }
-
-        let mut client_top_left = win32::POINT {
-            x: ov_client_rc.left,
-            y: ov_client_rc.top,
-        };
-        let mut client_bottom_right = win32::POINT {
-            x: ov_client_rc.right,
-            y: ov_client_rc.bottom,
-        };
-        win32::ClientToScreen(overlay_hwnd as win32::HWND, &mut client_top_left);
-        win32::ClientToScreen(overlay_hwnd as win32::HWND, &mut client_bottom_right);
-
-        let ov_client_w = ov_client_rc.right - ov_client_rc.left;
-        let ov_client_h = ov_client_rc.bottom - ov_client_rc.top;
-
-        let negative_top_accepted = ov_win_rc.top == expected_top;
-
-        eprintln!(
-            "[STRIPE-DEBUG] [{}] FULLSCREEN: crop_px={} expected_top={} actual_top={} negative_top_accepted={}\n  overlay_win_rect=({}, {}, {}, {}) [w={}, h={}]\n  overlay_client_screen=({}, {}, {}, {})\n  region_rect=(0, {}, {}, {})\n  video_child_rect=({}, {}, {}, {})\n  main_win_rect=({}, {}, {}, {})",
-            stage,
-            crop_px,
-            expected_top,
-            ov_win_rc.top,
-            negative_top_accepted,
-            ov_win_rc.left, ov_win_rc.top, ov_win_rc.right, ov_win_rc.bottom,
-            ov_win_rc.right - ov_win_rc.left, ov_win_rc.bottom - ov_win_rc.top,
-            client_top_left.x, client_top_left.y, client_bottom_right.x, client_bottom_right.y,
-            crop_px, ov_client_w, ov_client_h,
-            child_rc.left, child_rc.top, child_rc.right, child_rc.bottom,
-            main_rc.left, main_rc.top, main_rc.right, main_rc.bottom,
-        );
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn log_fullscreen_stripe_debug(
-    _stage: &str,
-    _main_hwnd: usize,
-    _overlay_hwnd: usize,
-    _child_hwnd: usize,
-    _crop_px: i32,
-    _expected_top: i32,
-) {}
-
 pub const OVERLAY_TOP_CROP_LOGICAL_PX: i32 = 32;
 
 #[cfg(target_os = "windows")]
@@ -953,10 +791,6 @@ pub fn apply_overlay_client_region(overlay_hwnd: usize, crop_param: Option<i32>)
                     if res == 0 {
                         win32::DeleteObject(rgn);
                     }
-                    eprintln!(
-                        "[STRIPE-DEBUG] apply_overlay_client_region: hwnd=0x{:X} crop_px={} win_rect=({}, {}, {}, {}) rgn_rect=(0, {}, {}, {}) res={}",
-                        overlay_hwnd, crop_px, win_rc.left, win_rc.top, win_rc.right, win_rc.bottom, crop_px, client_w, client_h, res
-                    );
                 }
             }
         }
@@ -986,7 +820,6 @@ pub fn ensure_overlay_borderless(overlay_hwnd: usize) {
 
         if clean_style == cur_style {
             apply_overlay_client_region(overlay_hwnd, None);
-            log_overlay_state("ensure_overlay_borderless (style unchanged)", overlay_hwnd);
             return;
         }
 
@@ -1010,7 +843,6 @@ pub fn ensure_overlay_borderless(overlay_hwnd: usize) {
                 | win32::SWP_NOACTIVATE,
         );
         apply_overlay_client_region(overlay_hwnd, None);
-        log_overlay_state("ensure_overlay_borderless (style changed)", overlay_hwnd);
     }
 }
 
@@ -1043,53 +875,29 @@ unsafe extern "system" fn overlay_subclass_proc(
     unsafe {
         match msg {
             win32::WM_NCCALCSIZE => {
-                log_subclass_msg(msg, "WM_NCCALCSIZE", &format!("wparam={}", wparam));
                 // When wParam is TRUE (non-zero), return 0 so the window has no non-client area at all.
                 if wparam != 0 {
                     return 0;
                 }
                 win32::DefSubclassProc(hwnd, msg, wparam, lparam)
             }
+            win32::WM_ERASEBKGND => {
+                // Suppress background erase so Windows GDI does not paint a background brush over transparent webview
+                1
+            }
             win32::WM_NCPAINT => {
-                log_subclass_msg(msg, "WM_NCPAINT", "");
                 // Suppress non-client frame painting completely.
                 0
             }
             win32::WM_NCACTIVATE => {
-                log_subclass_msg(msg, "WM_NCACTIVATE", &format!("wparam={}", wparam));
                 // Prevent Windows from repainting the non-client caption upon window activation.
                 // DefSubclassProc with lParam = -1 tells Windows not to repaint the non-client area.
                 win32::DefSubclassProc(hwnd, msg, wparam, -1);
                 1
             }
             win32::WM_MOUSEACTIVATE => {
-                log_subclass_msg(msg, "WM_MOUSEACTIVATE", "");
                 // Return MA_NOACTIVATE (3) so clicks reach webview controls without activating the window.
                 win32::MA_NOACTIVATE as isize
-            }
-            win32::WM_STYLECHANGING => {
-                let details = if lparam != 0 {
-                    let ss = &*(lparam as *const win32::STYLESTRUCT);
-                    format!("wparam={} old=0x{:08X} new=0x{:08X}", wparam, ss.styleOld, ss.styleNew)
-                } else {
-                    format!("wparam={}", wparam)
-                };
-                log_subclass_msg(msg, "WM_STYLECHANGING", &details);
-                win32::DefSubclassProc(hwnd, msg, wparam, lparam)
-            }
-            win32::WM_STYLECHANGED => {
-                let details = if lparam != 0 {
-                    let ss = &*(lparam as *const win32::STYLESTRUCT);
-                    format!("wparam={} old=0x{:08X} new=0x{:08X}", wparam, ss.styleOld, ss.styleNew)
-                } else {
-                    format!("wparam={}", wparam)
-                };
-                log_subclass_msg(msg, "WM_STYLECHANGED", &details);
-                win32::DefSubclassProc(hwnd, msg, wparam, lparam)
-            }
-            win32::WM_WINDOWPOSCHANGING => {
-                log_subclass_msg(msg, "WM_WINDOWPOSCHANGING", "");
-                win32::DefSubclassProc(hwnd, msg, wparam, lparam)
             }
             win32::WM_WINDOWPOSCHANGED => {
                 let res = win32::DefSubclassProc(hwnd, msg, wparam, lparam);
@@ -1123,16 +931,11 @@ pub fn install_overlay_subclass(overlay_hwnd: usize) {
             Some(overlay_subclass_proc),
             OVERLAY_SUBCLASS_ID,
         );
-        let res = win32::SetWindowSubclass(
+        let _ = win32::SetWindowSubclass(
             overlay_hwnd as win32::HWND,
             Some(overlay_subclass_proc),
             OVERLAY_SUBCLASS_ID,
             0,
-        );
-        eprintln!(
-            "[STRIPE-DEBUG] install_overlay_subclass: overlay_hwnd=0x{:X}, success={}",
-            overlay_hwnd,
-            res != 0
         );
         let empty: [u16; 1] = [0];
         win32::SetWindowTextW(overlay_hwnd as win32::HWND, empty.as_ptr());
@@ -1277,11 +1080,6 @@ pub fn sync_overlay_to_video(state: &EmbeddedPocState) {
             }
         };
 
-        eprintln!(
-            "[STRIPE-DEBUG] Showing overlay in sync_overlay_to_video: hwnd=0x{:X} crop_px={} target=({}, {}, {}, {}) win=({}, {}, {}, {})",
-            overlay_hwnd, crop_px, overlay_x, overlay_y, overlay_w, overlay_h, win_x, win_y, win_w, win_h
-        );
-
         win32::SetWindowPos(
             overlay_hwnd as win32::HWND,
             win32::HWND_TOP,
@@ -1292,18 +1090,6 @@ pub fn sync_overlay_to_video(state: &EmbeddedPocState) {
             win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
         );
         apply_overlay_client_region(overlay_hwnd, Some(crop_px));
-        log_overlay_state("sync_overlay_to_video after SetWindowPos", overlay_hwnd);
-
-        if is_fs {
-            log_fullscreen_stripe_debug(
-                "sync_overlay_to_video",
-                main_hwnd,
-                overlay_hwnd,
-                child_hwnd,
-                crop_px,
-                overlay_y,
-            );
-        }
 
         if let Ok(inner) = state.inner.try_lock() {
             if let Some(ref app) = inner.app_handle {
@@ -1404,11 +1190,6 @@ pub fn sync_overlay_rect(
             }
         };
 
-        eprintln!(
-            "[STRIPE-DEBUG] Showing overlay in sync_overlay_rect: hwnd=0x{:X} crop_px={} target=({}, {}, {}, {}) win=({}, {}, {}, {})",
-            overlay_hwnd, crop_px, target_x, target_y, target_w, target_h, win_x, win_y, win_w, win_h
-        );
-
         win32::SetWindowPos(
             overlay_hwnd as win32::HWND,
             win32::HWND_TOP,
@@ -1419,19 +1200,6 @@ pub fn sync_overlay_rect(
             win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
         );
         apply_overlay_client_region(overlay_hwnd, Some(crop_px));
-        log_overlay_state("sync_overlay_rect after SetWindowPos", overlay_hwnd);
-
-        if is_fullscreen {
-            let child_hwnd = win32::GetWindow(main_hwnd as win32::HWND, win32::GW_CHILD) as usize;
-            log_fullscreen_stripe_debug(
-                "sync_overlay_rect",
-                main_hwnd,
-                overlay_hwnd,
-                child_hwnd,
-                crop_px,
-                target_y,
-            );
-        }
     }
 }
 
@@ -1462,7 +1230,6 @@ pub fn init_overlay_window(app: &AppHandle) {
             let _ = overlay_win.set_title("");
             if let Ok(overlay_raw) = overlay_win.hwnd() {
                 let overlay_hwnd = overlay_raw.0 as usize;
-                eprintln!("[STRIPE-DEBUG] init_overlay_window: overlay_hwnd=0x{:X}", overlay_hwnd);
                 let main_hwnd = app
                     .get_webview_window("main")
                     .and_then(|w| w.hwnd().ok().map(|h| h.0 as usize))
@@ -1825,7 +1592,6 @@ pub async fn start_embedded_player_internal(
             if parent_hwnd != 0 {
                 ensure_overlay_ownership(parent_hwnd, overlay_hwnd);
             }
-            eprintln!("[STRIPE-DEBUG] start_embedded_poc: overlay_hwnd=0x{:X}", overlay_hwnd);
             install_overlay_subclass(overlay_hwnd);
             ensure_overlay_borderless(overlay_hwnd);
             ACTIVE_IS_FULLSCREEN.store(false, Ordering::SeqCst);

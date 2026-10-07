@@ -810,98 +810,34 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
       await this.embeddedPlayer.startPlayer(playChannel, 'tv-video-canvas', {
         title: overlayTitle,
+        mode: 'episode',
+        seriesChannel: this.show,
+        seriesTitle: seriesName,
+        seasons: this.seasons.map((s, idx) => {
+          const sMatch = s.name?.match(/(\d+)/);
+          return {
+            id: s.id!,
+            seasonNum: sMatch ? parseInt(sMatch[1], 10) : idx + 1,
+            name: s.name || `Season ${idx + 1}`,
+          };
+        }),
+        currentSeasonNum: enrichedEp.seasonNum,
+        episodes: this.enrichedEpisodes.map((e) => ({
+          id: e.channel.id!,
+          channel: e.channel,
+          episodeNum: e.episodeNum,
+          seasonNum: e.seasonNum,
+          title: cleanMediaTitle(e.title || `Episode ${e.episodeNum}`),
+          stillUrl: e.stillUrl,
+          isWatched: e.isWatched,
+          isCurrent: e.channel.id === playChannel.id,
+        })),
+        onSwitchEpisode: (ch: Channel) => this.onSwitchEpisode(ch),
       });
     } catch (e) {
       console.error('TV episode playback error:', e);
       this.toastr.error('Failed to start episode playback');
       this.error.handleError(e, 'Failed to start episode playback');
-    } finally {
-      this.isStartingPlayback = false;
-      this.activePlayingEpisode = undefined;
-      this.cdr.detectChanges();
-    }
-  }
-
-  async playEpisodeExternal(enrichedEp: EnrichedEpisode, event?: Event): Promise<void> {
-    if (event) {
-      event.stopPropagation();
-      event.preventDefault();
-    }
-    if (!enrichedEp.channel || this.isStartingPlayback) return;
-
-    if (this.embeddedPlayer.isPlayingEmbedded) {
-      await this.embeddedPlayer.stopPlayer();
-    }
-
-    this.isStartingPlayback = true;
-
-    try {
-      const epChannel = enrichedEp.channel;
-      let playChannel: Channel = {
-        ...epChannel,
-        id: epChannel.id,
-        name: epChannel.name,
-        url: epChannel.url,
-        media_type: MediaType.movie,
-        season_id: epChannel.season_id || this.selectedSeason?.id,
-        episode_num: epChannel.episode_num ?? enrichedEp.episodeNum,
-        source_id: epChannel.source_id || this.show?.source_id,
-        series_id: epChannel.series_id || this.getSeriesIdNumber(),
-        favorite: !!epChannel.favorite,
-      };
-
-      if (!playChannel.url || !playChannel.source_id) {
-        try {
-          const results = (await invoke('search', {
-            filters: {
-              source_ids: playChannel.source_id ? [playChannel.source_id] : Array.from(this.memory.Sources.keys()),
-              view_type: ViewMode.All,
-              media_types: [MediaType.serie],
-              query: playChannel.name,
-              page: 1,
-              sort: SortType.provider,
-              use_keywords: false,
-            },
-          })) as Channel[];
-          const fresh = results?.find((c) => c.id === playChannel.id);
-          if (fresh) {
-            playChannel = {
-              ...fresh,
-              media_type: MediaType.movie,
-              season_id: playChannel.season_id,
-              episode_num: playChannel.episode_num,
-              series_id: playChannel.series_id,
-              favorite: !!fresh.favorite,
-            };
-          }
-        } catch (err) {
-          console.warn('Failed to query fresh episode record:', err);
-        }
-      }
-
-      this.toastr.info(`Launching external MPV for "${enrichedEp.title}"...`);
-      invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
-
-      enrichedEp.isWatched = true;
-      (enrichedEp.channel as any).last_watched = Date.now();
-      this.updateContinueEpisode();
-
-      this.activePlayingEpisode = playChannel;
-
-      // Open episode switcher panel for external MPV playback
-      if (this.show && this.episodeSwitcher) {
-        this.episodeSwitcher.open(this.show, playChannel, this.enrichment);
-      }
-
-      await invoke('play', {
-        channel: playChannel,
-        record: false,
-        recordPath: undefined,
-      });
-    } catch (e) {
-      console.error('TV episode external playback error:', e);
-      this.toastr.error('Failed to launch external playback');
-      this.error.handleError(e, 'Failed to launch external playback');
     } finally {
       this.isStartingPlayback = false;
       this.activePlayingEpisode = undefined;
@@ -934,11 +870,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       };
     }
 
-    if (this.embeddedPlayer.isPlayingEmbedded) {
-      this.playEpisode(targetEnriched);
-    } else {
-      this.playEpisodeExternal(targetEnriched);
-    }
+    this.playEpisode(targetEnriched);
   }
 
   onEpisodeSwitcherClose(): void {

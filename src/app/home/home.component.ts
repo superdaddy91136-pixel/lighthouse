@@ -45,6 +45,7 @@ import { cleanMediaTitle } from '../utils/media-presentation';
 import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.component';
 import { PinService } from '../services/pin.service';
 import { EmbeddedPlayerService } from '../services/embedded-player.service';
+import { MovieDetailService } from '../services/movie-detail.service';
 
 export interface UniversalSearchResults {
   channels: Channel[];
@@ -275,6 +276,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       await this.openSeries(channel);
       return;
     }
+    if (channel.media_type === MediaType.movie) {
+      this.movieDetailService.openMovieDetail(channel);
+      return;
+    }
     const isLive = channel.media_type === MediaType.livestream;
     const playChannel: Channel = {
       ...channel,
@@ -289,40 +294,43 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
           title: cleanMediaTitle(channel.name || 'Live TV'),
           mode: 'live',
+          channels: this.channels.map((c) => ({
+            id: c.id!,
+            name: cleanMediaTitle(c.name || ''),
+            logo: c.image,
+            channel: c,
+          })),
+          onSwitchChannel: (ch) => this.onSwitchChannel(ch),
         });
         return;
       } catch (err) {
-        console.warn('Failed to start embedded live player, falling back to external MPV:', err);
-      } finally {
+        console.warn('Failed to start embedded live player:', err);
         this.livePlayingChannel = undefined;
+        this.error.handleError(err);
       }
+      return;
     }
 
     try {
       this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
       invoke("add_last_watched", { id: channel.id }).catch(console.error);
-
-      // Open channel switcher panel for Live TV in external mode
-      if (isLive && this.channelSwitcher) {
-        this.channelSwitcher.open(channel);
-      }
-
-      await invoke("play", { channel: playChannel, record: false, recordPath: undefined });
+      await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+        title: cleanMediaTitle(channel.name || 'Video'),
+        mode: 'movie',
+      });
     } catch (e) {
       this.error.handleError(e);
-    }
-    if (isLive) {
-      this.livePlayingChannel = undefined;
     }
   }
 
   async onSwitchChannel(channel: Channel): Promise<void> {
+    const prev = this.livePlayingChannel;
     // Cancel current live stream and start the new one
-    if (this.livePlayingChannel?.id && this.livePlayingChannel.source_id != null) {
+    if (prev?.id && prev.source_id != null) {
       try {
         await invoke("cancel_play", {
-          sourceId: this.livePlayingChannel.source_id,
-          channelId: this.livePlayingChannel.id,
+          sourceId: prev.source_id,
+          channelId: prev.id,
         });
       } catch (e) {
         console.warn("Failed to cancel previous stream:", e);
@@ -357,6 +365,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     public toast: ToastrService,
     private error: ErrorService,
     private tvDetailService: TvDetailService,
+    private movieDetailService: MovieDetailService,
     public pinService: PinService,
     public embeddedPlayer: EmbeddedPlayerService,
   ) {

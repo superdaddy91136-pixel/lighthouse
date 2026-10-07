@@ -648,63 +648,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  async watchExternal(): Promise<void> {
-    if (!this.movie || this.isStartingPlayback) return;
-    if (this.isPlayingEmbedded) {
-      await this.stopEmbedded();
-    }
-    this.isStartingPlayback = true;
 
-    try {
-      let playChannel: Channel = {
-        ...this.movie,
-        id: this.movie.id,
-        name: this.movie.name || this.cleanTitle,
-        url: this.movie.url,
-        media_type: MediaType.movie,
-        source_id: this.movie.source_id,
-        favorite: !!this.movie.favorite,
-      };
-
-      if (!playChannel.url || !playChannel.source_id) {
-        try {
-          const results = (await invoke('search', {
-            filters: {
-              source_ids: playChannel.source_id ? [playChannel.source_id] : Array.from(this.memory.Sources.keys()),
-              view_type: ViewMode.All,
-              media_types: [MediaType.movie],
-              query: playChannel.name,
-              page: 1,
-              sort: SortType.provider,
-              use_keywords: false,
-            },
-          })) as Channel[];
-          const fresh = results?.find((c) => c.id === playChannel.id);
-          if (fresh) {
-            playChannel = {
-              ...fresh,
-              media_type: MediaType.movie,
-              favorite: !!fresh.favorite,
-            };
-            this.movie = playChannel;
-          }
-        } catch (err) {
-          console.warn('Failed to query fresh channel record:', err);
-        }
-      }
-
-      this.toastr.info(`Launching external MPV for "${this.cleanTitle}"...`);
-      invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
-
-      await invoke('play', { channel: playChannel, record: false, recordPath: undefined });
-    } catch (e) {
-      console.error('Movie external playback error:', e);
-      this.error.handleError(e, 'Failed to start external playback');
-    } finally {
-      this.isStartingPlayback = false;
-      this.cdr.detectChanges();
-    }
-  }
 
   async stopEmbedded(): Promise<void> {
     this.cleanupVideoResizeObserver();

@@ -171,15 +171,31 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
           title: cleanMediaTitle(this.channel?.name || 'Live TV'),
           mode: 'live',
         });
-        this.starting = false;
-        return;
       } catch (err) {
-        console.warn('Failed to start embedded live player, falling back to external MPV:', err);
+        console.warn('Failed to start embedded live player:', err);
+        this.error.handleError(err);
       }
+      this.starting = false;
+      return;
+    }
+
+    if (!record) {
+      try {
+        const mode = isEpisode ? 'episode' : 'movie';
+        await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+          title: cleanMediaTitle(this.channel?.name || (isEpisode ? 'Episode' : 'Video')),
+          mode,
+        });
+      } catch (err) {
+        console.warn('Failed to start embedded player:', err);
+        this.error.handleError(err);
+      }
+      this.starting = false;
+      return;
     }
 
     try {
-      await invoke("play", { channel: playChannel, record: record, recordPath: file });
+      await invoke("play", { channel: playChannel, record: true, recordPath: file });
     } catch (e) {
       this.error.handleError(e);
     }

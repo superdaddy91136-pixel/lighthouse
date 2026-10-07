@@ -1,4 +1,5 @@
-import { Component, Input, NgZone, OnDestroy } from "@angular/core";
+import { Component, Input, NgZone, OnDestroy, Optional } from "@angular/core";
+import { NgbActiveModal } from "@ng-bootstrap/ng-bootstrap";
 import { EPG } from "../../models/epg";
 import { MemoryService } from "../../memory.service";
 import { invoke } from "@tauri-apps/api/core";
@@ -11,6 +12,8 @@ import { Subscription, take } from "rxjs";
 import { Download } from "../../models/download";
 import { save } from "@tauri-apps/plugin-dialog";
 import { getDateFormatted, getExtension, sanitizeFileName } from "../../utils";
+import { EmbeddedPlayerService } from "../../services/embedded-player.service";
+import { cleanMediaTitle } from "../../utils/media-presentation";
 
 @Component({
   selector: "app-epg-modal-item",
@@ -23,6 +26,8 @@ export class EpgModalItemComponent implements OnDestroy {
     private error: ErrorService,
     private download: DownloadService,
     private ngZone: NgZone,
+    private embeddedPlayer: EmbeddedPlayerService,
+    @Optional() private activeModal?: NgbActiveModal,
   ) { }
   @Input()
   epg?: EPG;
@@ -91,9 +96,14 @@ export class EpgModalItemComponent implements OnDestroy {
       source_id: this.sourceId,
     };
     try {
-      await invoke("play", {
-        channel: channel,
-        record: false,
+      if (this.activeModal) {
+        try {
+          this.activeModal.dismiss();
+        } catch {}
+      }
+      await this.embeddedPlayer.startPlayer(channel, 'home-video-canvas', {
+        title: cleanMediaTitle(this.epg?.title || 'Catchup'),
+        mode: 'movie',
       });
     } catch (e) {
       console.error(e);

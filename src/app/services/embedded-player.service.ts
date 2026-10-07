@@ -7,14 +7,53 @@ import { BehaviorSubject, Observable, Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { Channel } from '../models/channel';
 import { MediaType } from '../models/mediaType';
+import { ViewMode } from '../models/viewMode';
+import { SortType } from '../models/sortType';
+import { MemoryService } from '../memory.service';
 import { cleanMediaTitle } from '../utils/media-presentation';
 import { isInputFocused } from '../utils';
 
 export type ContentMode = 'movie' | 'episode' | 'live';
 
+export interface SwitcherEpisodeData {
+  id: number;
+  channel: Channel;
+  episodeNum: number;
+  seasonNum: number;
+  title: string;
+  stillUrl?: string;
+  isWatched?: boolean;
+  isCurrent?: boolean;
+}
+
+export interface SwitcherSeasonData {
+  id: number;
+  seasonNum: number;
+  name: string;
+}
+
+export interface SwitcherChannelData {
+  id: number;
+  name: string;
+  logo?: string;
+  group?: string;
+  isCurrent?: boolean;
+  channel?: Channel;
+}
+
 export interface EmbeddedPlayerOptions {
   title?: string;
   mode?: ContentMode;
+  // TV Episode switcher options
+  seriesChannel?: Channel;
+  seriesTitle?: string;
+  seasons?: SwitcherSeasonData[];
+  currentSeasonNum?: number;
+  episodes?: SwitcherEpisodeData[];
+  onSwitchEpisode?: (channel: Channel) => void | Promise<void>;
+  // Live TV channel switcher options
+  channels?: (Channel | SwitcherChannelData)[];
+  onSwitchChannel?: (channel: Channel) => void | Promise<void>;
 }
 
 @Injectable({
@@ -49,15 +88,32 @@ export class EmbeddedPlayerService implements OnDestroy {
   private boundKeyDownHandler = (e: KeyboardEvent) => this.handleKeyDown(e);
   private keyHandlerAttached: boolean = false;
 
+  // TV Episode switcher state
+  private seriesChannel?: Channel;
+  private seriesTitle?: string;
+  private seasons: SwitcherSeasonData[] = [];
+  private currentSeasonNum: number = 1;
+  private episodes: SwitcherEpisodeData[] = [];
+  private onSwitchEpisodeCallback?: (channel: Channel) => void | Promise<void>;
+
+  // Live TV switcher state
+  private liveChannels: SwitcherChannelData[] = [];
+  private onSwitchChannelCallback?: (channel: Channel) => void | Promise<void>;
+
   private unlistenStopped?: UnlistenFn;
   private unlistenFullscreen?: UnlistenFn;
   private unlistenSyncBounds?: UnlistenFn;
   private unlistenAspect?: UnlistenFn;
-  private unlistenRequestExternal?: UnlistenFn;
   private unlistenPlayerStarted?: UnlistenFn;
   private unlistenRequestMode?: UnlistenFn;
   private unlistenRequestCrop?: UnlistenFn;
   private unlistenGlobalStopped?: UnlistenFn;
+
+  private unlistenRequestEpisodes?: UnlistenFn;
+  private unlistenChangeSeason?: UnlistenFn;
+  private unlistenSelectEpisode?: UnlistenFn;
+  private unlistenRequestChannels?: UnlistenFn;
+  private unlistenSelectChannel?: UnlistenFn;
 
   private routerSubscription?: Subscription;
 
@@ -68,6 +124,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     private ngZone: NgZone,
     private toastr: ToastrService,
     private router: Router,
+    private memory: MemoryService,
   ) {
     this.initGlobalListeners();
     this.routerSubscription = this.router.events
@@ -120,12 +177,73 @@ export class EmbeddedPlayerService implements OnDestroy {
       });
     });
 
-    // Listen for external MPV open request from the overlay
-    this.unlistenRequestExternal = await listen('request-open-external-mpv', (event: any) => {
-      this.ngZone.run(() => {
-        const pos = event?.payload?.position;
-        this.openExternal(undefined, pos);
-      });
+    // Listen for episodes request from overlay
+    this.unlistenRequestEpisodes = await listen('request-player-episodes', () => {
+      this.emitEpisodesData();
+    });
+
+    // Listen for season change request from overlay
+    this.unlistenChangeSeason = await listen('request-change-season', (event: any) => {
+      const payload = event?.payload;
+      if (payload?.seasonId) {
+        this.loadEpisodesForSeason(payload.seasonId, payload.seasonNum || 1);
+      }
+    });
+
+    // Listen for episode selection from overlay
+    this.unlistenSelectEpisode = await listen('select-player-episode', (event: any) => {
+      const episodeId = event?.payload?.episodeId ?? event?.payload?.id;
+      const targetEp = this.episodes.find((e) => e.id === episodeId);
+      if (targetEp) {
+        this.ngZone.run(() => {
+          if (this.onSwitchEpisodeCallback) {
+            this.onSwitchEpisodeCallback(targetEp.channel);
+          } else {
+            const seriesName = this.seriesTitle || '';
+            const sNum = String(targetEp.seasonNum).padStart(2, '0');
+            const eNum = String(targetEp.episodeNum).padStart(2, '0');
+            const overlayTitle = `${seriesName} - S${sNum}E${eNum}: ${targetEp.title}`.trim();
+            this.startPlayer(targetEp.channel, this.hostTarget || 'tv-video-canvas', {
+              mode: 'episode',
+              title: overlayTitle,
+              seriesChannel: this.seriesChannel,
+              seriesTitle: this.seriesTitle,
+              seasons: this.seasons,
+              currentSeasonNum: targetEp.seasonNum,
+              episodes: this.episodes,
+            });
+          }
+        });
+      }
+    });
+
+    // Listen for live channels request from overlay
+    this.unlistenRequestChannels = await listen('request-player-channels', async () => {
+      if (this.liveChannels.length === 0) {
+        await this.loadLiveChannels();
+      } else {
+        this.emitChannelsData();
+      }
+    });
+
+    // Listen for channel selection from overlay
+    this.unlistenSelectChannel = await listen('select-player-channel', (event: any) => {
+      const channelId = event?.payload?.channelId ?? event?.payload?.id;
+      const targetCh = this.liveChannels.find((c) => c.id === channelId);
+      if (targetCh && targetCh.channel) {
+        this.ngZone.run(() => {
+          if (this.onSwitchChannelCallback) {
+            this.onSwitchChannelCallback(targetCh.channel!);
+          } else {
+            this.startPlayer(targetCh.channel!, this.hostTarget || 'home-video-canvas', {
+              mode: 'live',
+              title: cleanMediaTitle(targetCh.name || 'Live TV'),
+              channels: this.liveChannels,
+              onSwitchChannel: this.onSwitchChannelCallback,
+            });
+          }
+        });
+      }
     });
   }
 
@@ -303,6 +421,19 @@ export class EmbeddedPlayerService implements OnDestroy {
       event.stopPropagation();
       return;
     }
+
+    if (
+      (event.key === 'i' || event.key === 'I') &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !isInputFocused()
+    ) {
+      emit('toggle-nerd-stats').catch(console.warn);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
   }
 
   public syncBounds(immediate: boolean = false): void {
@@ -406,6 +537,13 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     this.currentChannel = undefined;
     this.activeFallbackChannel = undefined;
+    this.seriesChannel = undefined;
+    this.seriesTitle = undefined;
+    this.seasons = [];
+    this.episodes = [];
+    this.onSwitchEpisodeCallback = undefined;
+    this.liveChannels = [];
+    this.onSwitchChannelCallback = undefined;
 
     if (this.isFullscreen) {
       this.isFullscreenSubject.next(false);
@@ -445,49 +583,16 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     this.currentChannel = undefined;
     this.activeFallbackChannel = undefined;
+    this.seriesChannel = undefined;
+    this.seriesTitle = undefined;
+    this.seasons = [];
+    this.episodes = [];
+    this.onSwitchEpisodeCallback = undefined;
+    this.liveChannels = [];
+    this.onSwitchChannelCallback = undefined;
+
     this.isPlayingEmbeddedSubject.next(false);
     this.restoreScrollPosition();
-  }
-
-  public async openExternal(customChannel?: Channel, position?: number): Promise<void> {
-    const channel = customChannel || this.currentChannel || this.activeFallbackChannel;
-    if (!channel || !channel.id) {
-      this.toastr.info('No active stream playing to open in external player');
-      return;
-    }
-
-    const channelTitle = cleanMediaTitle(channel.name || 'stream');
-
-    try {
-      this.toastr.info(`Opening "${channelTitle}" in external MPV...`);
-
-      // 1. Stop embedded player (which releases child HWND, restores layout, scroll position)
-      if (this.isPlayingEmbedded) {
-        await this.stopPlayer();
-      } else {
-        try {
-          await invoke('stop_embedded_poc');
-        } catch (e) {
-          console.warn('stop_embedded_poc error', e);
-        }
-      }
-
-      // Brief delay for Win32 child window release before spawning external MPV
-      await new Promise((resolve) => setTimeout(resolve, 80));
-
-      // 2. Play channel in external MPV via existing Tauri command
-      // Note: invoke('play') currently takes { channel, record, recordPath }.
-      // Resume argument (--start) is not supported by the existing Rust play command,
-      // but position is captured for reference.
-      await invoke('play', {
-        channel: channel,
-        record: false,
-        recordPath: undefined,
-      });
-    } catch (err) {
-      console.error('Failed to open external MPV:', err);
-      this.toastr.error('Failed to launch external MPV player');
-    }
   }
 
   public async startPlayer(
@@ -495,24 +600,58 @@ export class EmbeddedPlayerService implements OnDestroy {
     hostElementOrId: HTMLElement | string,
     options?: EmbeddedPlayerOptions,
   ): Promise<void> {
-    if (this.isPlayingEmbedded) {
-      await this.stopPlayer();
+    const wasAlreadyPlaying = this.isPlayingEmbedded;
+    if (wasAlreadyPlaying) {
+      try {
+        await invoke('stop_embedded_poc');
+      } catch (e) {
+        console.warn('stop_embedded_poc error', e);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    } else {
+      this.saveScrollPosition();
+      this.hostTarget = hostElementOrId;
+      this.isPlayingEmbeddedSubject.next(true);
+      document.body.classList.add('theater-mode-active');
+      await this.setupTauriListeners();
     }
 
-    this.saveScrollPosition();
-    this.hostTarget = hostElementOrId;
     this.currentChannel = channel;
-    this.currentMode = options?.mode || 'movie';
+    this.currentMode = options?.mode || (wasAlreadyPlaying ? this.currentMode : 'movie');
+
+    // TV episode switcher options
+    if (options?.seriesChannel) this.seriesChannel = options.seriesChannel;
+    if (options?.seriesTitle) this.seriesTitle = options.seriesTitle;
+    if (options?.seasons) this.seasons = options.seasons;
+    if (options?.currentSeasonNum) this.currentSeasonNum = options.currentSeasonNum;
+    if (options?.episodes) this.episodes = options.episodes;
+    if (options?.onSwitchEpisode) this.onSwitchEpisodeCallback = options.onSwitchEpisode;
+
+    // Live TV channel switcher options
+    if (options?.channels && options.channels.length > 0) {
+      this.liveChannels = options.channels.map((c: any) => ({
+        id: c.id,
+        name: cleanMediaTitle(c.name || 'Channel'),
+        logo: c.logo || c.image,
+        group: c.group,
+        isCurrent: c.id === channel.id,
+        channel: c.channel || c,
+      }));
+    } else if (this.currentMode === 'live' && this.liveChannels.length === 0) {
+      this.loadLiveChannels().catch(console.warn);
+    } else {
+      this.liveChannels = this.liveChannels.map((c) => ({
+        ...c,
+        isCurrent: c.id === channel.id,
+      }));
+    }
+    if (options?.onSwitchChannel) this.onSwitchChannelCallback = options.onSwitchChannel;
 
     const playChannel: Channel = {
       ...channel,
       name: options?.title || channel.name,
     };
 
-    this.isPlayingEmbeddedSubject.next(true);
-    document.body.classList.add('theater-mode-active');
-
-    await this.setupTauriListeners();
     emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
 
     try {
@@ -547,26 +686,120 @@ export class EmbeddedPlayerService implements OnDestroy {
         zOrder: 'top',
       });
 
+      emit('embedded-player-started', { name: options?.title || channel.name }).catch(console.warn);
       emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
       emit('overlay-top-crop', { crop: 32 }).catch(console.warn);
 
-      this.attachKeyHandler();
-      this.setupVideoResizeObserver();
+      if (this.currentMode === 'episode') {
+        this.emitEpisodesData();
+      } else if (this.currentMode === 'live') {
+        this.emitChannelsData();
+      }
+
+      if (!wasAlreadyPlaying) {
+        this.attachKeyHandler();
+        this.setupVideoResizeObserver();
+      }
       setTimeout(() => this.syncBounds(), 50);
       setTimeout(() => this.syncBounds(), 150);
     } catch (err) {
-      this.currentMode = 'movie';
-      emit('embedded-player-mode', { mode: 'movie' }).catch(console.warn);
-      emit('overlay-top-crop', { crop: 0 }).catch(console.warn);
-      this.currentChannel = undefined;
-      this.cleanupVideoResizeObserver();
-      this.removeKeyHandler();
-      this.cleanupTauriListeners();
-      this.isPlayingEmbeddedSubject.next(false);
-      document.body.classList.remove('theater-mode-active');
-      document.body.classList.remove('fullscreen-player-active');
-      this.restoreScrollPosition();
+      console.error('start_embedded_player failed:', err);
+      if (!wasAlreadyPlaying) {
+        await this.stopPlayer();
+      }
       throw err;
+    }
+  }
+
+  public emitEpisodesData(): void {
+    emit('embedded-player-episodes-data', {
+      seriesTitle: this.seriesTitle,
+      seasons: this.seasons,
+      currentSeasonNum: this.currentSeasonNum,
+      currentEpisodeId: this.currentChannel?.id,
+      episodes: this.episodes.map((e) => ({
+        ...e,
+        isCurrent: e.id === this.currentChannel?.id,
+      })),
+    }).catch(console.warn);
+  }
+
+  public emitChannelsData(): void {
+    emit('embedded-player-channels-data', {
+      currentChannelId: this.currentChannel?.id,
+      channels: this.liveChannels.map((c) => ({
+        ...c,
+        isCurrent: c.id === this.currentChannel?.id,
+      })),
+    }).catch(console.warn);
+  }
+
+  public async loadEpisodesForSeason(seasonId: number, seasonNum: number): Promise<void> {
+    if (!this.seriesChannel) return;
+    try {
+      const seriesId = parseInt(this.seriesChannel.url || `${this.seriesChannel.id}`, 10);
+      const sourceIds = this.seriesChannel.source_id
+        ? [this.seriesChannel.source_id]
+        : Array.from(this.memory.Sources.keys());
+
+      const filters = {
+        source_ids: sourceIds,
+        series_id: seriesId,
+        season: seasonId,
+        media_types: [MediaType.movie],
+        view_type: ViewMode.All,
+        use_keywords: false,
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+      };
+
+      const episodeChannels = (await invoke('search', { filters })) as Channel[];
+      this.currentSeasonNum = seasonNum;
+      this.episodes = (episodeChannels || []).map((ch, idx) => {
+        const epNum = ch.episode_num ?? (idx + 1);
+        return {
+          id: ch.id!,
+          channel: ch,
+          episodeNum: epNum,
+          seasonNum: seasonNum,
+          title: cleanMediaTitle(ch.name || `Episode ${epNum}`),
+          stillUrl: ch.image,
+          isWatched: (ch as any).last_watched != null,
+          isCurrent: ch.id === this.currentChannel?.id,
+        };
+      });
+
+      this.emitEpisodesData();
+    } catch (e) {
+      console.warn('Failed to load episodes for season in embedded player:', e);
+    }
+  }
+
+  public async loadLiveChannels(): Promise<void> {
+    try {
+      const sourceIds = Array.from(this.memory.Sources.keys());
+      const filters = {
+        source_ids: sourceIds,
+        media_types: [MediaType.livestream],
+        view_type: ViewMode.All,
+        use_keywords: false,
+        page: 1,
+        sort: SortType.provider,
+      };
+      const channels = (await invoke('search', { filters })) as Channel[];
+      this.liveChannels = (channels || [])
+        .filter((c) => (c.media_type === MediaType.livestream || c.media_type == null) && c.id != null)
+        .map((c) => ({
+          id: c.id!,
+          name: cleanMediaTitle(c.name || 'Live Channel'),
+          logo: c.image,
+          isCurrent: c.id === this.currentChannel?.id,
+          channel: c,
+        }));
+
+      this.emitChannelsData();
+    } catch (e) {
+      console.warn('Failed to load live channels in embedded player:', e);
     }
   }
 
@@ -577,7 +810,11 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (this.unlistenRequestMode) this.unlistenRequestMode();
     if (this.unlistenRequestCrop) this.unlistenRequestCrop();
     if (this.unlistenGlobalStopped) this.unlistenGlobalStopped();
-    if (this.unlistenRequestExternal) this.unlistenRequestExternal();
     if (this.unlistenPlayerStarted) this.unlistenPlayerStarted();
+    if (this.unlistenRequestEpisodes) this.unlistenRequestEpisodes();
+    if (this.unlistenChangeSeason) this.unlistenChangeSeason();
+    if (this.unlistenSelectEpisode) this.unlistenSelectEpisode();
+    if (this.unlistenRequestChannels) this.unlistenRequestChannels();
+    if (this.unlistenSelectChannel) this.unlistenSelectChannel();
   }
 }
