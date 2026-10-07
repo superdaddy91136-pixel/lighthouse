@@ -1329,89 +1329,6 @@ pub fn stop_embedded_player_sync(state: &EmbeddedPocState) {
     }
 }
 
-fn find_poc_stream() -> Result<PocStreamInfo, String> {
-    let conn = crate::sql::get_conn().map_err(|e| format!("DB pool error: {:?}", e))?;
-
-    let exact_title = "AR-IN-Awarapan 2 (2026)";
-
-    // Priority 1: Exact title match for "AR-IN-Awarapan 2 (2026)"
-    // If multiple provider versions exist, use the first exact title match (ORDER BY id ASC LIMIT 1)
-    let exact_query = "SELECT id, name, url, source_id FROM channels WHERE name = ?1 AND hidden = 0 ORDER BY id ASC LIMIT 1";
-    if let Ok(mut stmt) = conn.prepare(exact_query) {
-        if let Ok(mut rows) = stmt.query([exact_title]) {
-            if let Ok(Some(row)) = rows.next() {
-                if let (Ok(id), Ok(name), Ok(url)) = (
-                    row.get::<_, i64>(0),
-                    row.get::<_, String>(1),
-                    row.get::<_, String>(2),
-                ) {
-                    let source_id: Option<i64> = row.get(3).ok();
-                    return build_stream_info(id, name, url, source_id);
-                }
-            }
-        }
-    }
-
-    // Priority 1b: Exact title match without hidden filter
-    let exact_query_all = "SELECT id, name, url, source_id FROM channels WHERE name = ?1 ORDER BY id ASC LIMIT 1";
-    if let Ok(mut stmt) = conn.prepare(exact_query_all) {
-        if let Ok(mut rows) = stmt.query([exact_title]) {
-            if let Ok(Some(row)) = rows.next() {
-                if let (Ok(id), Ok(name), Ok(url)) = (
-                    row.get::<_, i64>(0),
-                    row.get::<_, String>(1),
-                    row.get::<_, String>(2),
-                ) {
-                    let source_id: Option<i64> = row.get(3).ok();
-                    return build_stream_info(id, name, url, source_id);
-                }
-            }
-        }
-    }
-
-    // Priority 2: Fallback to exact provider catalog variation in local DB (e.g. "AR-IN-S - Awarapan 2 (2026)")
-    let alt_titles = [
-        "AR-IN-S - Awarapan 2 (2026)",
-        "AR-IN - Awarapan 2 (2026)",
-    ];
-    for alt in alt_titles {
-        let alt_query = "SELECT id, name, url, source_id FROM channels WHERE name = ?1 ORDER BY id ASC LIMIT 1";
-        if let Ok(mut stmt) = conn.prepare(alt_query) {
-            if let Ok(mut rows) = stmt.query([alt]) {
-                if let Ok(Some(row)) = rows.next() {
-                    if let (Ok(id), Ok(name), Ok(url)) = (
-                        row.get::<_, i64>(0),
-                        row.get::<_, String>(1),
-                        row.get::<_, String>(2),
-                    ) {
-                        let source_id: Option<i64> = row.get(3).ok();
-                        return build_stream_info(id, name, url, source_id);
-                    }
-                }
-            }
-        }
-    }
-
-    // Priority 3: Fallback like search for AR-IN...Awarapan 2 (2026)
-    let like_query = "SELECT id, name, url, source_id FROM channels WHERE name LIKE '%AR-IN%Awarapan 2 (2026)%' ORDER BY id ASC LIMIT 1";
-    if let Ok(mut stmt) = conn.prepare(like_query) {
-        if let Ok(mut rows) = stmt.query([]) {
-            if let Ok(Some(row)) = rows.next() {
-                if let (Ok(id), Ok(name), Ok(url)) = (
-                    row.get::<_, i64>(0),
-                    row.get::<_, String>(1),
-                    row.get::<_, String>(2),
-                ) {
-                    let source_id: Option<i64> = row.get(3).ok();
-                    return build_stream_info(id, name, url, source_id);
-                }
-            }
-        }
-    }
-
-    Err(format!("Catalog item '{}' not found in database", exact_title))
-}
-
 pub fn build_stream_info(
     channel_id: i64,
     name: String,
@@ -1846,20 +1763,6 @@ pub async fn start_embedded_player_internal(
 
         Ok(stream)
     }
-}
-
-#[tauri::command]
-pub async fn start_embedded_poc(
-    window: WebviewWindow,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    z_order: Option<String>,
-    state: State<'_, EmbeddedPocState>,
-) -> Result<PocStreamInfo, String> {
-    let stream = find_poc_stream()?;
-    start_embedded_player_internal(window, stream, x, y, width, height, z_order, state).await
 }
 
 #[tauri::command]

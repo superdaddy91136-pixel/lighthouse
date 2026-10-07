@@ -117,7 +117,6 @@ pub fn run() {
             hide_group,
             remove_from_history,
             get_all_expiries,
-            embedded_poc::start_embedded_poc,
             embedded_poc::start_embedded_player,
             embedded_poc::switch_embedded_channel,
             embedded_poc::open_in_external_mpv,
