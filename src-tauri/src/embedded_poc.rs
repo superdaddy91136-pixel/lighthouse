@@ -1726,6 +1726,12 @@ pub async fn start_embedded_player_internal(
         let _ = tx
             .send(r#"{"command": ["observe_property", 13, "dheight"]}"#.to_string())
             .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 15, "demuxer-cache-duration"]}"#.to_string())
+            .await;
+        let _ = tx
+            .send(r#"{"command": ["observe_property", 16, "demuxer-cache-state"]}"#.to_string())
+            .await;
 
         // 6. Ensure the embedded child window is presented on top and updated now that MPV has connected
         let child_hwnd_val = child_hwnd;
