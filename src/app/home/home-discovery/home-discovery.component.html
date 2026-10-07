@@ -142,7 +142,7 @@
             *ngFor="let item of row.items" 
             class="media-card" 
             [class.cw-card]="row.id === 'row-continue-watching'"
-            (click)="handleCardClick(item)" 
+            (click)="handleCardClick(item, row.id)" 
             (mouseenter)="onCardMouseEnter($event)"
             (mouseleave)="onCardMouseLeave($event)">
             
@@ -209,7 +209,7 @@
               </div>
 
               <!-- Thin Playback Progress Bar for Continue Watching -->
-              <div *ngIf="row.id === 'row-continue-watching'" class="cw-progress-track">
+              <div *ngIf="row.id === 'row-continue-watching' && getWatchProgress(item) > 0" class="cw-progress-track">
                 <div class="cw-progress-fill" [style.width.%]="getWatchProgress(item)"></div>
               </div>
             </div>

@@ -1876,6 +1876,8 @@
       let duration = 0;
       let cachedDuration = 0;
       let cachedEnd = null;
+      let currentActiveChannelId = null;
+      let lastProgressSaveTime = 0;
       let currentVolume = 100;
       let isMuted = false;
       let isDragging = false;
@@ -2193,6 +2195,28 @@
         progressBuffer.style.width = `${bufferPct}%`;
       }
 
+      function maybeSaveProgress() {
+        if (!currentActiveChannelId || duration <= 0 || currentTime <= 0) return;
+        const now = Date.now();
+        if (now - lastProgressSaveTime < 3000) return;
+        lastProgressSaveTime = now;
+        tauriEmit('save-playback-progress', {
+          channelId: currentActiveChannelId,
+          time: currentTime,
+          duration: duration
+        });
+      }
+
+      function flushSaveProgress() {
+        if (!currentActiveChannelId || duration <= 0 || currentTime <= 0) return;
+        lastProgressSaveTime = Date.now();
+        tauriEmit('save-playback-progress', {
+          channelId: currentActiveChannelId,
+          time: currentTime,
+          duration: duration
+        });
+      }
+
       function updateTimeUI() {
         if (remainingTimeDisplay) {
           const rem = Math.max(0, duration - currentTime);
@@ -2204,6 +2228,7 @@
           progressThumb.style.left = `${pct}%`;
         }
         updateBufferedUI();
+        maybeSaveProgress();
       }
 
       function updateVolumeUI() {
@@ -2442,6 +2467,7 @@
       // CLOSE / EXIT PLAYER
       btnClose.addEventListener('click', (e) => {
         e.stopPropagation();
+        flushSaveProgress();
         tauriInvoke('stop_embedded_poc');
       });
 
@@ -2703,6 +2729,7 @@
 
           card.addEventListener('click', (e) => {
             e.stopPropagation();
+            flushSaveProgress();
             episodesData.currentEpisodeId = ep.id;
             renderEpisodes();
             tauriEmit('select-player-episode', {
@@ -2753,6 +2780,7 @@
           (ep) => ep.id === episodesData.currentEpisodeId || ep.isCurrent
         );
         if (currentIndex !== -1 && currentIndex + 1 < episodesData.episodes.length) {
+          flushSaveProgress();
           const nextEp = episodesData.episodes[currentIndex + 1];
           episodesData.currentEpisodeId = nextEp.id;
           renderEpisodes();
@@ -3836,10 +3864,18 @@
         if (event?.payload?.mode) {
           setContentMode(event.payload.mode);
         }
+        if (event?.payload?.channelId != null) {
+          currentActiveChannelId = event.payload.channelId;
+        } else if (event?.payload?.channel_id != null) {
+          currentActiveChannelId = event.payload.channel_id;
+        }
       });
 
       tauriListen('embedded-player-episodes-data', (event) => {
         if (event?.payload) {
+          if (event.payload.currentEpisodeId != null) {
+            currentActiveChannelId = event.payload.currentEpisodeId;
+          }
           episodesData = {
             seriesTitle: event.payload.seriesTitle || '',
             seasons: event.payload.seasons || [],
@@ -3853,6 +3889,9 @@
 
       tauriListen('embedded-player-channels-data', (event) => {
         if (event?.payload) {
+          if (event.payload.currentChannelId != null) {
+            currentActiveChannelId = event.payload.currentChannelId;
+          }
           channelsData = {
             currentChannelId: event.payload.currentChannelId,
             currentGroupId: event.payload.currentGroupId,
@@ -3879,6 +3918,11 @@
       });
 
       tauriListen('embedded-player-started', (event) => {
+        if (event?.payload?.channel_id != null) {
+          currentActiveChannelId = event.payload.channel_id;
+        } else if (event?.payload?.channelId != null) {
+          currentActiveChannelId = event.payload.channelId;
+        }
         tracks = [];
         currentAid = null;
         currentSid = 'no';
@@ -3903,6 +3947,8 @@
       });
 
       tauriListen('embedded-poc-stopped', () => {
+        flushSaveProgress();
+        currentActiveChannelId = null;
         setTopCrop(0);
         setContentMode('movie');
         closeAllPanels();
@@ -3987,6 +4033,10 @@
           sendMpv(['get_property', 'demuxer-cache-state'], 308);
         }
       }, 2000);
+
+      window.addEventListener('beforeunload', () => {
+        flushSaveProgress();
+      });
 
       // Start initial hide timer
       showControls();

@@ -329,6 +329,36 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  async resumeMedia(channel: Channel): Promise<void> {
+    if (!channel || channel.id == null) return;
+    const isTv =
+      channel.media_type === MediaType.serie ||
+      channel.season_id != null ||
+      channel.series_id != null ||
+      channel.episode_num != null ||
+      /\b(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|\b\d{1,2}x\d{1,2}\b)/i.test(channel.name || "");
+
+    const playChannel: Channel = {
+      ...channel,
+      media_type: isTv ? MediaType.serie : (channel.media_type || MediaType.movie),
+      favorite: !!channel.favorite,
+    };
+
+    const title = cleanMediaTitle(channel.name || (isTv ? 'Episode' : 'Movie'));
+    this.toast.info(`Resuming "${title}"...`);
+    invoke("add_last_watched", { id: channel.id }).catch(console.error);
+
+    try {
+      await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+        title,
+        mode: isTv ? 'episode' : 'movie',
+      });
+    } catch (e) {
+      console.error('Failed to resume media:', e);
+      this.error.handleError(e);
+    }
+  }
+
   async onSwitchChannel(channel: Channel): Promise<void> {
     this.livePlayingChannel = channel;
     if (channel.id) {

@@ -116,6 +116,7 @@ export const MIXED_GENRES: MixedGenreDef[] = [
 })
 export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy {
   @Output() play = new EventEmitter<Channel>();
+  @Output() resume = new EventEmitter<Channel>();
   @Output() openSeries = new EventEmitter<Channel>();
   @Output() navigateTab = new EventEmitter<NavTab>();
 
@@ -1514,13 +1515,12 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const match = groups.find((g) => {
         if (g.isTv !== isTv) return false;
 
-        // If both are TV episodes belonging to the exact same series & source, they match
+        // If both are TV episodes belonging to the exact same series_id, they match
         if (
           isTv &&
           g.representative.series_id != null &&
           h.series_id != null &&
-          g.representative.series_id === h.series_id &&
-          g.representative.source_id === h.source_id
+          g.representative.series_id === h.series_id
         ) {
           return true;
         }
@@ -1540,8 +1540,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
         if (!isTitleMatch) return false;
 
-        // Verify years if both present
-        if (g.year && year) {
+        // Verify years if both present (for movies only)
+        if (!isTv && g.year && year) {
           const y1 = parseInt(g.year, 10);
           const y2 = parseInt(year, 10);
           if (!isNaN(y1) && !isNaN(y2) && Math.abs(y1 - y2) > 1) {
@@ -1616,14 +1616,48 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     return this.getCleanTitleForChannel(itemOrRaw);
   }
 
-  getCleanTitleForChannel(channel: Channel): string {
+  getSeriesTitle(channel: Channel): string {
     if (!channel) return "Untitled";
 
-    if (this.isTvShow(channel) && channel.series_id != null) {
+    if (channel.series_id != null) {
       const key = `${channel.source_id}_${channel.series_id}`;
       if (this.seriesNameMap.has(key)) {
         return cleanMediaTitle(this.seriesNameMap.get(key));
       }
+      for (const [mapKey, name] of this.seriesNameMap.entries()) {
+        if (mapKey.endsWith(`_${channel.series_id}`)) {
+          return cleanMediaTitle(name);
+        }
+      }
+      if (this.loadedSeries && this.loadedSeries.length > 0) {
+        const sMatch = this.loadedSeries.find(
+          (s) =>
+            (channel.source_id == null || s.source_id === channel.source_id) &&
+            (s.url === String(channel.series_id) || s.id === channel.series_id)
+        );
+        if (sMatch?.name) {
+          return cleanMediaTitle(sMatch.name);
+        }
+      }
+    }
+
+    // Strip season and episode tokens from channel.name
+    const raw = cleanMediaTitle(channel.name || "");
+    const stripped = raw
+      .replace(/\s*[-:]?\s*(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|s\d{1,2}\b|episode\s*\d+|e\d{1,2}\b|\b\d{1,2}x\d{1,2}\b).*$/i, "")
+      .trim();
+
+    if (stripped.length > 0) {
+      return stripped;
+    }
+    return raw || "Untitled";
+  }
+
+  getCleanTitleForChannel(channel: Channel): string {
+    if (!channel) return "Untitled";
+
+    if (this.isTvShow(channel)) {
+      return this.getSeriesTitle(channel);
     }
 
     return cleanMediaTitle(channel.name);
@@ -1891,10 +1925,29 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   getContinueWatchingArtwork(channel: Channel): string | undefined {
     if (!channel) return undefined;
     if (this.isTvShow(channel)) {
+      if (channel.series_id != null && this.loadedSeries && this.loadedSeries.length > 0) {
+        const sMatch = this.loadedSeries.find(
+          (s) =>
+            (channel.source_id == null || s.source_id === channel.source_id) &&
+            (s.url === String(channel.series_id) || s.id === channel.series_id)
+        );
+        if (sMatch) {
+          const sArt = this.getCardArtwork(sMatch) || sMatch.image;
+          if (sArt) return sArt;
+        }
+      }
+      const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
+      if (cached?.backdropPath) {
+        const bd = getTmdbBackdropUrl(cached.backdropPath, 'w780');
+        if (bd) return bd;
+      }
+      if (cached?.posterPath) {
+        const poster = getTmdbPosterUrl(cached.posterPath, 'w500');
+        if (poster) return poster;
+      }
       if (channel.id && this.episodeStillMap.has(channel.id)) {
         return this.episodeStillMap.get(channel.id);
       }
-      // If still not yet in cache or in-flight, trigger background resolution
       if (channel.id && !this.inFlightStillFetches.has(channel.id)) {
         this.resolveEpisodeStill(channel);
       }
@@ -2028,19 +2081,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         Math.max(0, Math.round((chAny.progress / chAny.duration) * 100))
       );
     }
-    if (chAny.progress_percent != null && !isNaN(chAny.progress_percent)) {
+    if (chAny.progress_percent != null && !isNaN(chAny.progress_percent) && chAny.progress_percent > 0) {
       return Math.min(100, Math.max(0, Math.round(chAny.progress_percent)));
     }
     try {
-      const itemKey =
-        localStorage.getItem(`watch_progress_${channel.id}`) ||
-        localStorage.getItem(`playback_pos_${channel.id}`);
-      if (itemKey) {
-        const val = parseFloat(itemKey);
-        if (!isNaN(val) && val > 0) {
-          return Math.min(100, Math.max(5, Math.round(val <= 1 ? val * 100 : val)));
-        }
-      }
       const storeRaw = localStorage.getItem("fred_tv_watch_progress");
       if (storeRaw) {
         const store = JSON.parse(storeRaw);
@@ -2050,19 +2094,33 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
             typeof entry === "number"
               ? entry
               : entry.percent ||
-                (entry.time && entry.duration
+                (entry.time && entry.duration && entry.duration > 0
                   ? (entry.time / entry.duration) * 100
                   : 0);
-          if (pct > 0) return Math.min(100, Math.max(5, Math.round(pct)));
+          if (pct > 0) return Math.min(100, Math.max(1, Math.round(pct)));
+        }
+      }
+
+      const itemKey =
+        localStorage.getItem(`watch_progress_${channel.id}`) ||
+        localStorage.getItem(`playback_pos_${channel.id}`);
+      if (itemKey) {
+        const val = parseFloat(itemKey);
+        if (!isNaN(val) && val > 0) {
+          const durKey = localStorage.getItem(`playback_dur_${channel.id}`);
+          if (durKey) {
+            const dur = parseFloat(durKey);
+            if (!isNaN(dur) && dur > 0) {
+              return Math.min(100, Math.max(1, Math.round((val / dur) * 100)));
+            }
+          }
+          return Math.min(100, Math.max(1, Math.round(val <= 1 ? val * 100 : val)));
         }
       }
     } catch {
       // ignore
     }
-    // Saved progress indicator fallback for items in Continue Watching
-    const seed =
-      (Math.abs(channel.id) * 19 + ((channel.series_id || 0) + 1) * 31) % 55;
-    return 30 + seed; // 30% to 84%
+    return 0;
   }
 
   getCardYear(channel: Channel): string | undefined {
@@ -2090,7 +2148,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     return channelId ? this.imageErrorSet.has(channelId) : true;
   }
 
-  handleCardClick(channel: Channel) {
+  handleCardClick(channel: Channel, rowId?: string) {
+    if (rowId === 'row-continue-watching') {
+      this.resume.emit(channel);
+      return;
+    }
     if (channel.media_type === MediaType.serie) {
       this.versionMatching.savePreferredVersion(
         channel,

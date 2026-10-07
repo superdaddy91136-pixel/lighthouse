@@ -93,6 +93,7 @@
     <app-home-discovery 
       *ngIf="isHomeDiscoveryMode" 
       (play)="playMedia($event)" 
+      (resume)="resumeMedia($event)" 
       (openSeries)="openSeries($event)" 
       (navigateTab)="navigateToTab($event)">
     </app-home-discovery>

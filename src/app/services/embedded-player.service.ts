@@ -118,6 +118,7 @@ export class EmbeddedPlayerService implements OnDestroy {
   private unlistenSelectEpisode?: UnlistenFn;
   private unlistenRequestChannels?: UnlistenFn;
   private unlistenSelectChannel?: UnlistenFn;
+  private unlistenSaveProgress?: UnlistenFn;
 
   private routerSubscription?: Subscription;
 
@@ -163,7 +164,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     // Listen for mode request from overlay (on late-load or restart)
     this.unlistenRequestMode = await listen('request-player-mode', () => {
-      emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
+      emit('embedded-player-mode', { mode: this.currentMode, channelId: this.currentChannel?.id }).catch(console.warn);
     });
 
     // Listen for top-crop request from overlay
@@ -249,6 +250,14 @@ export class EmbeddedPlayerService implements OnDestroy {
         this.ngZone.run(() => {
           this.switchChannel(targetCh!);
         });
+      }
+    });
+
+    // Listen for playback progress save requests from overlay
+    this.unlistenSaveProgress = await listen('save-playback-progress', (event: any) => {
+      const payload = event?.payload;
+      if (payload?.channelId != null && payload?.duration > 0 && payload?.time >= 0) {
+        this.saveWatchProgress(payload.channelId, payload.time, payload.duration);
       }
     });
   }
@@ -665,7 +674,7 @@ export class EmbeddedPlayerService implements OnDestroy {
       name: options?.title || channel.name,
     };
 
-    emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
+    emit('embedded-player-mode', { mode: this.currentMode, channelId: channel.id }).catch(console.warn);
 
     try {
       // Wait a frame so layout/bounding rect computes
@@ -699,8 +708,8 @@ export class EmbeddedPlayerService implements OnDestroy {
         zOrder: 'top',
       });
 
-      emit('embedded-player-started', { name: options?.title || channel.name }).catch(console.warn);
-      emit('embedded-player-mode', { mode: this.currentMode }).catch(console.warn);
+      emit('embedded-player-started', { name: options?.title || channel.name, channel_id: channel.id }).catch(console.warn);
+      emit('embedded-player-mode', { mode: this.currentMode, channelId: channel.id }).catch(console.warn);
       emit('overlay-top-crop', { crop: 32 }).catch(console.warn);
 
       if (this.currentMode === 'episode') {
@@ -848,6 +857,35 @@ export class EmbeddedPlayerService implements OnDestroy {
     }
   }
 
+  public saveWatchProgress(channelId: number, time: number, duration: number): void {
+    if (!channelId || duration <= 0) return;
+    try {
+      const pct = Math.min(100, Math.max(0, Math.round((time / duration) * 100)));
+      localStorage.setItem(`playback_pos_${channelId}`, String(time));
+      localStorage.setItem(`playback_dur_${channelId}`, String(duration));
+      localStorage.setItem(`watch_progress_${channelId}`, String(pct));
+
+      let store: Record<string, any> = {};
+      const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+      if (storeRaw) {
+        try {
+          store = JSON.parse(storeRaw) || {};
+        } catch {
+          store = {};
+        }
+      }
+      store[channelId] = {
+        time,
+        duration,
+        percent: pct,
+        updatedAt: Date.now(),
+      };
+      localStorage.setItem('fred_tv_watch_progress', JSON.stringify(store));
+    } catch (e) {
+      console.warn('Failed to save watch progress:', e);
+    }
+  }
+
   ngOnDestroy(): void {
     if (this.routerSubscription) {
       this.routerSubscription.unsubscribe();
@@ -861,5 +899,6 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (this.unlistenSelectEpisode) this.unlistenSelectEpisode();
     if (this.unlistenRequestChannels) this.unlistenRequestChannels();
     if (this.unlistenSelectChannel) this.unlistenSelectChannel();
+    if (this.unlistenSaveProgress) this.unlistenSaveProgress();
   }
 }
