@@ -204,7 +204,7 @@
               <!-- Title Overlay (Revealed on Hover) -->
               <div class="card-title-overlay">
                 <div class="overlay-title-wrap">
-                  <span class="overlay-title-text">{{ getCleanTitle(item) }}</span>
+                  <span class="overlay-title-text">{{ row.id === 'row-continue-watching' ? getContinueWatchingTitle(item) : getCleanTitle(item) }}</span>
                 </div>
               </div>
 

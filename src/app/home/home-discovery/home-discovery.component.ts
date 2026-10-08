@@ -1663,6 +1663,44 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     return cleanMediaTitle(channel.name);
   }
 
+  getContinueWatchingTitle(channel: Channel): string {
+    if (!this.isTvShow(channel)) {
+      return this.getCleanTitleForChannel(channel);
+    }
+
+    const rawName = channel.name || "";
+    const seriesTitle = this.getSeriesTitle(channel);
+    let episodeTitle = cleanMediaTitle(rawName);
+
+    if (episodeTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
+      episodeTitle = episodeTitle.slice(seriesTitle.length);
+    }
+
+    episodeTitle = episodeTitle
+      .replace(/^\s*[-:|]\s*/, "")
+      .replace(/^\b(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|e\d{1,3}|ep(?:isode)?\s*\d{1,3})\b\s*[-:|]?\s*/i, "")
+      .trim();
+
+    const seasonNum = this.extractSeasonNumber(rawName, 0);
+    const episodeNum =
+      channel.episode_num != null && channel.episode_num > 0
+        ? channel.episode_num
+        : this.extractEpisodeNumber(rawName, 0);
+
+    const episodeCode =
+      seasonNum > 0 && episodeNum > 0
+        ? `S${String(seasonNum).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")}`
+        : episodeNum > 0
+          ? `Episode ${episodeNum}`
+          : "";
+
+    if (episodeTitle && episodeTitle.toLowerCase() !== seriesTitle.toLowerCase()) {
+      return episodeCode ? `${episodeCode} · ${episodeTitle}` : episodeTitle;
+    }
+
+    return episodeCode || seriesTitle;
+  }
+
   parseYear(raw?: string): string | undefined {
     return extractYear(raw);
   }

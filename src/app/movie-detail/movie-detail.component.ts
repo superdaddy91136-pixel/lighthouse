@@ -622,8 +622,13 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         height = Math.round(rect.height * dpr);
       }
 
+      const playerChannel: Channel = {
+        ...playChannel,
+        name: cleanMediaTitle(playChannel.name || this.cleanTitle),
+      };
+
       await invoke('start_embedded_player', {
-        channel: playChannel,
+        channel: playerChannel,
         x,
         y,
         width,
