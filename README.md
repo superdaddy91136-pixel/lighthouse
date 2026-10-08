@@ -1,125 +1,57 @@
-# Fred TV (Formerly Open TV)
+# Lighthouse
 
-Completely rewritten to accommodate new features and to be even speedier, Fred TV has been carefully crafted to deliver the best IPTV experience.
+A privacy-first IPTV player for Windows with a built-in MPV player and a modern, minimal interface.
 
-<a href="https://apps.microsoft.com/detail/9PBWX3RKR1QX?launch=true&mode=mini">
-	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="350"/>
-</a>
-<a href="https://flathub.org/apps/dev.fredol.open-tv">
-  <img src="https://dl.flathub.org/assets/badges/flathub-badge-en.svg" width="300"/>
-</a>
-<a href="https://aur.archlinux.org/packages/open-tv-bin">
-  <img src="https://raw.githubusercontent.com/Fredolx/open-tv/refs/heads/main/readme_imgs/aur-open-tv.svg" width="350" />
-</a>
-<a href="https://apps.apple.com/ca/app/open-tv-open-source-iptv/id6742751800">
-  <img src="https://raw.githubusercontent.com/Fredolx/open-tv/refs/heads/main/readme_imgs/app-store.svg" width=300 />
-</a>
-<a href="https://play.google.com/store/apps/details?id=dev.fredol.open_tv">
-  <img src="https://raw.githubusercontent.com/Fredolx/open-tv/refs/heads/main/readme_imgs/gplay.png">
-</a>
+Lighthouse is a fork of [Fred TV / open-tv](https://github.com/Fredolx/open-tv), customized with an embedded player and a redesigned experience.
 
-# This project NEEDS your help. Please consider donating on [Github](https://github.com/sponsors/Fredolx), [Paypal](https://paypal.me/fredolx) or directly by [crypto](#donate-crypto-thank-you)
-I've been developing and maintaining this project alone and for entirely for free over the past 2 years. I am in dire need of support to continue developing this project. I've never added annoying donation pop-ups or anything of the sort to make sure you have the fastest and cleanest IPTV experience and I'm committed to keep this project FREE & OPEN-SOURCE. To keep that commitment, I need your support!
+<!-- Add your own screenshots here, e.g. ![Home](screenshots/lighthouse-home.png) -->
 
-![Image of the app](https://github.com/Fredolx/open-tv/blob/main/screenshots/demo1.png)
+## Features
 
-## Features:
-- Import your IPTV channels from any source (M3U File, M3U link, Xtream) 🗃️
-- Record while watching 🎥
-- Multi IPTV sources 🎊
-- Control the UI from a TV remote 📺
-- Super low RAM usage, crazy speeds, and instant search 🚅
-- Refresh your sources when you need it 🔄
-- Add channels to favorites 🌟
-- Make your own custom channels
-- Share your custom channels with friends
-- Re-stream channels to friends or other devices (phone, tv)
+- **Embedded MPV player.** Playback runs inside the app window. No separate player window pops up.
+- **Custom player controls.** Play/pause, 10-second seek, volume, fullscreen, playback speed and a seek bar with played and buffered progress.
+- **Audio and subtitle menu**, with an adjustable subtitle size that is remembered across everything you watch.
+- **Live TV** with an in-player channel switcher.
+- **Movies and TV shows** with an in-player episode switcher, a Next Episode button, and resume playback.
+- **Continue Watching** row on Home.
+- **Cleaned-up titles.** Folder prefixes and years from your provider's names are removed in the player.
+- **Multiple versions of a title** grouped together, selectable near Watch Now.
+- **Fast startup.** Home loads from local data right away and refreshes in the background.
+- **Playback stats** via the info button.
 
-## Prerequisites
-If you are on Windows or use the flatpak on Linux; SKIP THIS PART. 
+## Privacy
 
-The app depends on mpv, ffmpeg and yt-dlp. 
-If you are on MacOS, you must use Brew or MacPorts to install those dependencies. 
+- No ads
+- No analytics or tracking SDKs
+- No accounts
 
-On Fedora, you must add rpmfusion to install those packages.
+Lighthouse does not include any content. It plays what your own IPTV provider supplies. Movie and show artwork and details may come from TMDB, but your provider stays the source for everything that plays.
 
-On Debian or LTS distro, I would strongly suggest using a backport for yt-dlp.
+## Download
 
-The Windows build **comes with mpv included** (.msi), but you can still install mpv from a package manager of your choice to always have the latest version installed
+Get the latest Windows installer from the [Releases](../../releases) page.
+
+## Build from source
+
+Requirements: Windows, [Node.js](https://nodejs.org), [pnpm](https://pnpm.io), [Rust](https://rustup.rs) and the Tauri v2 prerequisites.
 
 ```
-brew install mpv ffmpeg yt-dlp #MacOS
-sudo dnf install mpv ffmpeg yt-dlp #Fedora
-sudo zypper install mpv ffmpeg yt-dlp #OpenSUSE
-sudo pacman -Syu mpv ffmpeg yt-dlp #Arch
-sudo apt install mpv ffmpeg yt-dlp #Debian/Ubuntu
-scoop install mpv ffmpeg yt-dlp # Windows
-choco install mpv ffmpeg yt-dlp # Windows alternative
+pnpm install
+pnpm tauri dev
 ```
 
-## Docker
-You can install Fred TV using Docker. It wouldn't necessarily be the recommended way to install it, but it's now possible.
-You should always install Fred TV from either Releases or Flatpak on Linux.
+To build the installer:
 
-For Nvidia GPUs:
 ```
-docker run --rm -it \
-  --net=host \
-  --env="DISPLAY" \
-  --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-  --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
-  --volume="$HOME/.local/share/open-tv:/root/.local/share/open-tv" \
-  --gpus all \
-  ghcr.io/fredolx/open-tv:latest
-```
-For everyone else (Intel, AMD):
-```
-docker run --rm -it \
-  --net=host \
-  --env="DISPLAY" \
-  --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-  --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
-  --volume="$HOME/.local/share/open-tv:/root/.local/share/open-tv" \
-  --device /dev/dri \
-  ghcr.io/fredolx/open-tv:latest
+pnpm tauri build
 ```
 
+On Windows PowerShell you may need `pnpm.cmd` instead of `pnpm`. The installers are created under `src-tauri\target\release\bundle\nsis\` and `src-tauri\target\release\bundle\msi\`.
 
-## Feedback
-Feel free to submit any kind of feedback by creating a new issue.
+## Tech stack
 
-## Hotkeys
-* F1: Help
-* Ctrl + a: Show all channels
-* Ctrl + s: Show categories
-* Ctrl + d: Show favorites
-* Ctrl + f: Search
-* Ctrl + q: Enable/Disable livestreams
-* Ctrl + w: Enable/Disable movies
-* Ctrl + e: Enable/Disable series
-* Backspace/Esc: Go back
-* Arrow keys/Tab/Shift+Tab: Navigation
+Tauri v2, Angular 17, Rust, WebView2, and MPV (`mpv.exe`).
 
-If you have a tv remote or air mouse that has slightly different bindings for general nav (back, up, down, left, right),
-please open an issue and I will add them if it's feasible. Otherwise, you can still use hwdb to make them match Fred TV's bindings.
+## Credits and license
 
-## Settings explained
-
-**Stream Caching**
-
-Why enabling:
-  - If you have a slow internet connection/IPTV provider causing the stream to pause often
-
-Why disabling: 
-  - If the stream often drops completely. It will prevent the stream from jumping too far ahead/behind
-  - If you have a good internet/provider and want lower latency
-  - Can prevent some weird bugs/slowdowns
-
-## Donate Crypto (Thank you!)
-BTC:
-```
-bc1q7v27u4mrxhtqzl97pcp4vl52npss760epsheu3
-```
-
-ETH:
-```
+Lighthouse is based on [Fred TV / open-tv](https://github.com/Fredolx/open-tv) by Frédéric Lachapelle and its contributors. See the [LICENSE](LICENSE) file for the license terms, which also apply to this fork. MPV is a separate project with its own license.
