@@ -845,15 +845,16 @@ export class EmbeddedPlayerService implements OnDestroy {
   }
 
   public async loadEpisodesForSeason(seasonId: number, seasonNum: number): Promise<void> {
-    if (!this.seriesChannel) return;
+    const seriesChannel = this.seriesChannel || this.currentChannel;
+    if (!seriesChannel) return;
     try {
       const seriesId =
-        this.seriesChannel.series_id ||
-        (this.seriesChannel.url && /^\d+$/.test(this.seriesChannel.url.trim())
-          ? parseInt(this.seriesChannel.url.trim(), 10)
-          : this.seriesChannel.id);
-      const sourceIds = this.seriesChannel.source_id
-        ? [this.seriesChannel.source_id]
+        seriesChannel.series_id ||
+        (seriesChannel.url && /^\d+$/.test(seriesChannel.url.trim())
+          ? parseInt(seriesChannel.url.trim(), 10)
+          : seriesChannel.id);
+      const sourceIds = seriesChannel.source_id
+        ? [seriesChannel.source_id]
         : Array.from(this.memory.Sources.keys());
 
       const filters = {
