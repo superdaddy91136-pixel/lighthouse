@@ -45,6 +45,7 @@ export interface SwitcherChannelData {
 export interface EmbeddedPlayerOptions {
   title?: string;
   mode?: ContentMode;
+  startTime?: number;
   // TV Episode switcher options
   seriesChannel?: Channel;
   seriesTitle?: string;
@@ -256,8 +257,8 @@ export class EmbeddedPlayerService implements OnDestroy {
     // Listen for playback progress save requests from overlay
     this.unlistenSaveProgress = await listen('save-playback-progress', (event: any) => {
       const payload = event?.payload;
-      if (payload?.channelId != null && payload?.duration > 0 && payload?.time >= 0) {
-        this.saveWatchProgress(payload.channelId, payload.time, payload.duration);
+      if (payload?.channelId != null && payload?.time > 0) {
+        this.saveWatchProgress(payload.channelId, payload.time, payload.duration || 0);
       }
     });
   }
@@ -669,6 +670,12 @@ export class EmbeddedPlayerService implements OnDestroy {
     }
     if (options?.onSwitchChannel) this.onSwitchChannelCallback = options.onSwitchChannel;
 
+    const startPos =
+      options?.startTime ??
+      (this.currentMode !== 'live' && channel.id
+        ? this.getSavedPosition(channel.id, channel)
+        : 0);
+
     const playChannel: Channel = {
       ...channel,
       name: options?.title || channel.name,
@@ -708,9 +715,31 @@ export class EmbeddedPlayerService implements OnDestroy {
         zOrder: 'top',
       });
 
-      emit('embedded-player-started', { name: options?.title || channel.name, channel_id: channel.id }).catch(console.warn);
+      emit('embedded-player-started', {
+        name: options?.title || channel.name,
+        channel_id: channel.id,
+        channelId: channel.id,
+        startTime: startPos,
+      }).catch(console.warn);
       emit('embedded-player-mode', { mode: this.currentMode, channelId: channel.id }).catch(console.warn);
       emit('overlay-top-crop', { crop: 32 }).catch(console.warn);
+
+      if (startPos > 5 && this.currentMode !== 'live') {
+        setTimeout(() => {
+          if (this.isPlayingEmbedded && this.currentMode !== 'live') {
+            invoke('send_embedded_poc_ipc', {
+              command: JSON.stringify({ command: ['seek', startPos, 'absolute'] }),
+            }).catch(console.warn);
+          }
+        }, 400);
+        setTimeout(() => {
+          if (this.isPlayingEmbedded && this.currentMode !== 'live') {
+            invoke('send_embedded_poc_ipc', {
+              command: JSON.stringify({ command: ['seek', startPos, 'absolute'] }),
+            }).catch(console.warn);
+          }
+        }, 1200);
+      }
 
       if (this.currentMode === 'episode') {
         this.emitEpisodesData();
@@ -857,13 +886,58 @@ export class EmbeddedPlayerService implements OnDestroy {
     }
   }
 
-  public saveWatchProgress(channelId: number, time: number, duration: number): void {
-    if (!channelId || duration <= 0) return;
+  public getSavedPosition(channelId?: number, channel?: Channel): number {
+    if (!channelId && !channel?.id) return 0;
+    const id = channelId || channel?.id;
     try {
-      const pct = Math.min(100, Math.max(0, Math.round((time / duration) * 100)));
+      const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        if (store && id && store[id]) {
+          const entry = store[id];
+          const t = typeof entry === 'number' ? entry : (entry.time || 0);
+          const dur = entry.duration || 0;
+          if (dur > 0 && (t >= dur - 30 || (t / dur) > 0.95)) {
+            return 0;
+          }
+          if (t > 5) return Math.round(t);
+        }
+      }
+      const posRaw = localStorage.getItem(`playback_pos_${id}`);
+      if (posRaw) {
+        const pos = parseFloat(posRaw);
+        const durRaw = localStorage.getItem(`playback_dur_${id}`);
+        const dur = durRaw ? parseFloat(durRaw) : 0;
+        if (dur > 0 && (pos >= dur - 30 || (pos / dur) > 0.95)) {
+          return 0;
+        }
+        if (!isNaN(pos) && pos > 5) {
+          return Math.round(pos);
+        }
+      }
+      const chAny = channel as any;
+      if (chAny?.progress && chAny.progress > 5) {
+        return Math.round(chAny.progress);
+      }
+    } catch (e) {
+      console.warn('Error reading saved position:', e);
+    }
+    return 0;
+  }
+
+  public saveWatchProgress(channelId: number, time: number, duration: number): void {
+    if (!channelId || time <= 0) return;
+    try {
+      if (duration <= 0) {
+        const prevDur = localStorage.getItem(`playback_dur_${channelId}`);
+        if (prevDur) duration = parseFloat(prevDur) || 0;
+      }
+      const pct = duration > 0 ? Math.min(100, Math.max(0, Math.round((time / duration) * 100))) : 0;
       localStorage.setItem(`playback_pos_${channelId}`, String(time));
-      localStorage.setItem(`playback_dur_${channelId}`, String(duration));
-      localStorage.setItem(`watch_progress_${channelId}`, String(pct));
+      if (duration > 0) {
+        localStorage.setItem(`playback_dur_${channelId}`, String(duration));
+        localStorage.setItem(`watch_progress_${channelId}`, String(pct));
+      }
 
       let store: Record<string, any> = {};
       const storeRaw = localStorage.getItem('fred_tv_watch_progress');
@@ -876,8 +950,8 @@ export class EmbeddedPlayerService implements OnDestroy {
       }
       store[channelId] = {
         time,
-        duration,
-        percent: pct,
+        duration: duration > 0 ? duration : (store[channelId]?.duration || 0),
+        percent: pct > 0 ? pct : (store[channelId]?.percent || 0),
         updatedAt: Date.now(),
       };
       localStorage.setItem('fred_tv_watch_progress', JSON.stringify(store));

@@ -1878,6 +1878,9 @@
       let cachedEnd = null;
       let currentActiveChannelId = null;
       let lastProgressSaveTime = 0;
+      let pendingResumeTime = 0;
+      let hasResumedForCurrentMedia = false;
+      let resumeSeekTimeout = null;
       let currentVolume = 100;
       let isMuted = false;
       let isDragging = false;
@@ -2195,25 +2198,81 @@
         progressBuffer.style.width = `${bufferPct}%`;
       }
 
+      function getSavedPositionForChannel(chId) {
+        if (!chId) return 0;
+        try {
+          const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+          if (storeRaw) {
+            const store = JSON.parse(storeRaw);
+            if (store && store[chId]) {
+              const entry = store[chId];
+              const t = typeof entry === 'number' ? entry : (entry.time || 0);
+              const dur = entry.duration || 0;
+              if (dur > 0 && (t >= dur - 30 || (t / dur) > 0.95)) return 0;
+              if (t > 5) return Math.round(t);
+            }
+          }
+          const posRaw = localStorage.getItem('playback_pos_' + chId);
+          if (posRaw) {
+            const pos = parseFloat(posRaw);
+            const durRaw = localStorage.getItem('playback_dur_' + chId);
+            const dur = durRaw ? parseFloat(durRaw) : 0;
+            if (dur > 0 && (pos >= dur - 30 || (pos / dur) > 0.95)) return 0;
+            if (!isNaN(pos) && pos > 5) return Math.round(pos);
+          }
+        } catch (e) {
+          console.warn('overlay getSavedPosition error:', e);
+        }
+        return 0;
+      }
+
+      function applyResumeSeek() {
+        if (!pendingResumeTime || pendingResumeTime <= 5 || hasResumedForCurrentMedia || currentContentMode === 'live') {
+          return;
+        }
+        const target = pendingResumeTime;
+        hasResumedForCurrentMedia = true;
+        pendingResumeTime = 0;
+        lastProgressSaveTime = Date.now() + 6000;
+        console.log('[overlay] Resuming playback at', target, 'seconds');
+        sendMpv(['seek', target, 'absolute']);
+        currentTime = target;
+        updateTimeUI();
+
+        clearTimeout(resumeSeekTimeout);
+        resumeSeekTimeout = setTimeout(() => {
+          if (currentContentMode !== 'live' && currentTime < 5 && target > 5) {
+            console.log('[overlay] Retrying seek to', target);
+            sendMpv(['seek', target, 'absolute']);
+          }
+        }, 900);
+      }
+
       function maybeSaveProgress() {
-        if (!currentActiveChannelId || duration <= 0 || currentTime <= 0) return;
+        if (!currentActiveChannelId || currentContentMode === 'live') return;
+        if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) return;
+        if (currentTime <= 5) return;
+        const effDuration = duration > 0 ? duration : (cachedDuration > 0 ? cachedDuration : 0);
         const now = Date.now();
         if (now - lastProgressSaveTime < 3000) return;
         lastProgressSaveTime = now;
         tauriEmit('save-playback-progress', {
           channelId: currentActiveChannelId,
-          time: currentTime,
-          duration: duration
+          time: Math.round(currentTime),
+          duration: Math.round(effDuration)
         });
       }
 
       function flushSaveProgress() {
-        if (!currentActiveChannelId || duration <= 0 || currentTime <= 0) return;
+        if (!currentActiveChannelId || currentContentMode === 'live') return;
+        if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) return;
+        if (currentTime <= 5) return;
+        const effDuration = duration > 0 ? duration : (cachedDuration > 0 ? cachedDuration : 0);
         lastProgressSaveTime = Date.now();
         tauriEmit('save-playback-progress', {
           channelId: currentActiveChannelId,
-          time: currentTime,
-          duration: duration
+          time: Math.round(currentTime),
+          duration: Math.round(effDuration)
         });
       }
 
@@ -3692,6 +3751,9 @@
             pollNerdStats();
             sendMpv(['get_property', 'demuxer-cache-duration'], 307);
             sendMpv(['get_property', 'demuxer-cache-state'], 308);
+            if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) {
+              applyResumeSeek();
+            }
             return;
           }
 
@@ -3706,6 +3768,10 @@
             switch (parsed.name) {
               case 'time-pos':
                 if (typeof parsed.data === 'number') {
+                  if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) {
+                    applyResumeSeek();
+                    return;
+                  }
                   currentTime = parsed.data;
                   updateTimeUI();
                 }
@@ -3713,6 +3779,9 @@
               case 'duration':
                 if (typeof parsed.data === 'number' && parsed.data > 0) {
                   duration = parsed.data;
+                  if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) {
+                    applyResumeSeek();
+                  }
                   updateTimeUI();
                 }
                 break;
@@ -3918,11 +3987,24 @@
       });
 
       tauriListen('embedded-player-started', (event) => {
-        if (event?.payload?.channel_id != null) {
-          currentActiveChannelId = event.payload.channel_id;
-        } else if (event?.payload?.channelId != null) {
-          currentActiveChannelId = event.payload.channelId;
+        const chId = event?.payload?.channel_id ?? event?.payload?.channelId;
+        if (chId != null) {
+          currentActiveChannelId = chId;
         }
+        const startTarget = (event?.payload?.startTime > 5)
+          ? Math.round(event.payload.startTime)
+          : getSavedPositionForChannel(currentActiveChannelId);
+
+        if (startTarget > 5 && currentContentMode !== 'live') {
+          pendingResumeTime = startTarget;
+          hasResumedForCurrentMedia = false;
+          lastProgressSaveTime = Date.now() + 8000;
+        } else {
+          pendingResumeTime = 0;
+          hasResumedForCurrentMedia = true;
+          lastProgressSaveTime = Date.now() + 2000;
+        }
+
         tracks = [];
         currentAid = null;
         currentSid = 'no';
@@ -3947,7 +4029,10 @@
       });
 
       tauriListen('embedded-poc-stopped', () => {
+        clearTimeout(resumeSeekTimeout);
         flushSaveProgress();
+        pendingResumeTime = 0;
+        hasResumedForCurrentMedia = false;
         currentActiveChannelId = null;
         setTopCrop(0);
         setContentMode('movie');

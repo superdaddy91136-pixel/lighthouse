@@ -2085,36 +2085,50 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       return Math.min(100, Math.max(0, Math.round(chAny.progress_percent)));
     }
     try {
-      const storeRaw = localStorage.getItem("fred_tv_watch_progress");
-      if (storeRaw) {
-        const store = JSON.parse(storeRaw);
-        if (store && store[channel.id]) {
-          const entry = store[channel.id];
-          const pct =
-            typeof entry === "number"
-              ? entry
-              : entry.percent ||
-                (entry.time && entry.duration && entry.duration > 0
-                  ? (entry.time / entry.duration) * 100
-                  : 0);
-          if (pct > 0) return Math.min(100, Math.max(1, Math.round(pct)));
+      const idsToCheck = [channel.id];
+      if (this.groupedHistoryIds.has(channel.id)) {
+        const grouped = this.groupedHistoryIds.get(channel.id) || [];
+        for (const gId of grouped) {
+          if (!idsToCheck.includes(gId)) idsToCheck.push(gId);
         }
       }
 
-      const itemKey =
-        localStorage.getItem(`watch_progress_${channel.id}`) ||
-        localStorage.getItem(`playback_pos_${channel.id}`);
-      if (itemKey) {
-        const val = parseFloat(itemKey);
-        if (!isNaN(val) && val > 0) {
-          const durKey = localStorage.getItem(`playback_dur_${channel.id}`);
-          if (durKey) {
-            const dur = parseFloat(durKey);
-            if (!isNaN(dur) && dur > 0) {
-              return Math.min(100, Math.max(1, Math.round((val / dur) * 100)));
+      const storeRaw = localStorage.getItem("fred_tv_watch_progress");
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        if (store) {
+          for (const id of idsToCheck) {
+            if (store[id]) {
+              const entry = store[id];
+              const pct =
+                typeof entry === "number"
+                  ? entry
+                  : entry.percent ||
+                    (entry.time && entry.duration && entry.duration > 0
+                      ? (entry.time / entry.duration) * 100
+                      : 0);
+              if (pct > 0) return Math.min(100, Math.max(1, Math.round(pct)));
             }
           }
-          return Math.min(100, Math.max(1, Math.round(val <= 1 ? val * 100 : val)));
+        }
+      }
+
+      for (const id of idsToCheck) {
+        const itemKey =
+          localStorage.getItem(`watch_progress_${id}`) ||
+          localStorage.getItem(`playback_pos_${id}`);
+        if (itemKey) {
+          const val = parseFloat(itemKey);
+          if (!isNaN(val) && val > 0) {
+            const durKey = localStorage.getItem(`playback_dur_${id}`);
+            if (durKey) {
+              const dur = parseFloat(durKey);
+              if (!isNaN(dur) && dur > 0) {
+                return Math.min(100, Math.max(1, Math.round((val / dur) * 100)));
+              }
+            }
+            return Math.min(100, Math.max(1, Math.round(val <= 1 ? val * 100 : val)));
+          }
         }
       }
     } catch {
