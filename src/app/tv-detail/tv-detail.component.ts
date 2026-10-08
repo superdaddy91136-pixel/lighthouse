@@ -806,6 +806,18 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       const epTitle = cleanMediaTitle(enrichedEp.title || `Episode ${enrichedEp.episodeNum}`);
       const overlayTitle = `${seriesName} - S${sNum}E${eNum}: ${epTitle}`;
 
+      // Ensure the season containing this episode is loaded so this.enrichedEpisodes matches enrichedEp.seasonNum
+      if (this.selectedSeasonNumber !== enrichedEp.seasonNum && this.seasons.length > 0) {
+        const targetSeason = this.seasons.find((s, idx) => {
+          const sMatch = s.name?.match(/(\d+)/);
+          const sNum = sMatch ? parseInt(sMatch[1], 10) : idx + 1;
+          return sNum === enrichedEp.seasonNum;
+        });
+        if (targetSeason) {
+          await this.selectSeason(targetSeason);
+        }
+      }
+
       this.cdr.detectChanges();
 
       await this.embeddedPlayer.startPlayer(playChannel, 'tv-video-canvas', {

@@ -184,7 +184,19 @@ export class EmbeddedPlayerService implements OnDestroy {
     });
 
     // Listen for episodes request from overlay
-    this.unlistenRequestEpisodes = await listen('request-player-episodes', () => {
+    this.unlistenRequestEpisodes = await listen('request-player-episodes', async () => {
+      if (this.currentMode === 'episode') {
+        if (this.episodes.length === 0) {
+          if (this.seasons.length === 0 && this.currentChannel) {
+            await this.loadSeriesAndSeasons(this.currentChannel, this.currentSeasonNum);
+          } else if (this.seasons.length > 0) {
+            const targetSeason = this.seasons.find((s) => s.seasonNum === this.currentSeasonNum) || this.seasons[0];
+            if (targetSeason) {
+              await this.loadEpisodesForSeason(targetSeason.id, targetSeason.seasonNum);
+            }
+          }
+        }
+      }
       this.emitEpisodesData();
     });
 
@@ -644,8 +656,23 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (options?.seriesChannel) this.seriesChannel = options.seriesChannel;
     if (options?.seriesTitle) this.seriesTitle = options.seriesTitle;
     if (options?.seasons) this.seasons = options.seasons;
-    if (options?.currentSeasonNum) this.currentSeasonNum = options.currentSeasonNum;
-    if (options?.episodes) this.episodes = options.episodes;
+    if (options?.currentSeasonNum) {
+      this.currentSeasonNum = options.currentSeasonNum;
+    } else if (this.currentMode === 'episode') {
+      this.currentSeasonNum = this.extractSeasonNumber(channel);
+    }
+    if (options?.episodes && options.episodes.length > 0) {
+      this.episodes = options.episodes;
+    } else if (this.currentMode === 'episode') {
+      if (this.seasons.length > 0) {
+        const targetSeason = this.seasons.find((s) => s.seasonNum === this.currentSeasonNum) || this.seasons[0];
+        if (targetSeason) {
+          this.loadEpisodesForSeason(targetSeason.id, targetSeason.seasonNum).catch(console.warn);
+        }
+      } else if (channel.series_id || (channel.url && /^\d+$/.test(channel.url.trim()))) {
+        this.loadSeriesAndSeasons(channel, this.currentSeasonNum).catch(console.warn);
+      }
+    }
     if (options?.onSwitchEpisode) this.onSwitchEpisodeCallback = options.onSwitchEpisode;
 
     // Live TV channel switcher options
@@ -820,7 +847,11 @@ export class EmbeddedPlayerService implements OnDestroy {
   public async loadEpisodesForSeason(seasonId: number, seasonNum: number): Promise<void> {
     if (!this.seriesChannel) return;
     try {
-      const seriesId = parseInt(this.seriesChannel.url || `${this.seriesChannel.id}`, 10);
+      const seriesId =
+        this.seriesChannel.series_id ||
+        (this.seriesChannel.url && /^\d+$/.test(this.seriesChannel.url.trim())
+          ? parseInt(this.seriesChannel.url.trim(), 10)
+          : this.seriesChannel.id);
       const sourceIds = this.seriesChannel.source_id
         ? [this.seriesChannel.source_id]
         : Array.from(this.memory.Sources.keys());
@@ -837,24 +868,79 @@ export class EmbeddedPlayerService implements OnDestroy {
       };
 
       const episodeChannels = (await invoke('search', { filters })) as Channel[];
-      this.currentSeasonNum = seasonNum;
-      this.episodes = (episodeChannels || []).map((ch, idx) => {
-        const epNum = ch.episode_num ?? (idx + 1);
-        return {
-          id: ch.id!,
-          channel: ch,
-          episodeNum: epNum,
-          seasonNum: seasonNum,
-          title: cleanMediaTitle(ch.name || `Episode ${epNum}`),
-          stillUrl: ch.image,
-          isWatched: (ch as any).last_watched != null,
-          isCurrent: ch.id === this.currentChannel?.id,
-        };
-      });
-
-      this.emitEpisodesData();
+      if (episodeChannels && episodeChannels.length > 0) {
+        this.currentSeasonNum = seasonNum;
+        this.episodes = episodeChannels.map((ch, idx) => {
+          const epNum = ch.episode_num ?? (idx + 1);
+          return {
+            id: ch.id!,
+            channel: ch,
+            episodeNum: epNum,
+            seasonNum: seasonNum,
+            title: cleanMediaTitle(ch.name || `Episode ${epNum}`),
+            stillUrl: ch.image,
+            isWatched: (ch as any).last_watched != null,
+            isCurrent: ch.id === this.currentChannel?.id,
+          };
+        });
+        this.emitEpisodesData();
+      } else if (this.episodes.length > 0) {
+        this.emitEpisodesData();
+      }
     } catch (e) {
       console.warn('Failed to load episodes for season in embedded player:', e);
+    }
+  }
+
+  public extractSeasonNumber(channel?: Channel): number {
+    if (!channel) return 1;
+    const chAny = channel as any;
+    if (chAny.seasonNum != null && chAny.seasonNum > 0) return Number(chAny.seasonNum);
+    if (chAny.season_number != null && chAny.season_number > 0) return Number(chAny.season_number);
+    if (chAny.season != null && typeof chAny.season === 'number' && chAny.season > 0) return chAny.season;
+    const name = channel.name || '';
+    const sMatch = name.match(/\b(?:s|season\s*)(\d{1,2})[\s._-]*(?:e|ep|episode|\b)/i) ||
+                  name.match(/\b(\d{1,2})x\d{1,2}\b/i);
+    if (sMatch) {
+      const parsed = parseInt(sMatch[1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 1;
+  }
+
+  public async loadSeriesAndSeasons(channel: Channel, targetSeasonNum: number): Promise<void> {
+    try {
+      const seriesId = channel.series_id || (channel.url && /^\d+$/.test(channel.url.trim()) ? parseInt(channel.url.trim(), 10) : undefined);
+      if (!seriesId) return;
+      const sourceIds = channel.source_id
+        ? [channel.source_id]
+        : Array.from(this.memory.Sources.keys());
+      const filters = {
+        source_ids: sourceIds,
+        series_id: seriesId,
+        media_types: [MediaType.serie],
+        view_type: ViewMode.All,
+        use_keywords: false,
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+      };
+      const seasonChannels = (await invoke('search', { filters })) as Channel[];
+      if (seasonChannels && seasonChannels.length > 0) {
+        this.seasons = seasonChannels.map((s, idx) => {
+          const sMatch = s.name?.match(/(\d+)/);
+          return {
+            id: s.id!,
+            seasonNum: sMatch ? parseInt(sMatch[1], 10) : idx + 1,
+            name: s.name || `Season ${idx + 1}`,
+          };
+        });
+        const targetSeason = this.seasons.find((s) => s.seasonNum === targetSeasonNum) || this.seasons[0];
+        if (targetSeason) {
+          await this.loadEpisodesForSeason(targetSeason.id, targetSeason.seasonNum);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load series and seasons in embedded player:', e);
     }
   }
 

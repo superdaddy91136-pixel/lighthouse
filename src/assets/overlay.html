@@ -2708,6 +2708,12 @@
           drawerEpisodes.classList.add('open');
           btnEpisodes.classList.add('active');
           tauriEmit('request-player-episodes');
+          setTimeout(() => {
+            const currentCard = episodeListContainer.querySelector('.episode-card.current');
+            if (currentCard) {
+              currentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 80);
         }
         showControls();
       });
@@ -2722,6 +2728,7 @@
         const selectedId = Number(e.target.value);
         const selSeason = episodesData.seasons.find((s) => s.id === selectedId);
         if (selSeason) {
+          episodesData.currentSeasonNum = selSeason.seasonNum;
           tauriEmit('request-change-season', {
             seasonId: selSeason.id,
             seasonNum: selSeason.seasonNum,
@@ -2732,18 +2739,27 @@
       function renderEpisodes() {
         episodesSeriesTitle.textContent = episodesData.seriesTitle || 'Episodes';
 
+        const curSeasonNum = Number(episodesData.currentSeasonNum || 1);
+
         // Render Season Dropdown
         seasonSelect.innerHTML = '';
         if (episodesData.seasons && episodesData.seasons.length > 0) {
+          let matchedSeasonOpt = null;
           episodesData.seasons.forEach((s) => {
             const opt = document.createElement('option');
             opt.value = s.id;
             opt.textContent = s.name || `Season ${s.seasonNum}`;
-            if (s.seasonNum === episodesData.currentSeasonNum) {
+            if (Number(s.seasonNum) === curSeasonNum) {
               opt.selected = true;
+              matchedSeasonOpt = opt;
             }
             seasonSelect.appendChild(opt);
           });
+          if (matchedSeasonOpt) {
+            seasonSelect.value = matchedSeasonOpt.value;
+          } else if (episodesData.seasons.length > 0) {
+            seasonSelect.selectedIndex = 0;
+          }
           seasonSelect.style.display = 'block';
         } else {
           seasonSelect.style.display = 'none';
@@ -2760,7 +2776,9 @@
         }
 
         episodesData.episodes.forEach((ep) => {
-          const isCurrent = ep.id === episodesData.currentEpisodeId || ep.isCurrent;
+          const isCurrent =
+            (ep.id != null && (ep.id === episodesData.currentEpisodeId || ep.id === currentActiveChannelId)) ||
+            ep.isCurrent;
           const card = document.createElement('div');
           card.className = `episode-card ${isCurrent ? 'current' : ''}`;
 
@@ -2801,6 +2819,15 @@
 
           episodeListContainer.appendChild(card);
         });
+
+        // Auto-scroll to the currently playing episode card
+        const currentCard = episodeListContainer.querySelector('.episode-card.current');
+        if (currentCard) {
+          requestAnimationFrame(() => {
+            currentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
+        }
+
         updateNextEpisodeBtnState();
         renderFormattedTitles();
       }
@@ -3945,12 +3972,21 @@
           if (event.payload.currentEpisodeId != null) {
             currentActiveChannelId = event.payload.currentEpisodeId;
           }
+          const incomingSeasonNum = event.payload.currentSeasonNum != null
+            ? Number(event.payload.currentSeasonNum)
+            : (episodesData.currentSeasonNum || 1);
+          const hasIncomingEpisodes = Array.isArray(event.payload.episodes) && event.payload.episodes.length > 0;
+          const keepExisting = !hasIncomingEpisodes && episodesData.episodes && episodesData.episodes.length > 0 &&
+            (incomingSeasonNum === episodesData.currentSeasonNum || !event.payload.episodes);
+
           episodesData = {
-            seriesTitle: event.payload.seriesTitle || '',
-            seasons: event.payload.seasons || [],
-            currentSeasonNum: event.payload.currentSeasonNum || 1,
-            currentEpisodeId: event.payload.currentEpisodeId,
-            episodes: event.payload.episodes || []
+            seriesTitle: event.payload.seriesTitle || episodesData.seriesTitle || '',
+            seasons: (Array.isArray(event.payload.seasons) && event.payload.seasons.length > 0)
+              ? event.payload.seasons
+              : (episodesData.seasons || []),
+            currentSeasonNum: incomingSeasonNum,
+            currentEpisodeId: event.payload.currentEpisodeId ?? episodesData.currentEpisodeId,
+            episodes: keepExisting ? episodesData.episodes : (event.payload.episodes || [])
           };
           renderEpisodes();
         }

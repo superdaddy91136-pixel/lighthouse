@@ -351,12 +351,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     invoke("add_last_watched", { id: channel.id }).catch(console.error);
 
     const savedPos = this.embeddedPlayer.getSavedPosition(channel.id, channel);
+    const seasonNum = isTv ? this.embeddedPlayer.extractSeasonNumber(channel) : undefined;
 
     try {
       await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
         title,
         mode: isTv ? 'episode' : 'movie',
         startTime: savedPos,
+        currentSeasonNum: seasonNum,
       });
     } catch (e) {
       console.error('Failed to resume media:', e);
