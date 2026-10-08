@@ -123,29 +123,3 @@ bc1q7v27u4mrxhtqzl97pcp4vl52npss760epsheu3
 
 ETH:
 ```
-0x171D5B628eff75c98c141aD5584FffA209274365
-```
-
-LTC:
-```
-ltc1qzxgp2grt9ayvpv0dur7lgzgf88yp09h2ytmga0
-```
-
-BCH:
-```
-bitcoincash:qz4mauqyytkvhp9yze0qhgn2nnlv4z5glckyysxg2n
-```
-
-SOL:
-```
-AM7roSrxBKrS5mG7q6aXnQHZKh3ArtBxvG3x1B1VjKhj
-```
-
-BNB:
-```
-0x0C8C5217a8044b3736aD82CCFB9f099597b65253
-```
-
-## Disclaimer
-
-Fred TV is an independent open-source project created to provide a fast and powerful IPTV experience. The name "Fred TV" is used solely to represent this specific software and its purpose as described in the project documentation. Any other software, applications, or products bearing the same or similar name are unrelated to this project. Any resemblance to other software or applications is purely coincidental and unintended. We do not intend to cause confusion or imply affiliation with any other products or organizations that may share a similar name.
