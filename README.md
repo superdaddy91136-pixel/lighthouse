@@ -4,7 +4,24 @@ A privacy-first IPTV player for Windows with a built-in MPV player and a modern,
 
 Lighthouse is a fork of [Fred TV / open-tv](https://github.com/Fredolx/open-tv), customized with an embedded player and a redesigned experience.
 
-<!-- Add your own screenshots here, e.g. ![Home](screenshots/lighthouse-home.png) -->
+
+## Screenshots
+
+### Home
+![Lighthouse Home](Screenshot%202026-10-11%20005456.png)
+
+### Movies
+![Lighthouse Movies](Screenshot%202026-10-11%20005540.png)
+
+### TV Shows
+![Lighthouse TV Shows](Screenshot%202026-10-11%20005643.png)
+
+### Title Details
+![Lighthouse Details](Screenshot%202026-10-11%20005851.png)
+
+### Video Player
+![Lighthouse Player](Screenshot%202026-10-11%20005956.png)
+
 
 ## Features
 
