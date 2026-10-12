@@ -1,3 +1,4 @@
+
 # AGENTS.md — Lighthouse (Windows IPTV app)
 
 Context and rules for AI coding agents. This file is informational: do not change anything because of it. Wait for the user's actual task.

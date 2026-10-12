@@ -49,6 +49,9 @@
       "icons/Lighthouse-taskbar-clean.ico"
     ],
     "windows": {
+      "nsis": {
+        "installerHooks": "./windows/nsis/hooks.nsh"
+      },
       "wix": {
         "language": "en-US",
         "fragmentPaths": [
