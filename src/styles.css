@@ -805,22 +805,18 @@ body {
 
 /* Thin playback progress bar for Continue Watching */
 .cw-progress-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  width: calc(100% - 64px);
   height: 4px;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  z-index: 5;
+  margin: 6px auto 0;
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: 2px;
   overflow: hidden;
 }
 
 .cw-progress-fill {
   height: 100%;
-  background: #ffffff;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  background: #e50914;
+  box-shadow: 0 0 8px rgba(229, 9, 20, 0.6);
   border-radius: 0 2px 2px 0;
   transition: width 0.3s ease;
 }

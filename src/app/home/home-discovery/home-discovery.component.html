@@ -208,10 +208,11 @@
                 </div>
               </div>
 
-              <!-- Thin Playback Progress Bar for Continue Watching -->
-              <div *ngIf="row.id === 'row-continue-watching' && getWatchProgress(item) > 0" class="cw-progress-track">
-                <div class="cw-progress-fill" [style.width.%]="getWatchProgress(item)"></div>
-              </div>
+            </div>
+
+            <!-- Thin Playback Progress Bar for Continue Watching -->
+            <div *ngIf="row.id === 'row-continue-watching' && getWatchProgress(item) > 0" class="cw-progress-track">
+              <div class="cw-progress-fill" [style.width.%]="getWatchProgress(item)"></div>
             </div>
           </div>
         </div>
