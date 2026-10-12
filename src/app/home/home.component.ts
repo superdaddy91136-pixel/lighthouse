@@ -1,5 +1,6 @@
 import {
   AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   HostListener,
@@ -46,13 +47,9 @@ import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.c
 import { PinService } from '../services/pin.service';
 import { EmbeddedPlayerService } from '../services/embedded-player.service';
 import { MovieDetailService } from '../services/movie-detail.service';
+import { SearchStateService, UniversalSearchResults, TabSearchState } from '../services/search-state.service';
 
-export interface UniversalSearchResults {
-  channels: Channel[];
-  movies: Channel[];
-  tvShows: Channel[];
-  categories: Channel[];
-}
+export { UniversalSearchResults, TabSearchState };
 
 @Component({
   selector: "app-home",
@@ -108,7 +105,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   channelsVisible = true;
   prevSearchValue: String = "";
   loading = false;
-  nodeStack: Stack = new Stack();
+  get nodeStack(): Stack {
+    return this.memory.nodeStack;
+  }
   showScrollTop = false;
   @ViewChild(ChannelSwitcherComponent) channelSwitcher?: ChannelSwitcherComponent;
   livePlayingChannel?: Channel;
@@ -130,6 +129,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   searchTypeFilter: 'all' | 'movies' | 'tv' | 'live' = 'all';
   searchSortBy: 'provider' | 'alphabetical' = 'provider';
   searchSortOrder: 'asc' | 'desc' = 'asc';
+  private searchRequestId = 0;
+  private pendingTabClick?: NavTab;
 
   get isSearching(): boolean {
     return !!(this.filters?.query && this.filters.query.trim().length > 0);
@@ -166,16 +167,37 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   setSearchTypeFilter(filter: 'all' | 'movies' | 'tv' | 'live'): void {
     this.searchTypeFilter = filter;
     this.applySearchSortAndFilter();
+    this.saveCurrentTabSearchState();
   }
 
   setSearchSortBy(sortBy: 'provider' | 'alphabetical'): void {
     this.searchSortBy = sortBy;
     this.applySearchSortAndFilter();
+    this.saveCurrentTabSearchState();
   }
 
   setSearchSortOrder(order: 'asc' | 'desc'): void {
     this.searchSortOrder = order;
     this.applySearchSortAndFilter();
+    this.saveCurrentTabSearchState();
+  }
+
+  private saveCurrentTabSearchState(): void {
+    const tab = this.memory.activeNavTab.value;
+    if (this.isSearching) {
+      this.searchStateService.setSearchState(tab, {
+        query: this.filters?.query || "",
+        searchKeyword: this.searchKeyword,
+        rawSearchResults: this.rawSearchResults,
+        searchResults: this.searchResults,
+        searchTypeFilter: this.searchTypeFilter,
+        searchSortBy: this.searchSortBy,
+        searchSortOrder: this.searchSortOrder,
+        isSearchExpanded: this.isSearchExpanded,
+      });
+    } else {
+      this.searchStateService.clearSearchState(tab);
+    }
   }
 
   private sortList(list: Channel[]): Channel[] {
@@ -404,6 +426,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     private movieDetailService: MovieDetailService,
     public pinService: PinService,
     public embeddedPlayer: EmbeddedPlayerService,
+    private searchStateService: SearchStateService,
+    private cdr: ChangeDetectorRef,
   ) {
     this.getSources();
     this.updatePinnedItems();
@@ -455,21 +479,21 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             this.chkLiveStream = true;
             this.chkMovie = false;
             this.chkSerie = false;
-            initialViewType = ViewMode.Categories;
+            initialViewType = ViewMode.All;
             this.memory.activeNavTab.next(NavTab.LiveTV);
           } else if (currentTab === NavTab.Movies) {
             initialMediaTypes = [MediaType.movie];
             this.chkLiveStream = false;
             this.chkMovie = true;
             this.chkSerie = false;
-            initialViewType = ViewMode.Categories;
+            initialViewType = ViewMode.All;
             this.memory.activeNavTab.next(NavTab.Movies);
           } else if (currentTab === NavTab.TVShows) {
             initialMediaTypes = [MediaType.serie];
             this.chkLiveStream = false;
             this.chkMovie = false;
             this.chkSerie = true;
-            initialViewType = ViewMode.Categories;
+            initialViewType = ViewMode.All;
             this.memory.activeNavTab.next(NavTab.TVShows);
           } else {
             this.chkLiveStream = false;
@@ -495,11 +519,58 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
           if (currentTab !== NavTab.LiveTV && currentTab !== NavTab.Movies && currentTab !== NavTab.TVShows) {
             this.chkSerie = this.anyXtream();
           }
+
+          if (this.nodeStack.hasNodes()) {
+            const topNode = this.nodeStack.get();
+            if (topNode) {
+              if (topNode.type === NodeType.Category) {
+                this.filters.group_id = topNode.id;
+                this.filters.view_type = ViewMode.Categories;
+              } else if (topNode.type === NodeType.Series) {
+                this.filters.series_id = topNode.id;
+              } else if (topNode.type === NodeType.Season) {
+                this.filters.season = topNode.id;
+              }
+            }
+          }
+
+          if (this.pendingTabClick !== undefined) {
+            const tab = this.pendingTabClick;
+            this.pendingTabClick = undefined;
+            this.handleNavTabClick(tab);
+            return;
+          }
+
+          const savedSearch = this.searchStateService.getSearchState(currentTab);
+          if (savedSearch && savedSearch.query && savedSearch.query.trim().length > 0) {
+            this.filters.query = savedSearch.query;
+            this.searchKeyword = savedSearch.searchKeyword;
+            this.rawSearchResults = savedSearch.rawSearchResults;
+            this.searchResults = savedSearch.searchResults;
+            this.searchTypeFilter = savedSearch.searchTypeFilter;
+            this.searchSortBy = savedSearch.searchSortBy;
+            this.searchSortOrder = savedSearch.searchSortOrder;
+            this.isSearchExpanded = savedSearch.isSearchExpanded;
+            this.prevSearchValue = savedSearch.query;
+            this.channelsVisible = true;
+            if (this.search?.nativeElement) {
+              this.search.nativeElement.value = savedSearch.query;
+            }
+            return;
+          }
+
           if (settings.refresh_on_start === true && !sessionStorage.getItem("refreshedOnStart")) {
             sessionStorage.setItem("refreshedOnStart", "true");
             this.refreshOnStart().then((_) => _);
           }
-          this.load().then((_) => _);
+          this.load().then(() => {
+            if (this.filters?.view_type === ViewMode.Categories && !this.filters?.group_id) {
+              const savedCatScroll = this.memory.categoryScrollPositions.get(currentTab);
+              if (savedCatScroll && savedCatScroll > 0) {
+                this.restoreScrollPosition(savedCatScroll);
+              }
+            }
+          });
         }
       })
       .catch((e) => {
@@ -540,6 +611,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     );
     this.subscriptions.push(
       this.memory.SetNode.subscribe(async (dto) => {
+        const currentTab = this.memory.activeNavTab.value;
+        const currentScroll = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
+        if (dto.type == NodeType.Category) {
+          this.memory.categoryScrollPositions.set(currentTab, currentScroll);
+        }
         this.nodeStack.add(
           new Node(
             dto.id,
@@ -548,11 +624,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             this.filters?.query,
             this.filters?.view_type,
             this.filters?.media_types ? [...this.filters.media_types] : undefined,
+            currentScroll,
           ),
         );
         if (dto.type == NodeType.Category) {
           this.filters!.group_id = dto.id;
-          const currentTab = this.memory.activeNavTab.value;
           if (currentTab === NavTab.LiveTV) {
             this.filters!.media_types = [MediaType.livestream];
           } else if (currentTab === NavTab.Movies) {
@@ -574,6 +650,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
         this.clearSearch();
         await this.load();
+        window.scrollTo({ top: 0, behavior: "instant" });
         if (this.focusArea == FocusArea.Tiles) this.selectFirstChannelDelayed(100);
       }),
     );
@@ -609,12 +686,18 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   clearSearch() {
-    this.search.nativeElement.value = "";
+    this.searchRequestId++;
+    if (this.search?.nativeElement) {
+      this.search.nativeElement.value = "";
+    }
     this.prevSearchValue = "";
-    this.filters!.query = "";
+    if (this.filters) {
+      this.filters.query = "";
+    }
     this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
     this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
     this.searchKeyword = "";
+    this.searchStateService.clearSearchState(this.memory.activeNavTab.value);
   }
 
   async loadMore() {
@@ -645,8 +728,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (!query) {
       this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
+      this.searchStateService.clearSearchState(this.memory.activeNavTab.value);
       return;
     }
+
+    const currentTab = this.memory.activeNavTab.value;
+    const searchId = ++this.searchRequestId;
 
     const sourceIds = this.filters?.source_ids?.length
       ? this.filters.source_ids
@@ -655,6 +742,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (sourceIds.length === 0) {
       this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
+      this.searchStateService.clearSearchState(currentTab);
       return;
     }
 
@@ -722,7 +810,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       return this.dedupeChannels(list);
     };
 
-    const currentTab = this.memory.activeNavTab.value;
     let fetchChannelsPromise: Promise<Channel[]> = Promise.resolve([]);
     let fetchMoviesPromise: Promise<Channel[]> = Promise.resolve([]);
     let fetchTvShowsPromise: Promise<Channel[]> = Promise.resolve([]);
@@ -758,9 +845,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       fetchCategoriesPromise,
     ]);
 
+    if (searchId !== this.searchRequestId || currentTab !== this.memory.activeNavTab.value) {
+      return;
+    }
+
     this.rawSearchResults = { channels, movies, tvShows, categories };
     this.applySearchSortAndFilter();
     this.channelsVisible = true;
+    this.saveCurrentTabSearchState();
   }
 
   async load(more = false) {
@@ -817,6 +909,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
+    if (this.search?.nativeElement && this.filters?.query) {
+      this.search.nativeElement.value = this.filters.query;
+      this.prevSearchValue = this.filters.query;
+    }
     this.addEvents().then((_) => _);
     this.subscriptions.push(
       fromEvent(this.search.nativeElement, "keyup")
@@ -833,6 +929,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
           debounceTime(300),
         )
         .subscribe(async (term: string) => {
+          const currentInput = this.search?.nativeElement?.value ?? "";
+          if (currentInput !== term) {
+            return;
+          }
           this.filters!.query = term;
           await this.load();
         }),
@@ -939,9 +1039,18 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   handleNavTabClick(tab: NavTab) {
-    if (!this.filters) return;
+    if (!this.filters) {
+      this.pendingTabClick = tab;
+      return;
+    }
+    this.searchRequestId++;
     this.nodeStack.clear();
+    this.memory.categoryScrollPositions.delete(tab);
     this.clearSearch();
+    this.isSearchExpanded = false;
+    if (this.search?.nativeElement) {
+      this.search.nativeElement.blur();
+    }
     this.filters.series_id = undefined;
     this.filters.group_id = undefined;
     this.filters.season = undefined;
@@ -951,21 +1060,21 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         this.chkMovie = false;
         this.chkSerie = false;
         this.filters.media_types = [MediaType.livestream];
-        this.filters.view_type = ViewMode.Categories;
+        this.filters.view_type = ViewMode.All;
         break;
       case NavTab.Movies:
         this.chkLiveStream = false;
         this.chkMovie = true;
         this.chkSerie = false;
         this.filters.media_types = [MediaType.movie];
-        this.filters.view_type = ViewMode.Categories;
+        this.filters.view_type = ViewMode.All;
         break;
       case NavTab.TVShows:
         this.chkLiveStream = false;
         this.chkMovie = false;
         this.chkSerie = true;
         this.filters.media_types = [MediaType.serie];
-        this.filters.view_type = ViewMode.Categories;
+        this.filters.view_type = ViewMode.All;
         break;
       case NavTab.Home:
       default:
@@ -977,7 +1086,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         break;
     }
     this.load();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "instant" });
   }
 
   syncActiveNavTab() {
@@ -1006,6 +1115,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
   async switchMode(viewMode: ViewMode) {
     if (viewMode == this.filters?.view_type && !this.filters?.group_id && !this.filters?.series_id) return;
+    const wasInFolder = !!this.filters?.group_id;
+    const currentTab = this.memory.activeNavTab.value;
     this.filters!.series_id = undefined;
     this.filters!.group_id = undefined;
     this.filters!.view_type = viewMode;
@@ -1013,6 +1124,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.clearSearch();
     this.nodeStack.clear();
     await this.load();
+    if (viewMode === ViewMode.Categories && wasInFolder) {
+      const savedCatScroll = this.memory.categoryScrollPositions.get(currentTab);
+      if (savedCatScroll && savedCatScroll > 0) {
+        await this.restoreScrollPosition(savedCatScroll);
+      }
+    }
   }
 
   searchFocused(): boolean {
@@ -1056,7 +1173,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       this.selectFirstChannelDelayed(100);
     } else if (this.nodeStack.hasNodes()) {
       await this.goBack();
-      this.selectFirstChannelDelayed(100);
+      this.focusArea = FocusArea.Tiles;
+      this.focus = 0;
+      this.selectFirstChannel(true);
     } else {
       this.selectFirstChannel();
     }
@@ -1067,14 +1186,20 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   async goBack() {
+    let targetScrollPosition: number | undefined;
+    const currentTab = this.memory.activeNavTab.value;
     if (this.nodeStack.hasNodes()) {
       var node = this.nodeStack.pop();
-      if (node.type == NodeType.Category) this.filters!.group_id = undefined;
-      else if (node.type == NodeType.Series) {
+      if (node.type == NodeType.Category) {
+        this.filters!.group_id = undefined;
+        targetScrollPosition = node.scrollPosition ?? this.memory.categoryScrollPositions.get(currentTab);
+      } else if (node.type == NodeType.Series) {
         this.filters!.series_id = undefined;
         this.filters!.source_ids = Array.from(this.memory.Sources.keys());
+        targetScrollPosition = node.scrollPosition;
       } else if (node.type == NodeType.Season) {
         this.filters!.season = undefined;
+        targetScrollPosition = node.scrollPosition;
       }
       if (node.fromMediaTypes && node.fromMediaTypes.length > 0) {
         this.filters!.media_types = [...node.fromMediaTypes];
@@ -1091,8 +1216,37 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       this.filters!.series_id = undefined;
       this.filters!.season = undefined;
       this.filters!.view_type = ViewMode.Categories;
+      targetScrollPosition = this.memory.categoryScrollPositions.get(currentTab);
     }
     await this.load();
+    if (targetScrollPosition !== undefined && targetScrollPosition > 0) {
+      await this.restoreScrollPosition(targetScrollPosition);
+    }
+  }
+
+  private async restoreScrollPosition(targetY: number): Promise<void> {
+    this.cdr.detectChanges();
+    let safetyCount = 0;
+    while (
+      !this.reachedMax &&
+      targetY > (document.documentElement.scrollHeight - window.innerHeight) &&
+      this.channels.length > 0 &&
+      safetyCount < 10
+    ) {
+      safetyCount++;
+      await this.load(true);
+      this.cdr.detectChanges();
+    }
+
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: targetY, behavior: "instant" });
+      requestAnimationFrame(() => {
+        const currentY = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
+        if (Math.abs(currentY - targetY) > 5) {
+          window.scrollTo({ top: targetY, behavior: "instant" });
+        }
+      });
+    });
   }
 
   onSearchKeydown(event: KeyboardEvent) {
@@ -1237,10 +1391,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       (document.activeElement as any).click();
   }
 
-  selectFirstChannel() {
+  selectFirstChannel(preventScroll: boolean = false) {
     this.focusArea = FocusArea.Tiles;
     this.focus = 0;
-    (document.getElementById("first")?.firstChild as HTMLElement)?.focus();
+    (document.getElementById("first")?.firstChild as HTMLElement)?.focus({ preventScroll });
   }
 
   closeContextMenu() {

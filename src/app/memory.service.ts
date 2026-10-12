@@ -10,6 +10,7 @@ import { SortType } from "./models/sortType";
 import { LAST_SEEN_VERSION } from "./models/localStorage";
 import { SetNodeDTO } from "./models/setNodeDTO";
 import { NavTab } from "./models/navTab";
+import { Stack } from "./models/stack";
 
 @Injectable({
   providedIn: "root",
@@ -35,6 +36,8 @@ export class MemoryService {
   }
   public activeNavTab: BehaviorSubject<NavTab> = new BehaviorSubject<NavTab>(this.getInitialStartupTab());
   public navTabClick: Subject<NavTab> = new Subject<NavTab>();
+  public nodeStack: Stack = new Stack();
+  public categoryScrollPositions: Map<NavTab, number> = new Map();
   public SetNode: Subject<SetNodeDTO> = new Subject();
   public SetFocus: Subject<number> = new Subject();
   public Sort: BehaviorSubject<[number, boolean]> = new BehaviorSubject<[number, boolean]>([

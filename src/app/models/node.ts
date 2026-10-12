@@ -18,13 +18,14 @@ export class Node {
     type: NodeType,
     query?: string,
     fromViewType?: ViewMode,
-    fromMediaTypes?: MediaType[]
+    fromMediaTypes?: MediaType[],
+    scrollPosition?: number
   ) {
     this.id = id;
     this.name = name;
     this.type = type;
     this.query = query;
-    this.scrollPosition = window.scrollY;
+    this.scrollPosition = scrollPosition ?? (typeof window !== 'undefined' ? (window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0) : 0);
     this.fromViewType = fromViewType;
     this.fromMediaTypes = fromMediaTypes;
   }
