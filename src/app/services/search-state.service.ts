@@ -18,6 +18,7 @@ export interface TabSearchState {
   searchSortBy: 'provider' | 'alphabetical';
   searchSortOrder: 'asc' | 'desc';
   isSearchExpanded: boolean;
+  scrollPosition?: number;
 }
 
 @Injectable({

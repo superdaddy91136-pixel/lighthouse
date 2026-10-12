@@ -30,9 +30,6 @@ export class TvDetailService {
     } catch (e) {
       console.warn('Failed to save TV show to sessionStorage', e);
     }
-    try {
-      window.scrollTo(0, 0);
-    } catch {}
     this.router.navigate(['tv-detail']);
   }
 

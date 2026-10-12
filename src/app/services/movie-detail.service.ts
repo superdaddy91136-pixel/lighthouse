@@ -30,9 +30,6 @@ export class MovieDetailService {
     } catch (e) {
       console.warn('Failed to save movie to sessionStorage', e);
     }
-    try {
-      window.scrollTo(0, 0);
-    } catch {}
     this.router.navigate(['movie-detail']);
   }
 

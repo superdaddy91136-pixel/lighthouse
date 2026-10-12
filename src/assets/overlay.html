@@ -2536,6 +2536,8 @@
       }
 
       function closeAllPanels() {
+        cancelHoverCloseTimer();
+        activeHoverMenu = null;
         modalAudioSubs.classList.remove('open');
         drawerEpisodes.classList.remove('open');
         drawerChannels.classList.remove('open');
@@ -2552,6 +2554,7 @@
         btnAudioSubs.blur();
         if (btnSpeed) btnSpeed.blur();
         if (btnInfo) btnInfo.blur();
+        channelSwitcherState.isOpen = false;
         clearInterval(nerdStatsInterval);
         nerdStatsInterval = null;
       }
@@ -2804,22 +2807,37 @@
         sendMpv(['get_property', 'sid'], 202);
       }
 
+      function openAudioSubsMenu() {
+        if (modalAudioSubs.classList.contains('open')) return;
+        closeAllPanels();
+        modalAudioSubs.classList.add('open');
+        btnAudioSubs.classList.add('active');
+        requestTrackInfo();
+        activeHoverMenu = 'audioSubs';
+        showControls();
+      }
+
+      function closeAudioSubsMenu() {
+        if (!modalAudioSubs.classList.contains('open')) return;
+        modalAudioSubs.classList.remove('open');
+        btnAudioSubs.classList.remove('active');
+        btnAudioSubs.blur();
+        if (activeHoverMenu === 'audioSubs') activeHoverMenu = null;
+        showControls();
+      }
+
       btnAudioSubs.addEventListener('click', (e) => {
         e.stopPropagation();
-        const wasOpen = modalAudioSubs.classList.contains('open');
-        closeAllPanels();
-        if (!wasOpen) {
-          modalAudioSubs.classList.add('open');
-          btnAudioSubs.classList.add('active');
-          requestTrackInfo();
+        if (modalAudioSubs.classList.contains('open')) {
+          closeAudioSubsMenu();
+        } else {
+          openAudioSubsMenu();
         }
-        showControls();
       });
 
       btnCloseAudioSubs.addEventListener('click', (e) => {
         e.stopPropagation();
-        closeAllPanels();
-        showControls();
+        closeAudioSubsMenu();
       });
 
       modalAudioSubs.addEventListener('click', (e) => {
@@ -3122,28 +3140,44 @@
       }
 
       // EPISODES DRAWER LOGIC
+      function openEpisodesMenu() {
+        if (drawerEpisodes.classList.contains('open')) return;
+        if (currentContentMode !== 'episode') return;
+        closeAllPanels();
+        drawerEpisodes.classList.add('open');
+        btnEpisodes.classList.add('active');
+        activeHoverMenu = 'episodes';
+        tauriEmit('request-player-episodes');
+        setTimeout(() => {
+          const currentCard = episodeListContainer ? episodeListContainer.querySelector('.episode-card.current') : null;
+          if (currentCard) {
+            currentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 80);
+        showControls();
+      }
+
+      function closeEpisodesMenu() {
+        if (!drawerEpisodes.classList.contains('open')) return;
+        drawerEpisodes.classList.remove('open');
+        btnEpisodes.classList.remove('active');
+        btnEpisodes.blur();
+        if (activeHoverMenu === 'episodes') activeHoverMenu = null;
+        showControls();
+      }
+
       btnEpisodes.addEventListener('click', (e) => {
         e.stopPropagation();
-        const wasOpen = drawerEpisodes.classList.contains('open');
-        closeAllPanels();
-        if (!wasOpen) {
-          drawerEpisodes.classList.add('open');
-          btnEpisodes.classList.add('active');
-          tauriEmit('request-player-episodes');
-          setTimeout(() => {
-            const currentCard = episodeListContainer.querySelector('.episode-card.current');
-            if (currentCard) {
-              currentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 80);
+        if (drawerEpisodes.classList.contains('open')) {
+          closeEpisodesMenu();
+        } else {
+          openEpisodesMenu();
         }
-        showControls();
       });
 
       btnCloseEpisodesDrawer.addEventListener('click', (e) => {
         e.stopPropagation();
-        closeAllPanels();
-        showControls();
+        closeEpisodesMenu();
       });
 
       seasonSelect.addEventListener('change', (e) => {
@@ -3356,16 +3390,35 @@
         showControls();
       }
 
+      function openSpeedMenu() {
+        if (!speedMenu || speedMenu.classList.contains('open')) return;
+        if (currentContentMode === 'live') return;
+        closeAllPanels();
+        speedMenu.classList.add('open');
+        if (btnSpeed) btnSpeed.classList.add('active');
+        activeHoverMenu = 'speed';
+        showControls();
+      }
+
+      function closeSpeedMenu() {
+        if (!speedMenu || !speedMenu.classList.contains('open')) return;
+        speedMenu.classList.remove('open');
+        if (btnSpeed) {
+          btnSpeed.classList.remove('active');
+          btnSpeed.blur();
+        }
+        if (activeHoverMenu === 'speed') activeHoverMenu = null;
+        showControls();
+      }
+
       if (btnSpeed && speedMenu) {
         btnSpeed.addEventListener('click', (e) => {
           e.stopPropagation();
-          const wasOpen = speedMenu.classList.contains('open');
-          closeAllPanels();
-          if (!wasOpen) {
-            speedMenu.classList.add('open');
-            btnSpeed.classList.add('active');
+          if (speedMenu.classList.contains('open')) {
+            closeSpeedMenu();
+          } else {
+            openSpeedMenu();
           }
-          showControls();
         });
 
         speedMenu.addEventListener('click', (e) => {
@@ -3739,10 +3792,11 @@
         showControls();
       });
 
-      async function openChannelsDrawer() {
+      async function openChannelsDrawer(focusSearch = false) {
         drawerChannels.classList.add('open');
         btnChannels.classList.add('active');
         channelSwitcherState.isOpen = true;
+        activeHoverMenu = 'channels';
         if (channelSearchInput) channelSearchInput.value = '';
         if (btnChannelSearchClear) btnChannelSearchClear.style.display = 'none';
         channelSwitcherState.isSearching = false;
@@ -3758,25 +3812,41 @@
           selectFolder(null, 'All Channels');
         }
 
-        if (channelSearchInput) {
+        if (focusSearch && channelSearchInput) {
           setTimeout(() => channelSearchInput.focus(), 100);
         }
       }
 
+      function openChannelsMenu(focusSearch = false) {
+        if (drawerChannels.classList.contains('open')) return;
+        if (currentContentMode !== 'live') return;
+        closeAllPanels();
+        openChannelsDrawer(focusSearch);
+        showControls();
+      }
+
+      function closeChannelsMenu() {
+        if (!drawerChannels.classList.contains('open')) return;
+        drawerChannels.classList.remove('open');
+        btnChannels.classList.remove('active');
+        btnChannels.blur();
+        channelSwitcherState.isOpen = false;
+        if (activeHoverMenu === 'channels') activeHoverMenu = null;
+        showControls();
+      }
+
       btnChannels.addEventListener('click', (e) => {
         e.stopPropagation();
-        const wasOpen = drawerChannels.classList.contains('open');
-        closeAllPanels();
-        if (!wasOpen) {
-          openChannelsDrawer();
+        if (drawerChannels.classList.contains('open')) {
+          closeChannelsMenu();
+        } else {
+          openChannelsMenu(true);
         }
-        showControls();
       });
 
       btnCloseChannelsDrawer.addEventListener('click', (e) => {
         e.stopPropagation();
-        closeAllPanels();
-        showControls();
+        closeChannelsMenu();
       });
 
       if (channelSearchInput) {
@@ -3861,6 +3931,175 @@
           if (channelSwitcherState.isSearching || channelSwitcherState.channelsLoading || !channelSwitcherState.channelsHasMore) return;
           if (channelListContainer.scrollTop + channelListContainer.clientHeight >= channelListContainer.scrollHeight - 60) {
             loadFolderChannels(channelSwitcherState.selectedFolderId, channelSwitcherState.channelsPage + 1, true);
+          }
+        });
+      }
+
+      // HOVER-ACTIVATED MENUS CONTROLLER
+      const HOVER_CLOSE_DELAY_MS = 300;
+      let activeHoverMenu = null; // 'audioSubs' | 'speed' | 'episodes' | 'channels' | null
+      let hoverCloseTimer = null;
+
+      function cancelHoverCloseTimer() {
+        if (hoverCloseTimer) {
+          clearTimeout(hoverCloseTimer);
+          hoverCloseTimer = null;
+        }
+      }
+
+      function startHoverCloseTimer(menuKey) {
+        cancelHoverCloseTimer();
+        hoverCloseTimer = setTimeout(() => {
+          hoverCloseTimer = null;
+          if (activeHoverMenu === menuKey) {
+            const def = hoverMenuDefs[menuKey];
+            if (!def) return;
+            // Check if cursor is still hovering over trigger, popup, or wrap
+            const isHovering =
+              (def.trigger && def.trigger.matches && def.trigger.matches(':hover')) ||
+              (def.popup && def.popup.matches && def.popup.matches(':hover')) ||
+              (def.wrap && def.wrap.matches && def.wrap.matches(':hover'));
+            if (isHovering) {
+              return;
+            }
+            // Do not close if an input or select inside popup is currently focused
+            if (
+              def.popup &&
+              document.activeElement &&
+              def.popup.contains(document.activeElement) &&
+              (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')
+            ) {
+              return;
+            }
+            def.close();
+            activeHoverMenu = null;
+          }
+        }, HOVER_CLOSE_DELAY_MS);
+      }
+
+      const hoverMenuDefs = {
+        audioSubs: {
+          trigger: btnAudioSubs,
+          popup: modalAudioSubs,
+          open: openAudioSubsMenu,
+          close: closeAudioSubsMenu,
+          isOpen: () => modalAudioSubs && modalAudioSubs.classList.contains('open'),
+        },
+        speed: {
+          trigger: btnSpeed,
+          wrap: speedControlWrap,
+          popup: speedMenu,
+          open: openSpeedMenu,
+          close: closeSpeedMenu,
+          isOpen: () => speedMenu && speedMenu.classList.contains('open'),
+        },
+        episodes: {
+          trigger: btnEpisodes,
+          popup: drawerEpisodes,
+          open: openEpisodesMenu,
+          close: closeEpisodesMenu,
+          isOpen: () => drawerEpisodes && drawerEpisodes.classList.contains('open'),
+        },
+        channels: {
+          trigger: btnChannels,
+          popup: drawerChannels,
+          open: () => openChannelsMenu(false),
+          close: closeChannelsMenu,
+          isOpen: () => drawerChannels && drawerChannels.classList.contains('open'),
+        },
+      };
+
+      function setupHoverMenu(menuKey) {
+        const def = hoverMenuDefs[menuKey];
+        if (!def || !def.trigger || !def.popup) return;
+
+        // Pointer Enter on Trigger: open immediately
+        def.trigger.addEventListener('pointerenter', (e) => {
+          if (e.pointerType === 'touch') return;
+          cancelHoverCloseTimer();
+          if (activeHoverMenu && activeHoverMenu !== menuKey) {
+            hoverMenuDefs[activeHoverMenu]?.close();
+          }
+          activeHoverMenu = menuKey;
+          if (!def.isOpen()) {
+            def.open();
+          }
+        });
+
+        // Pointer Leave on Trigger: start closing timer
+        def.trigger.addEventListener('pointerleave', (e) => {
+          if (e.pointerType === 'touch') return;
+          if (activeHoverMenu === menuKey && def.isOpen()) {
+            startHoverCloseTimer(menuKey);
+          }
+        });
+
+        // Pointer Enter on Popup: cancel closing timer
+        def.popup.addEventListener('pointerenter', (e) => {
+          if (e.pointerType === 'touch') return;
+          if (activeHoverMenu === menuKey || def.isOpen()) {
+            activeHoverMenu = menuKey;
+            cancelHoverCloseTimer();
+          }
+        });
+
+        // Pointer Leave on Popup: start closing timer
+        def.popup.addEventListener('pointerleave', (e) => {
+          if (e.pointerType === 'touch') return;
+          if (activeHoverMenu === menuKey && def.isOpen()) {
+            startHoverCloseTimer(menuKey);
+          }
+        });
+
+        if (def.wrap) {
+          def.wrap.addEventListener('pointerenter', (e) => {
+            if (e.pointerType === 'touch') return;
+            if (activeHoverMenu === menuKey || def.isOpen()) {
+              activeHoverMenu = menuKey;
+              cancelHoverCloseTimer();
+            }
+          });
+          def.wrap.addEventListener('pointerleave', (e) => {
+            if (e.pointerType === 'touch') return;
+            if (activeHoverMenu === menuKey && def.isOpen()) {
+              startHoverCloseTimer(menuKey);
+            }
+          });
+        }
+      }
+
+      Object.keys(hoverMenuDefs).forEach(setupHoverMenu);
+
+      document.addEventListener('mouseleave', () => {
+        if (activeHoverMenu && hoverMenuDefs[activeHoverMenu]?.isOpen()) {
+          startHoverCloseTimer(activeHoverMenu);
+        }
+      });
+
+      if (channelSearchInput) {
+        channelSearchInput.addEventListener('blur', () => {
+          if (
+            activeHoverMenu === 'channels' &&
+            drawerChannels &&
+            btnChannels &&
+            !drawerChannels.matches(':hover') &&
+            !btnChannels.matches(':hover')
+          ) {
+            startHoverCloseTimer('channels');
+          }
+        });
+      }
+
+      if (seasonSelect) {
+        seasonSelect.addEventListener('blur', () => {
+          if (
+            activeHoverMenu === 'episodes' &&
+            drawerEpisodes &&
+            btnEpisodes &&
+            !drawerEpisodes.matches(':hover') &&
+            !btnEpisodes.matches(':hover')
+          ) {
+            startHoverCloseTimer('episodes');
           }
         });
       }

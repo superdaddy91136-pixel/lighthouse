@@ -38,6 +38,10 @@ export class MemoryService {
   public navTabClick: Subject<NavTab> = new Subject<NavTab>();
   public nodeStack: Stack = new Stack();
   public categoryScrollPositions: Map<NavTab, number> = new Map();
+  public allScrollPositions: Map<NavTab, number> = new Map();
+  public folderScrollPositions: Map<string, number> = new Map();
+  public searchScrollPositions: Map<NavTab, number> = new Map();
+  public homeDiscoveryScrollPosition: number = 0;
   public SetNode: Subject<SetNodeDTO> = new Subject();
   public SetFocus: Subject<number> = new Subject();
   public Sort: BehaviorSubject<[number, boolean]> = new BehaviorSubject<[number, boolean]>([

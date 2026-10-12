@@ -131,6 +131,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   searchSortOrder: 'asc' | 'desc' = 'asc';
   private searchRequestId = 0;
   private pendingTabClick?: NavTab;
+  private currentScrollPosition: number = 0;
 
   get isSearching(): boolean {
     return !!(this.filters?.query && this.filters.query.trim().length > 0);
@@ -185,6 +186,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   private saveCurrentTabSearchState(): void {
     const tab = this.memory.activeNavTab.value;
     if (this.isSearching) {
+      const scrollPos =
+        (window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0) ||
+        this.currentScrollPosition ||
+        0;
       this.searchStateService.setSearchState(tab, {
         query: this.filters?.query || "",
         searchKeyword: this.searchKeyword,
@@ -194,9 +199,35 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         searchSortBy: this.searchSortBy,
         searchSortOrder: this.searchSortOrder,
         isSearchExpanded: this.isSearchExpanded,
+        scrollPosition: scrollPos,
       });
+      this.memory.searchScrollPositions.set(tab, scrollPos);
     } else {
       this.searchStateService.clearSearchState(tab);
+      this.memory.searchScrollPositions.delete(tab);
+    }
+  }
+
+  saveOriginatingScrollPosition(): void {
+    const currentScroll =
+      (window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0) ||
+      this.currentScrollPosition ||
+      0;
+    const tab = this.memory.activeNavTab.value;
+
+    if (this.isSearching) {
+      this.memory.searchScrollPositions.set(tab, currentScroll);
+      const searchState = this.searchStateService.getSearchState(tab);
+      if (searchState) {
+        searchState.scrollPosition = currentScroll;
+      }
+    } else if (this.filters?.group_id) {
+      const key = `${tab}_${this.filters.group_id}`;
+      this.memory.folderScrollPositions.set(key, currentScroll);
+    } else if (this.isHomeDiscoveryMode) {
+      this.memory.homeDiscoveryScrollPosition = currentScroll;
+    } else if (this.filters?.view_type === ViewMode.All || !this.filters?.group_id) {
+      this.memory.allScrollPositions.set(tab, currentScroll);
     }
   }
 
@@ -295,10 +326,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
   async playMedia(channel: Channel) {
     if (channel.media_type === MediaType.serie) {
+      this.saveOriginatingScrollPosition();
       await this.openSeries(channel);
       return;
     }
     if (channel.media_type === MediaType.movie) {
+      this.saveOriginatingScrollPosition();
       this.movieDetailService.openMovieDetail(channel);
       return;
     }
@@ -403,6 +436,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   async openSeries(channel: Channel) {
+    this.saveOriginatingScrollPosition();
     this.tvDetailService.openTvDetail(channel);
   }
 
@@ -556,6 +590,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             if (this.search?.nativeElement) {
               this.search.nativeElement.value = savedSearch.query;
             }
+            const targetSearchScroll = this.memory.searchScrollPositions.get(currentTab) ?? savedSearch.scrollPosition;
+            if (targetSearchScroll && targetSearchScroll > 0) {
+              this.restoreScrollPosition(targetSearchScroll);
+            }
             return;
           }
 
@@ -563,11 +601,27 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             sessionStorage.setItem("refreshedOnStart", "true");
             this.refreshOnStart().then((_) => _);
           }
-          this.load().then(() => {
+          this.load().then(async () => {
             if (this.filters?.view_type === ViewMode.Categories && !this.filters?.group_id) {
               const savedCatScroll = this.memory.categoryScrollPositions.get(currentTab);
               if (savedCatScroll && savedCatScroll > 0) {
-                this.restoreScrollPosition(savedCatScroll);
+                await this.restoreScrollPosition(savedCatScroll);
+              }
+            } else if (this.filters?.group_id) {
+              const key = `${currentTab}_${this.filters.group_id}`;
+              const savedFolderScroll = this.memory.folderScrollPositions.get(key);
+              if (savedFolderScroll && savedFolderScroll > 0) {
+                await this.restoreScrollPosition(savedFolderScroll);
+              }
+            } else if (this.isHomeDiscoveryMode) {
+              const savedHomeScroll = this.memory.homeDiscoveryScrollPosition;
+              if (savedHomeScroll && savedHomeScroll > 0) {
+                await this.restoreScrollPosition(savedHomeScroll);
+              }
+            } else if (this.filters?.view_type === ViewMode.All || !this.filters?.group_id) {
+              const savedAllScroll = this.memory.allScrollPositions.get(currentTab);
+              if (savedAllScroll && savedAllScroll > 0) {
+                await this.restoreScrollPosition(savedAllScroll);
               }
             }
           });
@@ -698,6 +752,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
     this.searchKeyword = "";
     this.searchStateService.clearSearchState(this.memory.activeNavTab.value);
+    this.memory.searchScrollPositions.delete(this.memory.activeNavTab.value);
   }
 
   async loadMore() {
@@ -905,6 +960,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   @HostListener("window:scroll", ["$event"])
   async scroll(event: any) {
     this.checkScrollTop();
+    const y = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
+    this.currentScrollPosition = y;
     await this.checkScrollEnd();
   }
 
@@ -1046,6 +1103,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.searchRequestId++;
     this.nodeStack.clear();
     this.memory.categoryScrollPositions.delete(tab);
+    this.memory.allScrollPositions.delete(tab);
+    this.memory.searchScrollPositions.delete(tab);
     this.clearSearch();
     this.isSearchExpanded = false;
     if (this.search?.nativeElement) {
@@ -1191,6 +1250,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (this.nodeStack.hasNodes()) {
       var node = this.nodeStack.pop();
       if (node.type == NodeType.Category) {
+        this.memory.folderScrollPositions.delete(`${currentTab}_${node.id}`);
         this.filters!.group_id = undefined;
         targetScrollPosition = node.scrollPosition ?? this.memory.categoryScrollPositions.get(currentTab);
       } else if (node.type == NodeType.Series) {
@@ -1225,6 +1285,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   private async restoreScrollPosition(targetY: number): Promise<void> {
+    if (!targetY || targetY <= 0) return;
     this.cdr.detectChanges();
     let safetyCount = 0;
     while (
@@ -1238,13 +1299,30 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       this.cdr.detectChanges();
     }
 
-    requestAnimationFrame(() => {
+    const tryScroll = () => {
       window.scrollTo({ top: targetY, behavior: "instant" });
+      if (document.documentElement) document.documentElement.scrollTop = targetY;
+      if (document.body) document.body.scrollTop = targetY;
+      const currentY = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
+      this.currentScrollPosition = currentY;
+    };
+
+    requestAnimationFrame(() => {
+      tryScroll();
       requestAnimationFrame(() => {
-        const currentY = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
-        if (Math.abs(currentY - targetY) > 5) {
-          window.scrollTo({ top: targetY, behavior: "instant" });
-        }
+        tryScroll();
+        setTimeout(() => {
+          const currentY = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
+          if (Math.abs(currentY - targetY) > 5) {
+            tryScroll();
+          }
+        }, 60);
+        setTimeout(() => {
+          const currentY = window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0;
+          if (Math.abs(currentY - targetY) > 5) {
+            tryScroll();
+          }
+        }, 150);
       });
     });
   }
@@ -1404,6 +1482,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.saveOriginatingScrollPosition();
     if (this.embeddedPlayer.isPlayingEmbedded) {
       this.embeddedPlayer.stopPlayer().catch(console.warn);
     }
