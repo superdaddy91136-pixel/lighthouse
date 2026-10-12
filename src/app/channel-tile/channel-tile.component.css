@@ -275,6 +275,8 @@
 .lh-card .card-fav-btn svg {
   width: 16px;
   height: 16px;
+  display: block;
+  overflow: visible;
 }
 
 /* Play Circle Sizing for Compact Card */

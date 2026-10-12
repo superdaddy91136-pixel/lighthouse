@@ -1878,7 +1878,12 @@ pub async fn resize_embedded_poc(
             return Ok(());
         }
 
-        inner.last_bounds = Some((x, y, width, height));
+        let bounds = (x, y, width, height);
+        if inner.last_bounds == Some(bounds) {
+            return Ok(());
+        }
+
+        inner.last_bounds = Some(bounds);
         inner.windowed_bounds = Some((x, y, width, height));
 
         if let Some(child_hwnd) = inner.child_hwnd {
