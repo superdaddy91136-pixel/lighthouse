@@ -550,7 +550,7 @@ pub fn find_main_window_hwnd() -> Option<usize> {
         Some(search.found_hwnd)
     } else {
         // Fallback: search by known window title prefix
-        let title: Vec<u16> = "Lighthouse (v1.9.1)\0".encode_utf16().collect();
+        let title: Vec<u16> = "Lighthouse\0".encode_utf16().collect();
         let fallback = unsafe { win32::FindWindowW(std::ptr::null(), title.as_ptr()) };
         if !fallback.is_null() {
             Some(fallback as usize)

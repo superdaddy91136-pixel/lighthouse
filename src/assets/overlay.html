@@ -41,6 +41,12 @@
       -webkit-backdrop-filter: none !important;
     }
 
+    ::-webkit-scrollbar-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+
     .overlay-container {
       position: absolute;
       top: var(--top-crop, 0px);
@@ -883,8 +889,11 @@
       width: 4px;
     }
     .modal-col-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 2px;
+      height: 1cm;
+      min-height: 1cm;
+      max-height: 1cm;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 9999px;
     }
 
     .track-option {
@@ -1113,8 +1122,11 @@
       width: 5px;
     }
     .drawer-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      height: 1cm;
+      min-height: 1cm;
+      max-height: 1cm;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 9999px;
     }
 
     /* EPISODE CARD */
@@ -1346,8 +1358,11 @@
     }
     .folders-list::-webkit-scrollbar-thumb,
     .channels-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      height: 1cm;
+      min-height: 1cm;
+      max-height: 1cm;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 9999px;
     }
 
     .folder-item {
@@ -1583,8 +1598,11 @@
       width: 4px;
     }
     .nerd-content::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 2px;
+      height: 1cm;
+      min-height: 1cm;
+      max-height: 1cm;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 9999px;
     }
 
     .nerd-row {

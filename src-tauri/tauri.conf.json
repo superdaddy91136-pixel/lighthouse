@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Lighthouse (v1.9.1)",
+        "title": "Lighthouse",
         "width": 800,
         "height": 600,
         "resizable": true,
