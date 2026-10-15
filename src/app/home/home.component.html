@@ -97,13 +97,13 @@
           [class.open]="isFilterMenuOpen"
           (click)="toggleFilterMenu($event)"
           title="Filter by source, category, and sort order">
-          <svg class="filter-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          <svg class="filter-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18M6 12h12M10 18h4"/>
           </svg>
-          <span>Filter & Sort</span>
+          <span class="filter-sort-label">Filter & Sort</span>
           <span class="active-badge" *ngIf="activeFilterCount > 0">{{ activeFilterCount }}</span>
-          <svg class="chevron-icon" [class.rotated]="isFilterMenuOpen" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+          <svg class="chevron-icon" [class.rotated]="isFilterMenuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
 
