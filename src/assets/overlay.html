@@ -851,6 +851,18 @@
       background: rgba(255, 255, 255, 0.12);
     }
 
+    .track-error-banner {
+      background: rgba(229, 9, 20, 0.2);
+      border: 1px solid rgba(229, 9, 20, 0.6);
+      color: #ff9999;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin: 10px 16px 0 16px;
+      display: none;
+      text-align: center;
+    }
+
     .modal-columns {
       display: flex;
       padding: 14px 16px 16px 16px;
@@ -1866,6 +1878,7 @@
           </svg>
         </button>
       </div>
+      <div class="track-error-banner" id="trackErrorBanner"></div>
       <div class="modal-columns">
         <!-- AUDIO COLUMN -->
         <div class="modal-col">
@@ -2051,6 +2064,10 @@
       let tracks = [];
       let currentAid = 1;
       let currentSid = 'no';
+      let currentMediaSessionId = null;
+      let trackRequestIdSeq = 210;
+      const pendingTrackRequests = {};
+      let trackErrorTimer = null;
       let clickTimeout = null;
       let currentContentMode = 'movie'; // 'movie' | 'episode' | 'live'
 
@@ -3018,6 +3035,46 @@
         return null;
       }
 
+      function showTrackError(msg) {
+        const banner = document.getElementById('trackErrorBanner');
+        if (banner) {
+          banner.textContent = msg;
+          banner.style.display = 'block';
+          clearTimeout(trackErrorTimer);
+          trackErrorTimer = setTimeout(() => {
+            banner.style.display = 'none';
+          }, 4500);
+        }
+      }
+
+      function selectAudioTrack(trackId) {
+        const prevAid = currentAid;
+        const target = (trackId === 'no' || trackId === false) ? 'no' : trackId;
+        currentAid = target;
+        renderTracks();
+        const reqId = ++trackRequestIdSeq;
+        pendingTrackRequests[reqId] = { type: 'aid', prev: prevAid, target: target };
+        sendMpv(['set_property', 'aid', target], reqId);
+      }
+
+      function selectSubtitleTrack(trackId, trackObj, skipSavePref = false) {
+        const prevSid = currentSid;
+        const target = (trackId === 'no' || trackId === false || trackId == null) ? 'no' : trackId;
+        currentSid = target;
+        hasAppliedSubPreferenceForCurrentMedia = true;
+        if (!skipSavePref) {
+          if (target === 'no') {
+            saveSubtitlePreference('off');
+          } else if (trackObj) {
+            saveSubtitlePreference(trackObj);
+          }
+        }
+        renderTracks();
+        const reqId = ++trackRequestIdSeq;
+        pendingTrackRequests[reqId] = { type: 'sid', prev: prevSid, target: target };
+        sendMpv(['set_property', 'sid', target], reqId);
+      }
+
       function restorePreferredSubtitleTrack() {
         if (hasAppliedSubPreferenceForCurrentMedia) return;
         const pref = getSavedSubtitlePreference();
@@ -3025,9 +3082,7 @@
 
         if (pref.off) {
           hasAppliedSubPreferenceForCurrentMedia = true;
-          currentSid = 'no';
-          sendMpv(['set_property', 'sid', 'no']);
-          renderTracks();
+          selectSubtitleTrack('no', null, true);
           return;
         }
 
@@ -3042,9 +3097,7 @@
         const match = findMatchingSubTrack(subTracks, pref);
         if (match) {
           hasAppliedSubPreferenceForCurrentMedia = true;
-          currentSid = match.id;
-          sendMpv(['set_property', 'sid', match.id]);
-          renderTracks();
+          selectSubtitleTrack(match.id, match, true);
         } else {
           // If preferred language is unavailable, keep MPV default fallback without breaking playback
           hasAppliedSubPreferenceForCurrentMedia = true;
@@ -3107,9 +3160,7 @@
             btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
-              currentAid = t.id;
-              renderTracks();
-              sendMpv(['set_property', 'aid', t.id]);
+              selectAudioTrack(t.id);
             });
             audioTrackList.appendChild(btn);
           });
@@ -3124,11 +3175,7 @@
         offBtn.innerHTML = `<span>Subtitles Off</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
         offBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          currentSid = 'no';
-          hasAppliedSubPreferenceForCurrentMedia = true;
-          saveSubtitlePreference('off');
-          renderTracks();
-          sendMpv(['set_property', 'sid', 'no']);
+          selectSubtitleTrack('no');
         });
         subTrackList.appendChild(offBtn);
 
@@ -3146,11 +3193,7 @@
             btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
-              currentSid = t.id;
-              hasAppliedSubPreferenceForCurrentMedia = true;
-              saveSubtitlePreference(t);
-              renderTracks();
-              sendMpv(['set_property', 'sid', t.id]);
+              selectSubtitleTrack(t.id, t);
             });
             subTrackList.appendChild(btn);
           });
@@ -4441,7 +4484,9 @@
           if (parsed.request_id === 200 && Array.isArray(parsed.data)) {
             tracks = parsed.data;
             renderTracks();
-            restorePreferredSubtitleTrack();
+            if (!hasAppliedSubPreferenceForCurrentMedia) {
+              restorePreferredSubtitleTrack();
+            }
             return;
           }
           if (parsed.request_id === 201) {
@@ -4459,11 +4504,32 @@
             return;
           }
 
+          // Track command response check (aid/sid set_property)
+          if (parsed.request_id && pendingTrackRequests[parsed.request_id]) {
+            const pending = pendingTrackRequests[parsed.request_id];
+            delete pendingTrackRequests[parsed.request_id];
+
+            if (parsed.error && parsed.error !== 'success') {
+              console.error(`[overlay] Failed to set ${pending.type} to ${pending.target}:`, parsed.error);
+              showTrackError(`Failed to set ${pending.type === 'aid' ? 'audio' : 'subtitle'} track: ${parsed.error}`);
+              if (pending.type === 'aid') {
+                currentAid = pending.prev;
+                sendMpv(['get_property', 'aid'], 201);
+              } else {
+                currentSid = pending.prev;
+                sendMpv(['get_property', 'sid'], 202);
+              }
+              renderTracks();
+            }
+            return;
+          }
+
           // 2. Lifecycle events: demuxer finished / tracks ready
-          if (parsed.event === 'file-loaded' || parsed.event === 'playback-restart' || parsed.event === 'tracks-changed') {
-            hasAppliedSubPreferenceForCurrentMedia = false;
+          if (parsed.event === 'file-loaded') {
             requestTrackInfo();
-            applySubtitlePreferences();
+            if (!hasAppliedSubPreferenceForCurrentMedia) {
+              applySubtitlePreferences();
+            }
             pollNerdStats();
             sendMpv(['get_property', 'demuxer-cache-duration'], 307);
             sendMpv(['get_property', 'demuxer-cache-state'], 308);
@@ -4473,11 +4539,25 @@
             return;
           }
 
+          if (parsed.event === 'playback-restart') {
+            pollNerdStats();
+            sendMpv(['get_property', 'demuxer-cache-duration'], 307);
+            sendMpv(['get_property', 'demuxer-cache-state'], 308);
+            return;
+          }
+
+          if (parsed.event === 'tracks-changed') {
+            requestTrackInfo();
+            return;
+          }
+
           // 3. General track-list data fallback
           if (Array.isArray(parsed.data) && parsed.data.length > 0 && parsed.data[0]?.type) {
             tracks = parsed.data;
             renderTracks();
-            restorePreferredSubtitleTrack();
+            if (!hasAppliedSubPreferenceForCurrentMedia) {
+              restorePreferredSubtitleTrack();
+            }
           }
 
           // 4. Observed property changes
@@ -4522,7 +4602,9 @@
                 if (Array.isArray(parsed.data)) {
                   tracks = parsed.data;
                   renderTracks();
-                  restorePreferredSubtitleTrack();
+                  if (!hasAppliedSubPreferenceForCurrentMedia) {
+                    restorePreferredSubtitleTrack();
+                  }
                 }
                 break;
               case 'aid':
@@ -4720,6 +4802,7 @@
         if (chId != null) {
           currentActiveChannelId = chId;
         }
+        currentMediaSessionId = `${currentActiveChannelId || 'media'}_${event?.payload?.url || event?.payload?.name || ''}_${Date.now()}`;
         const startTarget = (event?.payload?.startTime > 5)
           ? Math.round(event.payload.startTime)
           : getSavedPositionForChannel(currentActiveChannelId);
@@ -4766,6 +4849,7 @@
         hasResumedForCurrentMedia = false;
         hasAppliedSubPreferenceForCurrentMedia = false;
         currentActiveChannelId = null;
+        currentMediaSessionId = null;
         setTopCrop(0);
         setContentMode('movie');
         closeAllPanels();
