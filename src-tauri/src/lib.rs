@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 use types::{
     AppState, Channel, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, Filters, Group,
-    IdName, NetworkInfo, Settings, Source,
+    IdName, NetworkInfo, Settings, Source, SourceContentCounts,
 };
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use {
@@ -117,6 +117,8 @@ pub fn run() {
             hide_group,
             remove_from_history,
             get_all_expiries,
+            get_source_content_counts,
+            get_all_source_content_counts,
             embedded_poc::start_embedded_player,
             embedded_poc::switch_embedded_channel,
             embedded_poc::open_in_external_mpv,
@@ -312,12 +314,12 @@ fn map_err_frontend(e: Error) -> String {
 
 #[tauri::command(async)]
 fn get_m3u8(source: Source) -> Result<(), String> {
-    m3u::read_m3u8(source, false).map_err(map_err_frontend)
+    m3u::read_m3u8(None, source, false).map_err(map_err_frontend)
 }
 
 #[tauri::command]
 async fn get_m3u8_from_link(source: Source) -> Result<(), String> {
-    m3u::get_m3u8_from_link(source, false)
+    m3u::get_m3u8_from_link(None, source, false)
         .await
         .map_err(map_err_frontend)
 }
@@ -356,21 +358,21 @@ fn bulk_update(filters: Filters, action: u8) -> Result<(), String> {
 
 #[tauri::command]
 async fn get_xtream(source: Source) -> Result<(), String> {
-    xtream::get_xtream(source, false)
+    xtream::get_xtream(None, source, false)
         .await
         .map_err(map_err_frontend)
 }
 
 #[tauri::command]
-async fn refresh_source(source: Source) -> Result<(), String> {
-    utils::refresh_source(source)
+async fn refresh_source(app: AppHandle, source: Source) -> Result<(), String> {
+    utils::refresh_source(&app, source)
         .await
         .map_err(map_err_frontend)
 }
 
 #[tauri::command]
-async fn refresh_all() -> Result<(), String> {
-    utils::refresh_all().await.map_err(map_err_frontend)
+async fn refresh_all(app: AppHandle) -> Result<(), String> {
+    utils::refresh_all(&app).await.map_err(map_err_frontend)
 }
 
 #[tauri::command]
@@ -678,4 +680,14 @@ async fn cancel_play(
 #[tauri::command]
 async fn get_all_expiries() -> Result<HashMap<i64, i64>, String> {
     xtream::get_all_expiries().await.map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_source_content_counts(source_id: i64) -> Result<SourceContentCounts, String> {
+    sql::get_source_content_counts(source_id).map_err(map_err_frontend)
+}
+
+#[tauri::command(async)]
+fn get_all_source_content_counts() -> Result<HashMap<i64, SourceContentCounts>, String> {
+    sql::get_all_source_content_counts().map_err(map_err_frontend)
 }

@@ -177,6 +177,7 @@ export class SettingsComponent {
     await this.memory.tryIPC("Successfully updated all sources", "Failed to refresh sources", () =>
       invoke("refresh_all"),
     );
+    this.memory.RefreshSources.next(true);
   }
 
   async goBack() {

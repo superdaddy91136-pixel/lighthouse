@@ -213,3 +213,25 @@ pub struct ChannelPreserve {
     #[serde(default)]
     pub is_group: bool,
 }
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct SourceContentCounts {
+    pub live: u64,
+    pub movies: u64,
+    pub series: u64,
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub struct SourceRefreshProgress {
+    pub source_id: i64,
+    pub stage: String,
+    pub stage_label: String,
+    pub percent: Option<f64>,
+    pub indeterminate: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}

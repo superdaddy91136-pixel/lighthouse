@@ -140,6 +140,110 @@ export class TmdbService {
   }
 
   /**
+   * Fetch popular movies from TMDB.
+   */
+  async getPopularMovies(page: number = 1): Promise<any[]> {
+    const data = await this.safeGet<any>('/movie/popular', {
+      page,
+      include_adult: 'false',
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch popular TV shows from TMDB.
+   */
+  async getPopularTv(page: number = 1): Promise<any[]> {
+    const data = await this.safeGet<any>('/tv/popular', {
+      page,
+      include_adult: 'false',
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch top rated movies from TMDB.
+   */
+  async getTopRatedMovies(page: number = 1): Promise<any[]> {
+    const data = await this.safeGet<any>('/movie/top_rated', {
+      page,
+      include_adult: 'false',
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch top rated TV shows from TMDB.
+   */
+  async getTopRatedTv(page: number = 1): Promise<any[]> {
+    const data = await this.safeGet<any>('/tv/top_rated', {
+      page,
+      include_adult: 'false',
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Custom discover query for movies (e.g. genre filter, minimum votes, sorting).
+   */
+  async discoverMovies(params: Record<string, string | number | undefined> = {}): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/movie', {
+      include_adult: 'false',
+      sort_by: 'popularity.desc',
+      ...params,
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Custom discover query for TV shows (e.g. genre filter, minimum votes, sorting).
+   */
+  async discoverTv(params: Record<string, string | number | undefined> = {}): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/tv', {
+      include_adult: 'false',
+      sort_by: 'popularity.desc',
+      ...params,
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Get movie recommendations based on a seed movie ID.
+   */
+  async getMovieRecommendations(movieId: number, page: number = 1): Promise<any[]> {
+    if (!movieId) return [];
+    const data = await this.safeGet<any>(`/movie/${movieId}/recommendations`, { page });
+    return data?.results || [];
+  }
+
+  /**
+   * Get TV show recommendations based on a seed TV show ID.
+   */
+  async getTvRecommendations(tvId: number, page: number = 1): Promise<any[]> {
+    if (!tvId) return [];
+    const data = await this.safeGet<any>(`/tv/${tvId}/recommendations`, { page });
+    return data?.results || [];
+  }
+
+  /**
+   * Get similar movies based on a seed movie ID.
+   */
+  async getSimilarMovies(movieId: number, page: number = 1): Promise<any[]> {
+    if (!movieId) return [];
+    const data = await this.safeGet<any>(`/movie/${movieId}/similar`, { page });
+    return data?.results || [];
+  }
+
+  /**
+   * Get similar TV shows based on a seed TV show ID.
+   */
+  async getSimilarTv(tvId: number, page: number = 1): Promise<any[]> {
+    if (!tvId) return [];
+    const data = await this.safeGet<any>(`/tv/${tvId}/similar`, { page });
+    return data?.results || [];
+  }
+
+  /**
    * Find media by external ID (e.g. IMDb ID 'tt1234567').
    */
   async findByExternalId(externalId: string, externalSource: 'imdb_id' = 'imdb_id'): Promise<any | null> {

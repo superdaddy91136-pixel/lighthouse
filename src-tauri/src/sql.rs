@@ -9,7 +9,7 @@ use crate::types::{
 };
 use crate::{
     media_type, source_type,
-    types::{Channel, ChannelHttpHeaders, Filters, Source},
+    types::{Channel, ChannelHttpHeaders, Filters, Source, SourceContentCounts},
     view_type,
 };
 use anyhow::{Context, Result, anyhow};
@@ -1095,6 +1095,60 @@ pub fn get_channel_count_by_source(id: i64) -> Result<u64> {
         |row| row.get::<_, u64>(0),
     )?;
     Ok(count)
+}
+
+pub fn get_source_content_counts(id: i64) -> Result<SourceContentCounts> {
+    let sql = get_conn()?;
+    let counts = sql.query_row(
+        r#"
+        SELECT 
+            COUNT(CASE WHEN media_type = 0 THEN 1 END),
+            COUNT(CASE WHEN media_type = 1 AND series_id IS NULL THEN 1 END),
+            COUNT(CASE WHEN media_type = 2 THEN 1 END)
+        FROM channels
+        WHERE source_id = ?
+        "#,
+        params![id],
+        |row| {
+            Ok(SourceContentCounts {
+                live: row.get(0)?,
+                movies: row.get(1)?,
+                series: row.get(2)?,
+            })
+        },
+    )?;
+    Ok(counts)
+}
+
+pub fn get_all_source_content_counts() -> Result<HashMap<i64, SourceContentCounts>> {
+    let sql = get_conn()?;
+    let mut stmt = sql.prepare(
+        r#"
+        SELECT 
+            source_id,
+            COUNT(CASE WHEN media_type = 0 THEN 1 END),
+            COUNT(CASE WHEN media_type = 1 AND series_id IS NULL THEN 1 END),
+            COUNT(CASE WHEN media_type = 2 THEN 1 END)
+        FROM channels
+        WHERE source_id IS NOT NULL
+        GROUP BY source_id
+        "#,
+    )?;
+    let mut map = HashMap::new();
+    let rows = stmt.query_map([], |row| {
+        let source_id: i64 = row.get(0)?;
+        let counts = SourceContentCounts {
+            live: row.get(1)?,
+            movies: row.get(2)?,
+            series: row.get(3)?,
+        };
+        Ok((source_id, counts))
+    })?;
+    for row in rows {
+        let (id, counts) = row?;
+        map.insert(id, counts);
+    }
+    Ok(map)
 }
 
 pub fn source_name_exists(name: &str) -> Result<bool> {

@@ -2558,7 +2558,7 @@ body::-webkit-scrollbar-thumb:active {
    ========================================================================== */
 
 .settings-nav-header {
-  max-width: 980px;
+  max-width: 1040px;
   margin: 0 auto 2.5rem auto;
   display: flex;
   align-items: flex-start;
@@ -2615,7 +2615,7 @@ body::-webkit-scrollbar-thumb:active {
 }
 
 .settings-content-wrapper {
-  max-width: 980px;
+  max-width: 1040px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;

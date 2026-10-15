@@ -21,6 +21,7 @@ export class TmdbCacheService {
   private dbPromise: Promise<IDBDatabase> | null = null;
   /** In-memory hot cache for instant zero-latency UI rendering */
   private memoryCache: Map<number, TmdbMediaEnrichment> = new Map();
+  private tmdbIdMemoryCache: Map<number, TmdbMediaEnrichment> = new Map();
   private failedMemoryCache: Map<string, number> = new Map(); // searchKey -> retryAfter
 
   constructor() {
@@ -78,6 +79,14 @@ export class TmdbCacheService {
   }
 
   /**
+   * Synchronous check by TMDB ID against hot in-memory cache.
+   */
+  getEnrichmentByTmdbIdSync(tmdbId?: number): TmdbMediaEnrichment | undefined {
+    if (!tmdbId) return undefined;
+    return this.tmdbIdMemoryCache.get(tmdbId);
+  }
+
+  /**
    * Retrieves enrichment for a provider channel from cache.
    * Checks hot memory first, then persistent IndexedDB.
    */
@@ -99,6 +108,9 @@ export class TmdbCacheService {
           const result = req.result as TmdbMediaEnrichment | undefined;
           if (result) {
             this.memoryCache.set(providerItemId, result);
+            if (result.tmdbId) {
+              this.tmdbIdMemoryCache.set(result.tmdbId, result);
+            }
           }
           resolve(result);
         };
@@ -111,12 +123,49 @@ export class TmdbCacheService {
   }
 
   /**
+   * Retrieves all cached enrichments matching a TMDB ID from persistent IndexedDB.
+   */
+  async getEnrichmentsByTmdbId(tmdbId: number): Promise<TmdbMediaEnrichment[]> {
+    if (!tmdbId) return [];
+
+    try {
+      const db = await this.initDb();
+      return new Promise<TmdbMediaEnrichment[]>((resolve) => {
+        const tx = db.transaction(STORE_MEDIA, 'readonly');
+        const store = tx.objectStore(STORE_MEDIA);
+        const index = store.index('tmdbId');
+        const req = index.getAll(tmdbId);
+
+        req.onsuccess = () => {
+          const results = (req.result as TmdbMediaEnrichment[]) || [];
+          for (const res of results) {
+            if (res.providerItemId) {
+              this.memoryCache.set(res.providerItemId, res);
+            }
+          }
+          if (results.length > 0) {
+            this.tmdbIdMemoryCache.set(tmdbId, results[0]);
+          }
+          resolve(results);
+        };
+
+        req.onerror = () => resolve([]);
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Saves enrichment to both hot memory and persistent IndexedDB.
    */
   async saveEnrichment(enrichment: TmdbMediaEnrichment): Promise<void> {
     if (!enrichment.providerItemId) return;
 
     this.memoryCache.set(enrichment.providerItemId, enrichment);
+    if (enrichment.tmdbId) {
+      this.tmdbIdMemoryCache.set(enrichment.tmdbId, enrichment);
+    }
 
     try {
       const db = await this.initDb();

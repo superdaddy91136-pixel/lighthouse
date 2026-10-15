@@ -40,25 +40,93 @@ const DEFAULT_USER_AGENT: &str = "Fred TV";
 static ILLEGAL_CHARS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"[<>:"/\\|?*\x00-\x1F]"#).unwrap());
 
-pub async fn refresh_source(source: Source) -> Result<()> {
-    let id = source.id;
-    match source.source_type {
-        source_type::M3U => m3u::read_m3u8(source, true)?,
-        source_type::M3U_LINK => m3u::get_m3u8_from_link(source, true).await?,
-        source_type::XTREAM => xtream::get_xtream(source, true).await?,
-        source_type::CUSTOM => {}
-        _ => return Err(anyhow!("invalid source_type")),
+pub fn emit_source_refresh_progress(
+    app: Option<&AppHandle>,
+    source_id: i64,
+    stage: &str,
+    stage_label: &str,
+    percent: Option<f64>,
+    indeterminate: bool,
+    current: Option<usize>,
+    total: Option<usize>,
+    error: Option<String>,
+) {
+    if let Some(app) = app {
+        let payload = crate::types::SourceRefreshProgress {
+            source_id,
+            stage: stage.to_string(),
+            stage_label: stage_label.to_string(),
+            percent,
+            indeterminate,
+            current,
+            total,
+            error,
+        };
+        let _ = app.emit(&format!("source-refresh-progress-{}", source_id), &payload);
+        let _ = app.emit("source-refresh-progress", &payload);
     }
-    if let Some(id) = id {
-        sql::update_source_last_updated(id)?;
-    }
-    Ok(())
 }
 
-pub async fn refresh_all() -> Result<()> {
+pub async fn refresh_source(app: &AppHandle, source: Source) -> Result<()> {
+    let id = source.id.unwrap_or(0);
+    emit_source_refresh_progress(
+        Some(app),
+        id,
+        "connecting",
+        "Connecting to provider...",
+        None,
+        true,
+        None,
+        None,
+        None,
+    );
+    let res = match source.source_type {
+        source_type::M3U => m3u::read_m3u8(Some(app), source, true),
+        source_type::M3U_LINK => m3u::get_m3u8_from_link(Some(app), source, true).await,
+        source_type::XTREAM => xtream::get_xtream(Some(app), source, true).await,
+        source_type::CUSTOM => Ok(()),
+        _ => Err(anyhow!("invalid source_type")),
+    };
+    match res {
+        Ok(_) => {
+            if id > 0 {
+                let _ = sql::update_source_last_updated(id);
+            }
+            emit_source_refresh_progress(
+                Some(app),
+                id,
+                "complete",
+                "Refresh complete",
+                Some(100.0),
+                false,
+                None,
+                None,
+                None,
+            );
+            Ok(())
+        }
+        Err(e) => {
+            let err_msg = format!("{:#}", e);
+            emit_source_refresh_progress(
+                Some(app),
+                id,
+                "error",
+                &format!("Refresh failed: {}", err_msg),
+                None,
+                false,
+                None,
+                None,
+                Some(err_msg),
+            );
+            Err(e)
+        }
+    }
+}
+
+pub async fn refresh_all(app: &AppHandle) -> Result<()> {
     let sources = sql::get_sources()?;
     for source in sources {
-        refresh_source(source).await?;
+        refresh_source(app, source).await?;
     }
     Ok(())
 }

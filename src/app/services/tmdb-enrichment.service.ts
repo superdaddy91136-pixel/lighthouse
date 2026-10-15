@@ -297,6 +297,13 @@ export class TmdbEnrichmentService {
   private trendingTvCache?: { data: any[]; timestamp: number };
   private readonly TRENDING_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+  private popularMoviesCache = new Map<number, { data: any[]; timestamp: number }>();
+  private popularTvCache = new Map<number, { data: any[]; timestamp: number }>();
+  private topRatedMoviesCache = new Map<number, { data: any[]; timestamp: number }>();
+  private topRatedTvCache = new Map<number, { data: any[]; timestamp: number }>();
+  private recommendationsCache = new Map<string, { data: any[]; timestamp: number }>();
+  private readonly DISCOVERY_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
   /**
    * Fetches trending movies from TMDB with memory cache to avoid repeated requests.
    */
@@ -330,9 +337,148 @@ export class TmdbEnrichmentService {
   }
 
   /**
-   * Seeds the enrichment cache with TMDB trending metadata for a matched channel.
+   * Fetches popular movies from TMDB with caching.
    */
-  async seedEnrichmentFromTrending(channel: Channel, item: any): Promise<void> {
+  async getPopularMovies(page: number = 1): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    const now = Date.now();
+    const cached = this.popularMoviesCache.get(page);
+    if (cached && now - cached.timestamp < this.DISCOVERY_CACHE_TTL) {
+      return cached.data;
+    }
+    const results = await this.tmdbService.getPopularMovies(page);
+    if (results && results.length > 0) {
+      this.popularMoviesCache.set(page, { data: results, timestamp: now });
+    }
+    return results || [];
+  }
+
+  /**
+   * Fetches popular TV shows from TMDB with caching.
+   */
+  async getPopularTv(page: number = 1): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    const now = Date.now();
+    const cached = this.popularTvCache.get(page);
+    if (cached && now - cached.timestamp < this.DISCOVERY_CACHE_TTL) {
+      return cached.data;
+    }
+    const results = await this.tmdbService.getPopularTv(page);
+    if (results && results.length > 0) {
+      this.popularTvCache.set(page, { data: results, timestamp: now });
+    }
+    return results || [];
+  }
+
+  /**
+   * Fetches top rated movies from TMDB with caching.
+   */
+  async getTopRatedMovies(page: number = 1): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    const now = Date.now();
+    const cached = this.topRatedMoviesCache.get(page);
+    if (cached && now - cached.timestamp < this.DISCOVERY_CACHE_TTL) {
+      return cached.data;
+    }
+    const results = await this.tmdbService.getTopRatedMovies(page);
+    if (results && results.length > 0) {
+      this.topRatedMoviesCache.set(page, { data: results, timestamp: now });
+    }
+    return results || [];
+  }
+
+  /**
+   * Fetches top rated TV shows from TMDB with caching.
+   */
+  async getTopRatedTv(page: number = 1): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    const now = Date.now();
+    const cached = this.topRatedTvCache.get(page);
+    if (cached && now - cached.timestamp < this.DISCOVERY_CACHE_TTL) {
+      return cached.data;
+    }
+    const results = await this.tmdbService.getTopRatedTv(page);
+    if (results && results.length > 0) {
+      this.topRatedTvCache.set(page, { data: results, timestamp: now });
+    }
+    return results || [];
+  }
+
+  /**
+   * Discovers movies from TMDB based on criteria (genres, ratings, sort).
+   */
+  async discoverMovies(params: Record<string, string | number | undefined> = {}): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.discoverMovies(params);
+  }
+
+  /**
+   * Discovers TV shows from TMDB based on criteria (genres, ratings, sort).
+   */
+  async discoverTv(params: Record<string, string | number | undefined> = {}): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.discoverTv(params);
+  }
+
+  /**
+   * Fetches recommendations and similar titles for multiple seeds (movies or TV).
+   * Runs bounded concurrent requests with deduplication.
+   */
+  async getRecommendationsForSeeds(seeds: { tmdbId: number; isTv: boolean }[]): Promise<any[]> {
+    if (!this.configService.isEnabled() || seeds.length === 0) return [];
+
+    const now = Date.now();
+    const candidateMap = new Map<number, any>();
+
+    // Bounded concurrency: up to 4 seed calls
+    const targetSeeds = seeds.slice(0, 4);
+    const promises = targetSeeds.map(async (seed) => {
+      const cacheKey = `${seed.isTv ? 'tv' : 'mv'}_${seed.tmdbId}`;
+      const cached = this.recommendationsCache.get(cacheKey);
+      if (cached && now - cached.timestamp < this.DISCOVERY_CACHE_TTL) {
+        return cached.data;
+      }
+
+      const [rec, sim] = await Promise.allSettled([
+        seed.isTv
+          ? this.tmdbService.getTvRecommendations(seed.tmdbId, 1)
+          : this.tmdbService.getMovieRecommendations(seed.tmdbId, 1),
+        seed.isTv
+          ? this.tmdbService.getSimilarTv(seed.tmdbId, 1)
+          : this.tmdbService.getSimilarMovies(seed.tmdbId, 1),
+      ]);
+
+      const items: any[] = [];
+      if (rec.status === 'fulfilled' && Array.isArray(rec.value)) {
+        items.push(...rec.value);
+      }
+      if (sim.status === 'fulfilled' && Array.isArray(sim.value)) {
+        items.push(...sim.value);
+      }
+
+      this.recommendationsCache.set(cacheKey, { data: items, timestamp: now });
+      return items;
+    });
+
+    const settled = await Promise.allSettled(promises);
+    for (const res of settled) {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        for (const item of res.value) {
+          if (item?.id && !candidateMap.has(item.id)) {
+            candidateMap.set(item.id, item);
+          }
+        }
+      }
+    }
+
+    return Array.from(candidateMap.values());
+  }
+
+  /**
+   * Seeds enrichment cache with TMDB candidate metadata for a matched channel.
+   * Gives instant high-resolution artwork, overview, release year, rating, and genres.
+   */
+  async seedEnrichmentFromTmdbItem(channel: Channel, item: any): Promise<void> {
     if (!channel?.id || !this.configService.isEnabled()) return;
     const existing = this.getEnrichmentSync(channel);
     if (existing) return;
@@ -340,6 +486,10 @@ export class TmdbEnrichmentService {
     const isSeries = item.media_type === 'tv' || Number(channel.media_type) === MediaType.serie;
     const dateStr = item.release_date || item.first_air_date || '';
     const releaseYear = dateStr.length >= 4 ? dateStr.substring(0, 4) : undefined;
+    const genres = Array.isArray(item.genres)
+      ? item.genres.map((g: any) => (typeof g === 'string' ? g : g.name)).filter(Boolean)
+      : undefined;
+
     const enrichment: TmdbMediaEnrichment = {
       providerItemId: channel.id,
       tmdbId: item.id,
@@ -353,6 +503,7 @@ export class TmdbEnrichmentService {
       backdropPath: item.backdrop_path || undefined,
       releaseDate: dateStr || undefined,
       releaseYear,
+      genres,
       rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : undefined,
       voteCount: item.vote_count,
       originalLanguage: item.original_language || undefined,
@@ -362,6 +513,13 @@ export class TmdbEnrichmentService {
 
     await this.cacheService.saveEnrichment(enrichment);
     this.enrichmentUpdated$.next(enrichment);
+  }
+
+  /**
+   * Backwards-compatible alias for seedEnrichmentFromTmdbItem.
+   */
+  async seedEnrichmentFromTrending(channel: Channel, item: any): Promise<void> {
+    return this.seedEnrichmentFromTmdbItem(channel, item);
   }
 
   /**

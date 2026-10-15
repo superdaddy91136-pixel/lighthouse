@@ -25,6 +25,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::str::FromStr;
+use tauri::AppHandle;
 use tokio::join;
 use url::Url;
 
@@ -131,7 +132,20 @@ fn build_xtream_url(source: &mut Source) -> Result<Url> {
     Ok(url)
 }
 
-pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
+pub async fn get_xtream(app: Option<&AppHandle>, mut source: Source, wipe: bool) -> Result<()> {
+    let source_id = source.id.unwrap_or(0);
+    crate::utils::emit_source_refresh_progress(
+        app,
+        source_id,
+        "fetching",
+        "Fetching catalog data from server...",
+        None,
+        true,
+        None,
+        None,
+        None,
+    );
+
     let url = build_xtream_url(&mut source)?;
     let user_agent = get_user_agent_from_source(&source)?;
     let (live, live_cats, vods, vods_cats, series, series_cats) = join!(
@@ -150,44 +164,130 @@ pub async fn get_xtream(mut source: Source, wipe: bool) -> Result<()> {
             &user_agent
         ),
     );
+
+    let live_len = live.as_ref().map(|v| v.len()).unwrap_or(0);
+    let vods_len = vods.as_ref().map(|v| v.len()).unwrap_or(0);
+    let series_len = series.as_ref().map(|v| v.len()).unwrap_or(0);
+    let total_items = live_len + vods_len + series_len;
+
     let mut sql = sql::get_conn()?;
     let tx = sql.transaction()?;
     let mut channel_preserve: Vec<ChannelPreserve> = Vec::new();
     if wipe {
+        crate::utils::emit_source_refresh_progress(
+            app,
+            source_id,
+            "preparing",
+            "Preparing database...",
+            Some(3.0),
+            false,
+            Some(0),
+            Some(total_items),
+            None,
+        );
         channel_preserve =
             sql::get_preserve(&tx, source.id.context("no source id")?).unwrap_or_default();
         sql::wipe(&tx, source.id.context("Source should have id")?)?;
     } else {
         source.id = Some(sql::create_or_find_source_by_name(&tx, &source)?);
     }
+
+    let mut processed_so_far: usize = 0;
     let mut fail_count = 0;
-    live.and_then(|live| process_xtream(&tx, live, live_cats?, &source, media_type::LIVESTREAM))
-        .unwrap_or_else(|e| {
-            log::log(format!("{:?}", e.context("Failed to process live")));
-            fail_count += 1;
-        });
-    vods.and_then(|vods: Vec<XtreamStream>| {
-        process_xtream(&tx, vods, vods_cats?, &source, media_type::MOVIE)
+
+    live.and_then(|live_list| {
+        process_xtream(
+            &tx,
+            live_list,
+            live_cats?,
+            &source,
+            media_type::LIVESTREAM,
+            app,
+            source_id,
+            "live",
+            "Live TV",
+            &mut processed_so_far,
+            total_items,
+        )
+    })
+    .unwrap_or_else(|e| {
+        log::log(format!("{:?}", e.context("Failed to process live")));
+        fail_count += 1;
+    });
+
+    vods.and_then(|vods_list: Vec<XtreamStream>| {
+        process_xtream(
+            &tx,
+            vods_list,
+            vods_cats?,
+            &source,
+            media_type::MOVIE,
+            app,
+            source_id,
+            "movies",
+            "Movies",
+            &mut processed_so_far,
+            total_items,
+        )
     })
     .unwrap_or_else(|e| {
         log::log(format!("{:?}", e.context("Failed to process vods")));
         fail_count += 1;
     });
+
     series
-        .and_then(|series: Vec<XtreamStream>| {
-            process_xtream(&tx, series, series_cats?, &source, media_type::SERIE)
+        .and_then(|series_list: Vec<XtreamStream>| {
+            process_xtream(
+                &tx,
+                series_list,
+                series_cats?,
+                &source,
+                media_type::SERIE,
+                app,
+                source_id,
+                "series",
+                "TV Shows",
+                &mut processed_so_far,
+                total_items,
+            )
         })
         .unwrap_or_else(|e| {
             log::log(format!("{:?}", e.context("Failed to process series")));
             fail_count += 1;
         });
+
     if fail_count > 2 {
         match tx.rollback() {
             Ok(_) => {}
             Err(e) => log::log(format!("Failed to rollback tx: {:?}", e)),
         }
+        let err_str = "Too many Xtream requests failed".to_string();
+        crate::utils::emit_source_refresh_progress(
+            app,
+            source_id,
+            "error",
+            &format!("Refresh failed: {}", err_str),
+            None,
+            false,
+            None,
+            None,
+            Some(err_str),
+        );
         return Err(anyhow::anyhow!("Too many Xtream requests failed"));
     }
+
+    crate::utils::emit_source_refresh_progress(
+        app,
+        source_id,
+        "finalizing",
+        "Finalizing database...",
+        Some(95.0),
+        false,
+        Some(processed_so_far),
+        Some(total_items),
+        None,
+    );
+
     if wipe {
         sql::restore_preserve(&tx, source.id.context("no source id")?, channel_preserve)?;
     }
@@ -212,6 +312,12 @@ fn process_xtream(
     cats: Vec<XtreamCategory>,
     source: &Source,
     stream_type: u8,
+    app: Option<&AppHandle>,
+    source_id: i64,
+    stage_name: &str,
+    stage_prefix: &str,
+    processed_so_far: &mut usize,
+    total_items: usize,
 ) -> Result<()> {
     let cats: HashMap<String, String> = cats
         .into_iter()
@@ -221,7 +327,29 @@ fn process_xtream(
         })
         .collect();
     let mut groups: HashMap<String, i64> = HashMap::new();
-    for live in streams {
+    let stage_total = streams.len();
+    let emit_interval = (stage_total / 80).max(25);
+
+    if stage_total > 0 && app.is_some() {
+        let pct = if total_items > 0 {
+            3.0 + ((*processed_so_far as f64 / total_items as f64) * 92.0)
+        } else {
+            3.0
+        };
+        crate::utils::emit_source_refresh_progress(
+            app,
+            source_id,
+            stage_name,
+            &format!("Syncing {} (0 / {})...", stage_prefix, stage_total),
+            Some((pct * 10.0).round() / 10.0),
+            false,
+            Some(*processed_so_far),
+            Some(total_items),
+            None,
+        );
+    }
+
+    for (idx, live) in streams.into_iter().enumerate() {
         let category_name = get_cat_name(&cats, get_serde_json_string(&live.category_id));
         convert_xtream_live_to_channel(live, &source, stream_type.clone(), category_name)
             .and_then(|mut channel| {
@@ -236,6 +364,27 @@ fn process_xtream(
                 Ok(())
             })
             .unwrap_or_else(|e| log::log(format!("{:?}", e)));
+
+        *processed_so_far += 1;
+        let current_in_stage = idx + 1;
+        if (current_in_stage % emit_interval == 0 || current_in_stage == stage_total) && app.is_some() {
+            let pct = if total_items > 0 {
+                3.0 + ((*processed_so_far as f64 / total_items as f64) * 92.0)
+            } else {
+                3.0
+            };
+            crate::utils::emit_source_refresh_progress(
+                app,
+                source_id,
+                stage_name,
+                &format!("Syncing {} ({} / {})...", stage_prefix, current_in_stage, stage_total),
+                Some((pct * 10.0).round() / 10.0),
+                false,
+                Some(*processed_so_far),
+                Some(total_items),
+                None,
+            );
+        }
     }
     Ok(())
 }

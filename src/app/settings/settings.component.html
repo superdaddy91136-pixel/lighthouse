@@ -15,6 +15,144 @@
 
   <main class="settings-content-wrapper">
 
+    <!-- MEDIA SOURCES & MANAGEMENT -->
+    <section class="settings-card">
+      <div class="card-header-row">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z" />
+          </svg>
+        </div>
+        <div class="header-info">
+          <h2 class="card-title">Media Sources &amp; Management</h2>
+          <p class="card-subtitle">Connected IPTV providers, playlist synchronization, viewing history, and local database</p>
+        </div>
+      </div>
+
+      <!-- Sources List -->
+      <div class="sources-list-wrap">
+        <ng-container *ngFor="let source of sources; let i = index">
+          <div class="source-tile-item" [class.mt-3]="i !== 0">
+            <app-source-tile [source]="source"
+              [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"></app-source-tile>
+          </div>
+        </ng-container>
+      </div>
+
+      <!-- Action Buttons Grid -->
+      <div class="sources-actions-toolbar">
+        <button type="button" [disabled]="memory.Loading" (click)="addSource()" class="btn-primary-glass">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+            <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+          </svg>
+          <span>Add Source</span>
+        </button>
+
+        <button type="button" [disabled]="memory.Loading" (click)="refreshAll()" class="btn-secondary-glass">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm icon-spin-hover">
+            <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+          </svg>
+          <span>Refresh All Sources</span>
+        </button>
+
+        <button type="button" [disabled]="memory.Loading" (click)="clearHistory()" class="btn-secondary-glass">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+            <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
+          </svg>
+          <span>Clear Watch History</span>
+        </button>
+
+        <button type="button" [disabled]="memory.Loading" (click)="nuke()" class="btn-danger-glass ms-auto"
+          title="Reset database and remove all playlists and settings">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
+            <path d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
+          </svg>
+          <span>Log Out</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- TMDB METADATA INTEGRATION -->
+    <section class="settings-card tmdb-special-card">
+      <div class="card-header-row justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="tmdb-pill-badge">TMDB</div>
+          <div class="header-info">
+            <h2 class="card-title">The Movie Database (TMDB) Integration</h2>
+            <p class="card-subtitle">Enrich movies and TV shows with official posters, backdrops, authentic synopses, cast, and ratings</p>
+          </div>
+        </div>
+        <div class="form-check form-switch m-0">
+          <input id="tmdbSwitch" class="form-check-input" type="checkbox"
+            [(ngModel)]="tmdbEnabled" (ngModelChange)="onTmdbEnabledChange()" />
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <!-- API Read Access Token -->
+        <div class="setting-row">
+          <div class="setting-label-col">
+            <label class="setting-label" for="tmdbTokenInput">API Read Access Token (v4 auth)</label>
+            <span class="setting-desc">Obtain your free API Read Access Token from your TMDB Account &gt; Settings &gt; API</span>
+          </div>
+          <div class="setting-control-col">
+            <div class="token-input-wrapper">
+              <input id="tmdbTokenInput" [type]="showTmdbToken ? 'text' : 'password'"
+                class="form-control-glass token-field" placeholder="eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOi..."
+                [(ngModel)]="tmdbToken" (ngModelChange)="onTmdbTokenChange()" />
+              <button type="button" class="btn-token-toggle" (click)="toggleShowTmdbToken()"
+                [title]="showTmdbToken ? 'Hide Token' : 'Show Token'">
+                <svg *ngIf="!showTmdbToken" class="action-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
+                </svg>
+                <svg *ngIf="showTmdbToken" class="action-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.8,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.74,6.93C10.44,6.67 11.2,6.5 12,7Z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TMDB Actions -->
+        <div class="tmdb-button-toolbar">
+          <button type="button" class="btn-primary-glass" [disabled]="tmdbTesting || !tmdbToken" (click)="testTmdbConnection()">
+            <span *ngIf="tmdbTesting" class="spinner-border spinner-border-sm me-2" role="status"></span>
+            <span>{{ tmdbTesting ? 'Verifying...' : 'Test Connection' }}</span>
+          </button>
+          <button type="button" class="btn-secondary-glass" [disabled]="!tmdbToken" (click)="clearTmdbToken()">
+            <span>Clear Token</span>
+          </button>
+          <button type="button" class="btn-secondary-glass ms-auto" (click)="clearTmdbCache()"
+            title="Clears local cache of TMDB posters, backdrops, and synopses">
+            <span>Clear Cache ({{ tmdbCacheStats.enrichedCount }} enriched)</span>
+          </button>
+        </div>
+
+        <!-- TMDB Connection Feedback Alert -->
+        <div *ngIf="tmdbTestMessage" class="status-alert-box"
+          [ngClass]="tmdbTestSuccess ? 'status-alert-success' : 'status-alert-danger'">
+          <svg *ngIf="tmdbTestSuccess" class="alert-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z"/>
+          </svg>
+          <svg *ngIf="!tmdbTestSuccess" class="alert-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
+          </svg>
+          <span class="alert-text">{{ tmdbTestMessage }}</span>
+        </div>
+
+        <!-- TMDB Attribution Footer -->
+        <div class="tmdb-legal-footer">
+          <div class="d-flex align-items-center gap-2">
+            <div class="tmdb-logo-box">
+              <span class="tmdb-logo-text">TMDB</span>
+            </div>
+            <span class="attribution-copy">This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
+          </div>
+          <span class="provider-notice">Streams and playback are supplied exclusively by your IPTV provider.</span>
+        </div>
+      </div>
+    </section>
+
     <!-- SECTION 1: INTERFACE & DISPLAY -->
     <section class="settings-card">
       <div class="card-header-row">
@@ -248,87 +386,6 @@
       </div>
     </section>
 
-    <!-- SECTION 5: TMDB METADATA INTEGRATION -->
-    <section class="settings-card tmdb-special-card">
-      <div class="card-header-row justify-content-between">
-        <div class="d-flex align-items-center gap-3">
-          <div class="tmdb-pill-badge">TMDB</div>
-          <div class="header-info">
-            <h2 class="card-title">The Movie Database (TMDB) Integration</h2>
-            <p class="card-subtitle">Enrich movies and TV shows with official posters, backdrops, authentic synopses, cast, and ratings</p>
-          </div>
-        </div>
-        <div class="form-check form-switch m-0">
-          <input id="tmdbSwitch" class="form-check-input" type="checkbox"
-            [(ngModel)]="tmdbEnabled" (ngModelChange)="onTmdbEnabledChange()" />
-        </div>
-      </div>
-
-      <div class="settings-group">
-        <!-- API Read Access Token -->
-        <div class="setting-row">
-          <div class="setting-label-col">
-            <label class="setting-label" for="tmdbTokenInput">API Read Access Token (v4 auth)</label>
-            <span class="setting-desc">Obtain your free API Read Access Token from your TMDB Account &gt; Settings &gt; API</span>
-          </div>
-          <div class="setting-control-col">
-            <div class="token-input-wrapper">
-              <input id="tmdbTokenInput" [type]="showTmdbToken ? 'text' : 'password'"
-                class="form-control-glass token-field" placeholder="eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOi..."
-                [(ngModel)]="tmdbToken" (ngModelChange)="onTmdbTokenChange()" />
-              <button type="button" class="btn-token-toggle" (click)="toggleShowTmdbToken()"
-                [title]="showTmdbToken ? 'Hide Token' : 'Show Token'">
-                <svg *ngIf="!showTmdbToken" class="action-svg" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
-                </svg>
-                <svg *ngIf="showTmdbToken" class="action-svg" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.8,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.27,4.75 8.04,5.23L9.74,6.93C10.44,6.67 11.2,6.5 12,7Z" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- TMDB Actions -->
-        <div class="tmdb-button-toolbar">
-          <button type="button" class="btn-primary-glass" [disabled]="tmdbTesting || !tmdbToken" (click)="testTmdbConnection()">
-            <span *ngIf="tmdbTesting" class="spinner-border spinner-border-sm me-2" role="status"></span>
-            <span>{{ tmdbTesting ? 'Verifying...' : 'Test Connection' }}</span>
-          </button>
-          <button type="button" class="btn-secondary-glass" [disabled]="!tmdbToken" (click)="clearTmdbToken()">
-            <span>Clear Token</span>
-          </button>
-          <button type="button" class="btn-secondary-glass ms-auto" (click)="clearTmdbCache()"
-            title="Clears local cache of TMDB posters, backdrops, and synopses">
-            <span>Clear Cache ({{ tmdbCacheStats.enrichedCount }} enriched)</span>
-          </button>
-        </div>
-
-        <!-- TMDB Connection Feedback Alert -->
-        <div *ngIf="tmdbTestMessage" class="status-alert-box"
-          [ngClass]="tmdbTestSuccess ? 'status-alert-success' : 'status-alert-danger'">
-          <svg *ngIf="tmdbTestSuccess" class="alert-icon" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z"/>
-          </svg>
-          <svg *ngIf="!tmdbTestSuccess" class="alert-icon" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
-          </svg>
-          <span class="alert-text">{{ tmdbTestMessage }}</span>
-        </div>
-
-        <!-- TMDB Attribution Footer -->
-        <div class="tmdb-legal-footer">
-          <div class="d-flex align-items-center gap-2">
-            <div class="tmdb-logo-box">
-              <span class="tmdb-logo-text">TMDB</span>
-            </div>
-            <span class="attribution-copy">This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
-          </div>
-          <span class="provider-notice">Streams and playback are supplied exclusively by your IPTV provider.</span>
-        </div>
-      </div>
-    </section>
-
     <!-- SECTION 6: ADVANCED MPV OPTIONS -->
     <section class="settings-card">
       <div class="card-header-row">
@@ -351,63 +408,6 @@
             placeholder="e.g. --hwdec=auto --demuxer-max-bytes=150M"
             class="form-control-glass textarea-monospace"></textarea>
         </div>
-      </div>
-    </section>
-
-    <!-- SECTION 7: MEDIA SOURCES & DATA -->
-    <section class="settings-card">
-      <div class="card-header-row">
-        <div class="header-icon-box">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z" />
-          </svg>
-        </div>
-        <div class="header-info">
-          <h2 class="card-title">Media Sources &amp; Management</h2>
-          <p class="card-subtitle">Connected IPTV providers, playlist synchronization, viewing history, and local database</p>
-        </div>
-      </div>
-
-      <!-- Sources List -->
-      <div class="sources-list-wrap">
-        <ng-container *ngFor="let source of sources; let i = index">
-          <div class="source-tile-item" [class.mt-3]="i !== 0">
-            <app-source-tile [source]="source"
-              [expiry]="source.source_type == 2 ? expiries[source.id!] : undefined"></app-source-tile>
-          </div>
-        </ng-container>
-      </div>
-
-      <!-- Action Buttons Grid -->
-      <div class="sources-actions-toolbar">
-        <button type="button" [disabled]="memory.Loading" (click)="addSource()" class="btn-primary-glass">
-          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
-            <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
-          </svg>
-          <span>Add Source</span>
-        </button>
-
-        <button type="button" [disabled]="memory.Loading" (click)="refreshAll()" class="btn-secondary-glass">
-          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm icon-spin-hover">
-            <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
-          </svg>
-          <span>Refresh All Sources</span>
-        </button>
-
-        <button type="button" [disabled]="memory.Loading" (click)="clearHistory()" class="btn-secondary-glass">
-          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
-            <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3" />
-          </svg>
-          <span>Clear Watch History</span>
-        </button>
-
-        <button type="button" [disabled]="memory.Loading" (click)="nuke()" class="btn-danger-glass ms-auto"
-          title="Reset database and remove all playlists and settings">
-          <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon-sm">
-            <path d="M14.04,12H10V11H5.5A3.5,3.5 0 0,1 2,7.5A3.5,3.5 0 0,1 5.5,4C6.53,4 7.45,4.44 8.09,5.15C8.5,3.35 10.08,2 12,2C13.92,2 15.5,3.35 15.91,5.15C16.55,4.44 17.47,4 18.5,4A3.5,3.5 0 0,1 22,7.5A3.5,3.5 0 0,1 18.5,11H14.04V12M10,16.9V15.76H5V13.76H19V15.76H14.04V16.92L20,19.08C20.58,19.29 21,19.84 21,20.5A1.5,1.5 0 0,1 19.5,22H4.5A1.5,1.5 0 0,1 3,20.5C3,19.84 3.42,19.29 4,19.08L10,16.9Z" />
-          </svg>
-          <span>Log Out</span>
-        </button>
       </div>
     </section>
   </main>

@@ -9,6 +9,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use regex::{Captures, Regex};
 use rusqlite::Transaction;
+use tauri::AppHandle;
 use types::{Channel, Source};
 
 use crate::types::ChannelPreserve;
@@ -48,7 +49,19 @@ struct M3UProcessing {
     line_count: usize,
 }
 
-pub fn read_m3u8(mut source: Source, wipe: bool) -> Result<()> {
+pub fn read_m3u8(app: Option<&AppHandle>, mut source: Source, wipe: bool) -> Result<()> {
+    let source_id = source.id.unwrap_or(0);
+    crate::utils::emit_source_refresh_progress(
+        app,
+        source_id,
+        "reading",
+        "Reading playlist file...",
+        Some(10.0),
+        false,
+        None,
+        None,
+        None,
+    );
     let path = match source.source_type {
         source_type::M3U_LINK => get_tmp_path(),
         _ => source.url.clone().context("no file path found")?,
@@ -76,6 +89,7 @@ pub fn read_m3u8(mut source: Source, wipe: bool) -> Result<()> {
         use_tvg_id: source.use_tvg_id,
         line_count: 0,
     };
+    let mut channel_count = 0;
     while let Some((c1, l1)) = lines.next() {
         processing.line_count = c1;
         let l1 = match l1.with_context(|| format!("Failed to process line {c1}")) {
@@ -88,6 +102,20 @@ pub fn read_m3u8(mut source: Source, wipe: bool) -> Result<()> {
         let l1_upper = l1.to_uppercase();
         if l1_upper.starts_with("#EXTINF") {
             try_commit_channel(&mut processing, &tx);
+            channel_count += 1;
+            if channel_count % 100 == 0 && app.is_some() {
+                crate::utils::emit_source_refresh_progress(
+                    app,
+                    source_id,
+                    "syncing",
+                    &format!("Syncing channels ({} processed)...", channel_count),
+                    None,
+                    true,
+                    Some(channel_count),
+                    None,
+                    None,
+                );
+            }
             processing.channel_line = Some(l1);
             processing.channel_headers_set = false;
         } else if l1_upper.starts_with("#EXTVLCOPT") {
@@ -107,6 +135,20 @@ pub fn read_m3u8(mut source: Source, wipe: bool) -> Result<()> {
         }
     }
     try_commit_channel(&mut processing, &tx);
+    channel_count += 1;
+
+    crate::utils::emit_source_refresh_progress(
+        app,
+        source_id,
+        "finalizing",
+        "Finalizing database...",
+        Some(95.0),
+        false,
+        Some(channel_count),
+        None,
+        None,
+    );
+
     if wipe {
         sql::restore_preserve(&tx, source.id.context("no source id")?, channel_preserve)?;
     }
@@ -170,7 +212,19 @@ fn commit_channel(
     Ok(())
 }
 
-pub async fn get_m3u8_from_link(source: Source, wipe: bool) -> Result<()> {
+pub async fn get_m3u8_from_link(app: Option<&AppHandle>, source: Source, wipe: bool) -> Result<()> {
+    let source_id = source.id.unwrap_or(0);
+    crate::utils::emit_source_refresh_progress(
+        app,
+        source_id,
+        "downloading",
+        "Downloading playlist from URL...",
+        None,
+        true,
+        None,
+        None,
+        None,
+    );
     let user_agent = get_user_agent_from_source(&source)?;
     let client = reqwest::Client::builder().user_agent(user_agent).build()?;
     let url = source.url.clone().context("Invalid source")?;
@@ -189,7 +243,7 @@ pub async fn get_m3u8_from_link(source: Source, wipe: bool) -> Result<()> {
     while let Some(chunk) = response.chunk().await? {
         file.write(&chunk)?;
     }
-    read_m3u8(source, wipe)
+    read_m3u8(app, source, wipe)
 }
 
 fn get_tmp_path() -> String {

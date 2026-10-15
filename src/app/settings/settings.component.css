@@ -3,7 +3,7 @@
   display: block;
   width: 100%;
   min-height: 100vh;
-  background-color: #0b0d13;
+  background-color: #202124;
   color: #ffffff;
 }
 
@@ -11,7 +11,7 @@
   position: relative;
   width: 100%;
   min-height: 100vh;
-  padding: 2.5rem 2rem 5rem 6.5rem;
+  padding: 2.5rem 2rem 5rem 2rem;
   box-sizing: border-box;
 }
 
