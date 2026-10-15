@@ -72,10 +72,13 @@ export class DragScrollDirective implements OnInit, OnDestroy {
     // Only drag with primary (left) mouse button
     if (event.button !== 0) return;
 
-    // If click was on an interactive button or control, do not initiate drag
+    // If click was on an interactive button or control, do not initiate drag unless it's a draggable track item
     const target = event.target as HTMLElement | null;
-    if (target && target.closest('button, a, input, select, textarea, [mat-menu-item], .btn-card-menu, .card-fav-btn, .card-cw-menu-btn, [role="button"]')) {
-      return;
+    if (target) {
+      const isTrackItemButton = !!target.closest('.season-pill-btn, .season-selector-track button');
+      if (!isTrackItemButton && target.closest('button, a, input, select, textarea, [mat-menu-item], .btn-card-menu, .card-fav-btn, .card-cw-menu-btn, [role="button"]')) {
+        return;
+      }
     }
 
     // If click was on a native scrollbar track/thumb, do not intercept

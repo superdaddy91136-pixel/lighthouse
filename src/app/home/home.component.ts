@@ -760,6 +760,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
     const savedPos = this.embeddedPlayer.getSavedPosition(channel.id, channel);
     const seasonNum = isTv ? this.embeddedPlayer.extractSeasonNumber(channel) : undefined;
+    const seriesTitle = isTv ? this.embeddedPlayer.extractSeriesTitle(channel) : undefined;
 
     try {
       await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
@@ -767,6 +768,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         mode: isTv ? 'episode' : 'movie',
         startTime: savedPos,
         currentSeasonNum: seasonNum,
+        seriesTitle: seriesTitle || undefined,
       });
     } catch (e) {
       console.error('Failed to resume media:', e);

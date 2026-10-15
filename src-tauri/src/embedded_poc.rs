@@ -1783,6 +1783,9 @@ pub async fn start_embedded_player(
     state: State<'_, EmbeddedPocState>,
 ) -> Result<PocStreamInfo, String> {
     let stream = build_stream_info_from_channel(&channel)?;
+    if let Some(id) = channel.id {
+        let _ = crate::sql::add_last_watched(id);
+    }
     start_embedded_player_internal(window, stream, x, y, width, height, z_order, state).await
 }
 

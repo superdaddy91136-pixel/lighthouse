@@ -3324,6 +3324,7 @@
           card.addEventListener('click', (e) => {
             e.stopPropagation();
             flushSaveProgress();
+            currentActiveChannelId = ep.id;
             episodesData.currentEpisodeId = ep.id;
             renderEpisodes();
             tauriEmit('select-player-episode', {
@@ -3385,6 +3386,7 @@
         if (currentIndex !== -1 && currentIndex + 1 < episodesData.episodes.length) {
           flushSaveProgress();
           const nextEp = episodesData.episodes[currentIndex + 1];
+          currentActiveChannelId = nextEp.id;
           episodesData.currentEpisodeId = nextEp.id;
           renderEpisodes();
           tauriEmit('select-player-episode', {

@@ -873,11 +873,12 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       (e) => e.channel.id === channel.id,
     );
     if (!targetEnriched) {
-      const epNum = channel.episode_num || 1;
+      const epNum = channel.episode_num || this.embeddedPlayer.extractEpisodeNumber(channel.name) || 1;
+      const epSeason = this.embeddedPlayer.extractSeasonNumber(channel) || this.selectedSeasonNumber;
       targetEnriched = {
         channel,
         episodeNum: epNum,
-        seasonNum: this.selectedSeasonNumber,
+        seasonNum: epSeason,
         title: channel.name || `Episode ${epNum}`,
       };
     }

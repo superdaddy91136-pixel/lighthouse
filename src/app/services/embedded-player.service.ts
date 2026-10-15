@@ -3,7 +3,7 @@ import { Router, NavigationStart } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ToastrService } from 'ngx-toastr';
-import { BehaviorSubject, Observable, Subscription } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { Channel } from '../models/channel';
 import { MediaType } from '../models/mediaType';
@@ -68,6 +68,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
   private isFullscreenSubject = new BehaviorSubject<boolean>(false);
   public isFullscreen$: Observable<boolean> = this.isFullscreenSubject.asObservable();
+  public lastWatchedUpdated$ = new Subject<number>();
 
   public get isPlayingEmbedded(): boolean {
     return this.isPlayingEmbeddedSubject.value;
@@ -211,23 +212,53 @@ export class EmbeddedPlayerService implements OnDestroy {
     // Listen for episode selection from overlay
     this.unlistenSelectEpisode = await listen('select-player-episode', (event: any) => {
       const episodeId = event?.payload?.episodeId ?? event?.payload?.id;
-      const targetEp = this.episodes.find((e) => e.id === episodeId);
+      let targetEp = this.episodes.find((e) => e.id === episodeId);
+      const targetChannel: Channel | undefined = targetEp?.channel || event?.payload?.channel;
+      const chId = targetChannel?.id || episodeId;
+
+      if (chId) {
+        invoke('add_last_watched', { id: chId }).catch(console.warn);
+        this.lastWatchedUpdated$.next(chId);
+      }
+
+      if (!targetEp && targetChannel) {
+        const epNum = targetChannel.episode_num || this.extractEpisodeNumber(targetChannel.name);
+        const sNum = this.extractSeasonNumber(targetChannel);
+        targetEp = {
+          id: targetChannel.id!,
+          channel: targetChannel,
+          episodeNum: epNum,
+          seasonNum: sNum,
+          title: cleanMediaTitle(targetChannel.name || `Episode ${epNum}`),
+          stillUrl: targetChannel.image,
+          isWatched: true,
+          isCurrent: true,
+        };
+      }
+
       if (targetEp) {
+        targetEp.isWatched = true;
+        (targetEp.channel as any).last_watched = Date.now();
+        this.currentSeasonNum = targetEp.seasonNum;
+        this.emitEpisodesData();
+
         this.ngZone.run(() => {
           if (this.onSwitchEpisodeCallback) {
-            this.onSwitchEpisodeCallback(targetEp.channel);
+            this.onSwitchEpisodeCallback(targetEp!.channel);
           } else {
-            const seriesName = this.seriesTitle || '';
-            const sNum = String(targetEp.seasonNum).padStart(2, '0');
-            const eNum = String(targetEp.episodeNum).padStart(2, '0');
-            const overlayTitle = `${seriesName} - S${sNum}E${eNum}: ${targetEp.title}`.trim();
-            this.startPlayer(targetEp.channel, this.hostTarget || 'tv-video-canvas', {
+            const seriesName = this.seriesTitle || this.extractSeriesTitle(targetEp!.channel) || '';
+            const sNum = String(targetEp!.seasonNum).padStart(2, '0');
+            const eNum = String(targetEp!.episodeNum).padStart(2, '0');
+            const overlayTitle = seriesName
+              ? `${seriesName} - S${sNum}E${eNum}: ${targetEp!.title}`.trim()
+              : `S${sNum}E${eNum}: ${targetEp!.title}`.trim();
+            this.startPlayer(targetEp!.channel, this.hostTarget || 'home-video-canvas', {
               mode: 'episode',
               title: overlayTitle,
               seriesChannel: this.seriesChannel,
-              seriesTitle: this.seriesTitle,
+              seriesTitle: this.seriesTitle || seriesName,
               seasons: this.seasons,
-              currentSeasonNum: targetEp.seasonNum,
+              currentSeasonNum: targetEp!.seasonNum,
               episodes: this.episodes,
             });
           }
@@ -631,6 +662,11 @@ export class EmbeddedPlayerService implements OnDestroy {
     hostElementOrId: HTMLElement | string,
     options?: EmbeddedPlayerOptions,
   ): Promise<void> {
+    if (channel?.id) {
+      invoke('add_last_watched', { id: channel.id }).catch(console.warn);
+      this.lastWatchedUpdated$.next(channel.id);
+    }
+
     const wasAlreadyPlaying = this.isPlayingEmbedded;
     if (wasAlreadyPlaying) {
       this.isRestartingPlayer = true;
@@ -639,8 +675,7 @@ export class EmbeddedPlayerService implements OnDestroy {
       } catch (e) {
         console.warn('stop_embedded_poc error', e);
       }
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      this.isRestartingPlayer = false;
+      await new Promise((resolve) => setTimeout(resolve, 80));
     } else {
       this.saveScrollPosition();
       this.hostTarget = hostElementOrId;
@@ -654,7 +689,11 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     // TV episode switcher options
     if (options?.seriesChannel) this.seriesChannel = options.seriesChannel;
-    if (options?.seriesTitle) this.seriesTitle = options.seriesTitle;
+    if (options?.seriesTitle) {
+      this.seriesTitle = options.seriesTitle;
+    } else if (this.currentMode === 'episode' && !this.seriesTitle) {
+      this.seriesTitle = this.extractSeriesTitle(channel);
+    }
     if (options?.seasons) this.seasons = options.seasons;
     if (options?.currentSeasonNum) {
       this.currentSeasonNum = options.currentSeasonNum;
@@ -786,6 +825,12 @@ export class EmbeddedPlayerService implements OnDestroy {
         await this.stopPlayer();
       }
       throw err;
+    } finally {
+      if (wasAlreadyPlaying) {
+        setTimeout(() => {
+          this.isRestartingPlayer = false;
+        }, 200);
+      }
     }
   }
 
@@ -818,6 +863,10 @@ export class EmbeddedPlayerService implements OnDestroy {
   public async switchChannel(channel: Channel, title?: string): Promise<void> {
     if (!channel || channel.id == null) return;
     this.currentChannel = channel;
+    if (channel.id) {
+      invoke('add_last_watched', { id: channel.id }).catch(console.warn);
+      this.lastWatchedUpdated$.next(channel.id);
+    }
     if (channel.group_id != null) {
       this.currentGroupId = channel.group_id;
     }
@@ -909,10 +958,63 @@ export class EmbeddedPlayerService implements OnDestroy {
     return 1;
   }
 
+  public extractEpisodeNumber(name?: string): number {
+    if (!name) return 1;
+    const match =
+      name.match(/\b(?:e|ep|episode)[\s._-]*(\d{1,3})\b/i) ||
+      name.match(/\b\d{1,2}x(\d{1,3})\b/i);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 1;
+  }
+
+  public extractSeriesTitle(channel?: Channel): string {
+    if (!channel || !channel.name) return '';
+    if (this.seriesTitle) return this.seriesTitle;
+    if (this.seriesChannel?.name) return cleanMediaTitle(this.seriesChannel.name);
+    const name = channel.name;
+    const match = name.match(/^(.*?)(?:[\s._-]+(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|season\s*\d+|ep(?:isode)?\s*\d+))/i);
+    if (match && match[1].trim()) {
+      return cleanMediaTitle(match[1].trim());
+    }
+    return cleanMediaTitle(name);
+  }
+
   public async loadSeriesAndSeasons(channel: Channel, targetSeasonNum: number): Promise<void> {
     try {
       const seriesId = channel.series_id || (channel.url && /^\d+$/.test(channel.url.trim()) ? parseInt(channel.url.trim(), 10) : undefined);
       if (!seriesId) return;
+
+      if (!this.seriesTitle || !this.seriesChannel) {
+        if (!this.seriesTitle) {
+          this.seriesTitle = this.extractSeriesTitle(channel);
+        }
+        try {
+          const sourceIds = channel.source_id
+            ? [channel.source_id]
+            : Array.from(this.memory.Sources.keys());
+          const seriesList = (await invoke('search', {
+            filters: {
+              source_ids: sourceIds,
+              series_id: undefined,
+              media_types: [MediaType.serie],
+              view_type: ViewMode.All,
+              use_keywords: false,
+              query: String(seriesId),
+              page: 1,
+              sort: SortType.alphabeticalAscending,
+            },
+          })) as Channel[];
+          const matchedSeries = seriesList.find((s) => s.url === String(seriesId) || s.id === seriesId);
+          if (matchedSeries) {
+            this.seriesChannel = matchedSeries;
+            this.seriesTitle = cleanMediaTitle(matchedSeries.name || '') || this.seriesTitle;
+          }
+        } catch {}
+      }
+
       const sourceIds = channel.source_id
         ? [channel.source_id]
         : Array.from(this.memory.Sources.keys());

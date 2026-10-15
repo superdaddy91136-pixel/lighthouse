@@ -44,6 +44,7 @@ import {
   HomeDiscoverySnapshot,
   HomeDiscoveryStateService,
 } from "../../services/home-discovery-state.service";
+import { EmbeddedPlayerService } from "../../services/embedded-player.service";
 
 export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
 
@@ -170,6 +171,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
     public versionMatching: VersionMatchingService,
+    public embeddedPlayer: EmbeddedPlayerService,
     private cdr: ChangeDetectorRef,
   ) {}
 
@@ -183,6 +185,24 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.discoveryState.discoveryUpdated$.subscribe((snapshot) => {
         if (this.isDestroyed) return;
         this.syncFromSnapshot(snapshot);
+      }),
+    );
+
+    // Refresh Continue Watching whenever last_watched is updated in the database
+    this.subs.push(
+      this.embeddedPlayer.lastWatchedUpdated$.subscribe(() => {
+        this.refreshContinueWatching();
+      }),
+    );
+
+    // Refresh Continue Watching whenever embedded player stops/closes
+    let wasPlaying = false;
+    this.subs.push(
+      this.embeddedPlayer.isPlayingEmbedded$.subscribe((isPlaying) => {
+        if (wasPlaying && !isPlaying) {
+          this.refreshContinueWatching();
+        }
+        wasPlaying = isPlaying;
       }),
     );
 
@@ -604,6 +624,63 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     } catch (e) {
       console.error("Failed to load discovery:", e);
       this.loading = false;
+    }
+  }
+
+  public async refreshContinueWatching(): Promise<void> {
+    if (this.isDestroyed) return;
+    try {
+      const enabledSourceIds = Array.from(this.memory.Sources.keys());
+      if (enabledSourceIds.length === 0) return;
+
+      const historyRes = await this.fetchSafe({
+        source_ids: enabledSourceIds,
+        view_type: ViewMode.History,
+        media_types: [MediaType.movie, MediaType.serie],
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+        use_keywords: false,
+      });
+
+      if (this.isDestroyed) return;
+      const deduplicatedHistory = this.deduplicateContinueWatching(historyRes);
+
+      const cwRowIndex = this.masterDiscoveryRows.findIndex(
+        (r) => r.id === "row-continue-watching"
+      );
+
+      if (deduplicatedHistory.length > 0) {
+        const cwRow: DiscoveryRow = {
+          id: "row-continue-watching",
+          title: "Continue Watching",
+          icon: "play-circle",
+          badge: `${deduplicatedHistory.length}`,
+          items: deduplicatedHistory,
+        };
+
+        if (cwRowIndex !== -1) {
+          this.masterDiscoveryRows[cwRowIndex] = cwRow;
+        } else {
+          this.masterDiscoveryRows.unshift(cwRow);
+          this.masterDiscoveryRows.sort(
+            (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
+          );
+        }
+
+        for (const item of deduplicatedHistory) {
+          if (this.isTvShow(item)) {
+            this.resolveEpisodeStill(item);
+          }
+        }
+      } else if (cwRowIndex !== -1) {
+        this.masterDiscoveryRows.splice(cwRowIndex, 1);
+      }
+
+      this.applyContentPreferences();
+      this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
+      this.cdr.markForCheck();
+    } catch (err) {
+      console.warn("Failed to refresh continue watching:", err);
     }
   }
 

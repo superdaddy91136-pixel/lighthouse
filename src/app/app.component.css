@@ -6,6 +6,12 @@
   background-color: #202124;
 }
 
+.app-layout:has(app-movie-detail),
+.app-layout:has(app-tv-detail),
+.app-layout:has(.movie-detail-container) {
+  background-color: #0f1117;
+}
+
 .app-main {
   flex: 1;
   min-width: 0;

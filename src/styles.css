@@ -1165,7 +1165,8 @@ body::-webkit-scrollbar-thumb:active {
 .movie-hero-banner {
   position: relative;
   z-index: 30;
-  width: 100%;
+  width: calc(100% + 108px);
+  margin-left: -108px;
   min-height: 480px;
   display: flex;
   align-items: flex-end;
@@ -1191,13 +1192,21 @@ body::-webkit-scrollbar-thumb:active {
 .movie-backdrop-gradient {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to top,
-    #0f1117 0%,
-    rgba(15, 17, 23, 0.88) 30%,
-    rgba(15, 17, 23, 0.35) 65%,
-    rgba(15, 17, 23, 0.55) 100%
-  );
+  background: 
+    linear-gradient(
+      90deg,
+      rgba(15, 17, 23, 0.92) 0%,
+      rgba(15, 17, 23, 0.78) 72px,
+      rgba(15, 17, 23, 0.4) 180px,
+      transparent 360px
+    ),
+    linear-gradient(
+      to top,
+      #0f1117 0%,
+      rgba(15, 17, 23, 0.88) 30%,
+      rgba(15, 17, 23, 0.35) 65%,
+      rgba(15, 17, 23, 0.55) 100%
+    );
 }
 .movie-backdrop-vignette {
   position: absolute;
@@ -1215,7 +1224,7 @@ body::-webkit-scrollbar-thumb:active {
   position: relative;
   z-index: 10;
   width: 100%;
-  padding: 5rem 2.5rem 2rem 2.5rem;
+  padding: 5rem 2.5rem 2rem calc(108px + 2.5rem);
 }
 .hero-inner {
   display: flex;
@@ -1802,19 +1811,16 @@ body::-webkit-scrollbar-thumb:active {
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  padding-bottom: 6px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 4px;
   user-select: none;
   -webkit-user-select: none;
 }
 .cast-track::-webkit-scrollbar {
-  height: 5px;
-}
-.cast-track::-webkit-scrollbar-thumb {
-  width: 1cm;
-  min-width: 1cm;
-  max-width: 1cm;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 9999px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 .cast-card {
   flex: 0 0 100px;
@@ -1964,7 +1970,7 @@ body::-webkit-scrollbar-thumb:active {
 /* ── Responsive: Medium ── */
 @media (max-width: 900px) {
   .movie-hero-content {
-    padding: 5rem 1.5rem 1.5rem;
+    padding: 5rem 1.5rem 1.5rem calc(108px + 1.5rem);
   }
   .hero-poster-col {
     flex: 0 0 160px;
@@ -1978,10 +1984,17 @@ body::-webkit-scrollbar-thumb:active {
   }
 }
 
+@media screen and (max-width: 767px) {
+  .movie-hero-banner {
+    width: calc(100% + 86px);
+    margin-left: -86px;
+  }
+}
+
 /* ── Responsive: Small ── */
 @media (max-width: 640px) {
   .movie-hero-content {
-    padding: 4.5rem 1rem 1rem;
+    padding: 4.5rem 1rem 1rem calc(86px + 1rem);
   }
   .hero-inner {
     flex-direction: column;
@@ -2064,20 +2077,18 @@ body::-webkit-scrollbar-thumb:active {
   align-items: center;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 2px;
   max-width: 100%;
+  min-width: 0;
   user-select: none;
   -webkit-user-select: none;
 }
 .season-selector-track::-webkit-scrollbar {
-  height: 4px;
-}
-.season-selector-track::-webkit-scrollbar-thumb {
-  width: 1cm;
-  min-width: 1cm;
-  max-width: 1cm;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 9999px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .season-pill-btn {
@@ -2090,6 +2101,7 @@ body::-webkit-scrollbar-thumb:active {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.2s ease;
 }
 .season-pill-btn:hover {
