@@ -447,19 +447,15 @@ export class EmbeddedPlayerService implements OnDestroy {
       return;
     }
 
-    if (event.key === 'ArrowUp') {
-      invoke('send_embedded_poc_ipc', {
-        command: JSON.stringify({ command: ['add', 'volume', 5] }),
-      }).catch(console.warn);
+    if (event.key === 'ArrowUp' || event.key === 'AudioVolumeUp') {
+      emit('player-volume-up').catch(console.warn);
       event.preventDefault();
       event.stopPropagation();
       return;
     }
 
-    if (event.key === 'ArrowDown') {
-      invoke('send_embedded_poc_ipc', {
-        command: JSON.stringify({ command: ['add', 'volume', -5] }),
-      }).catch(console.warn);
+    if (event.key === 'ArrowDown' || event.key === 'AudioVolumeDown') {
+      emit('player-volume-down').catch(console.warn);
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -472,10 +468,8 @@ export class EmbeddedPlayerService implements OnDestroy {
       return;
     }
 
-    if (event.key === 'm' || event.key === 'M') {
-      invoke('send_embedded_poc_ipc', {
-        command: JSON.stringify({ command: ['cycle', 'mute'] }),
-      }).catch(console.warn);
+    if (event.key === 'm' || event.key === 'M' || event.key === 'AudioVolumeMute') {
+      emit('player-volume-mute').catch(console.warn);
       event.preventDefault();
       event.stopPropagation();
       return;
