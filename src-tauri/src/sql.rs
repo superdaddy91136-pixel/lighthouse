@@ -461,7 +461,7 @@ pub fn search(filters: Filters) -> Result<Vec<Channel>> {
     if filters.view_type == view_type::HIDDEN {
         return search_hidden(filters);
     }
-    if filters.series_id.is_some() && filters.season.is_none() {
+    if filters.series_id.is_some() && filters.season.is_none() && filters.view_type != view_type::HISTORY {
         return search_series(filters);
     }
     let sql = get_conn()?;

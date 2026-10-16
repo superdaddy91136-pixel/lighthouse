@@ -2151,6 +2151,19 @@ body::-webkit-scrollbar-thumb:active {
   border-color: rgba(255, 255, 255, 0.14);
   transform: translateX(4px);
 }
+.episode-card.highlighted {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 0 16px rgba(56, 189, 248, 0.15), inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
+.episode-card.highlighted:hover {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.18) 0%, rgba(255, 255, 255, 0.07) 100%);
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.25), inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+.episode-card.highlighted .episode-title {
+  color: #38bdf8;
+}
 .episode-card:hover .episode-play-circle {
   transform: scale(1.05);
   background: rgba(255, 255, 255, 0.28);
@@ -2251,6 +2264,10 @@ body::-webkit-scrollbar-thumb:active {
 .episode-watched-badge svg {
   width: 0.75rem;
   height: 0.75rem;
+}
+.episode-watched-badge.episode-highlighted-badge {
+  background: rgba(14, 165, 233, 0.9);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
 }
 
 /* Episode Info */

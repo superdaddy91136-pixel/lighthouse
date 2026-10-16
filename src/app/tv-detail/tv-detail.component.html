@@ -116,7 +116,7 @@
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
               </svg>
-              <span>{{ continueEpisode.isWatched ? 'Continue Watching' : 'Start Watching' }} (S{{ continueEpisode.seasonNum }} E{{ continueEpisode.episodeNum }})</span>
+              <span>{{ continueEpisode.isWatched ? 'Continue' : 'Start' }} S{{ continueEpisode.seasonNum }} E{{ continueEpisode.episodeNum }}</span>
             </button>
 
 
@@ -250,6 +250,7 @@
         <div 
           *ngFor="let ep of enrichedEpisodes" 
           class="episode-card" 
+          [class.highlighted]="isEpisodeHighlighted(ep)"
           (click)="playEpisode(ep)"
           title="Play {{ ep.title }}">
           
@@ -279,8 +280,16 @@
               </div>
             </div>
 
+            <!-- Highlighted / Last Played Badge -->
+            <div class="episode-watched-badge episode-highlighted-badge" *ngIf="isEpisodeHighlighted(ep)">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+              </svg>
+              <span>Last Played</span>
+            </div>
+
             <!-- Watched Badge -->
-            <div class="episode-watched-badge" *ngIf="ep.isWatched">
+            <div class="episode-watched-badge" *ngIf="ep.isWatched && !isEpisodeHighlighted(ep)">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
               </svg>
