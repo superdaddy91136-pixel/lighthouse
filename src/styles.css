@@ -1197,6 +1197,11 @@ body::-webkit-scrollbar-thumb:active {
   object-position: center 20%;
   filter: brightness(0.72) saturate(1.15);
   transform: scale(1.02);
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+.movie-backdrop-img.is-fallback {
+  filter: brightness(0.55) saturate(1.05) blur(12px);
+  transform: scale(1.08);
 }
 .movie-backdrop-gradient {
   position: absolute;

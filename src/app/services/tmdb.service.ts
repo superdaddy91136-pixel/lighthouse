@@ -315,6 +315,7 @@ export class TmdbService {
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.release_date && raw.release_date.length >= 4 ? raw.release_date.substring(0, 4) : undefined;
     const logoPath = extractBestLogoPath(raw.images);
+    const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.images);
 
     return {
       providerItemId,
@@ -326,7 +327,7 @@ export class TmdbService {
       matchConfidence,
       overview: raw.overview?.trim() || undefined,
       posterPath: raw.poster_path || undefined,
-      backdropPath: raw.backdrop_path || undefined,
+      backdropPath,
       logoPath,
       releaseDate: raw.release_date || undefined,
       releaseYear,
@@ -388,6 +389,7 @@ export class TmdbService {
     const releaseYear = raw.first_air_date && raw.first_air_date.length >= 4 ? raw.first_air_date.substring(0, 4) : undefined;
     const runtime = raw.episode_run_time && raw.episode_run_time.length > 0 ? raw.episode_run_time[0] : undefined;
     const logoPath = extractBestLogoPath(raw.images);
+    const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.images);
 
     return {
       providerItemId,
@@ -399,7 +401,7 @@ export class TmdbService {
       matchConfidence,
       overview: raw.overview?.trim() || undefined,
       posterPath: raw.poster_path || undefined,
-      backdropPath: raw.backdrop_path || undefined,
+      backdropPath,
       logoPath,
       releaseDate: raw.first_air_date || undefined,
       releaseYear,
@@ -480,6 +482,44 @@ function extractBestLogoPath(images: any): string | undefined {
     if (aScore !== bScore) return bScore - aScore;
 
     return (b.width || 0) - (a.width || 0);
+  });
+
+  return scored[0]?.file_path || undefined;
+}
+
+/**
+ * Selects the best backdrop path from raw TMDB details.
+ * Prefers raw.backdrop_path if available; otherwise falls back to the highest-scored
+ * backdrop in raw.images?.backdrops (preferring English/neutral, high resolution, high vote).
+ */
+function extractBestBackdropPath(primaryBackdrop: any, images: any): string | undefined {
+  if (primaryBackdrop && typeof primaryBackdrop === 'string' && primaryBackdrop.trim() !== '') {
+    return primaryBackdrop;
+  }
+  const backdrops: any[] = images?.backdrops;
+  if (!backdrops || !Array.isArray(backdrops) || backdrops.length === 0) {
+    return undefined;
+  }
+  const valid = backdrops.filter(
+    (b) => b && typeof b.file_path === 'string' && b.file_path.trim() !== '',
+  );
+  if (valid.length === 0) return undefined;
+
+  const scored = [...valid].sort((a, b) => {
+    // Prefer language-neutral or English backdrops
+    const aLang = !a.iso_639_1 ? 2 : (a.iso_639_1 === 'en' ? 1 : 0);
+    const bLang = !b.iso_639_1 ? 2 : (b.iso_639_1 === 'en' ? 1 : 0);
+    if (aLang !== bLang) return bLang - aLang;
+
+    // Prefer higher resolution (e.g. 1920 or 3840 wide)
+    const aWidth = a.width || 0;
+    const bWidth = b.width || 0;
+    if (aWidth !== bWidth) return bWidth - aWidth;
+
+    // Prefer higher vote score
+    const aScore = (a.vote_average || 0) * (a.vote_count || 1);
+    const bScore = (b.vote_average || 0) * (b.vote_count || 1);
+    return bScore - aScore;
   });
 
   return scored[0]?.file_path || undefined;

@@ -28,6 +28,7 @@ import {
   TmdbVideo,
 } from '../models/tmdb';
 import { MediaVersion } from '../models/version';
+import { TmdbCacheService } from '../services/tmdb-cache.service';
 import { TmdbConfigService } from '../services/tmdb-config.service';
 import { TmdbEnrichmentService } from '../services/tmdb-enrichment.service';
 import { TvDetailService } from '../services/tv-detail.service';
@@ -117,6 +118,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   isStartingPlayback: boolean = false;
   imageError: boolean = false;
   backdropError: boolean = false;
+  isBackdropFallback: boolean = false;
   castImageErrors: Set<number> = new Set();
   episodeImageErrors: Set<number> = new Set();
 
@@ -129,6 +131,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
     private tvDetailService: TvDetailService,
     private tmdbEnrichment: TmdbEnrichmentService,
+    private tmdbCache: TmdbCacheService,
     public tmdbConfig: TmdbConfigService,
     public memory: MemoryService,
     private versionMatching: VersionMatchingService,
@@ -174,8 +177,17 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     // Listen for reactive TMDB background enrichment updates
     this.subs.push(
       this.tmdbEnrichment.enrichmentUpdated$.subscribe((updated) => {
-        if (this.show && Number(updated.providerItemId) === Number(this.show.id)) {
+        const isMatch =
+          (this.show && Number(updated.providerItemId) === Number(this.show.id)) ||
+          (this.enrichment?.tmdbId && updated.tmdbId === this.enrichment.tmdbId) ||
+          (this.versions && this.versions.some((v) => Number(v.channel.id) === Number(updated.providerItemId))) ||
+          (this.show && cleanMediaTitle(this.show.name).toLowerCase() === (updated.normalizedTitle || '').toLowerCase());
+
+        if (isMatch) {
           this.applyEnrichment(updated);
+          if (this.show?.id && Number(updated.providerItemId) !== Number(this.show.id)) {
+            this.tmdbCache.saveEnrichment({ ...updated, providerItemId: this.show.id });
+          }
           // If we already have selected a season, re-enrich episodes
           if (this.selectedSeason) {
             this.reEnrichEpisodes();
@@ -250,7 +262,6 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.qualityBadge = extractQuality(show.name);
     this.synopsis = selectSynopsis(show);
     this.posterUrl = show.image;
-    this.backdropUrl = undefined;
     this.genres = [];
     this.rating = undefined;
     this.voteCount = undefined;
@@ -277,10 +288,30 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.lastWatchedEpisode = undefined;
     this.highlightedEpisodeId = undefined;
 
-    // 1. Synchronous cache read
-    const cached = this.tmdbEnrichment.getEnrichmentSync(show);
-    if (cached) {
+    // 1. Synchronous cache read: check show ID, or any grouped version if available
+    let cached = this.tmdbEnrichment.getEnrichmentSync(show);
+    if (!cached && this.versions?.length) {
+      for (const v of this.versions) {
+        cached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
+        if (cached?.backdropPath) break;
+      }
+    }
+
+    if (cached?.backdropPath) {
+      this.backdropUrl = getTmdbBackdropUrl(cached.backdropPath, 'w1280');
+      this.isBackdropFallback = false;
       this.applyEnrichment(cached);
+    } else {
+      if (cached) {
+        this.applyEnrichment(cached);
+      }
+      if (show.image) {
+        this.backdropUrl = show.image;
+        this.isBackdropFallback = true;
+      } else {
+        this.backdropUrl = undefined;
+        this.isBackdropFallback = false;
+      }
     }
 
     // 2. Cache-first async retrieval / background enrichment
@@ -314,23 +345,26 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       );
       this.versions = vers;
 
-      // Check for previously saved version preference
+      // Check for previously saved version preference or playback history
       const preferred = this.versionMatching.getPreferredVersion(
         show,
         this.versions,
         this.enrichment?.releaseYear,
       );
 
-      if (preferred) {
-        this.selectedVersion = preferred;
+      // Default to English version for titles opened for the first time
+      const targetVersion = preferred || this.versionMatching.getDefaultVersion(this.versions, show);
+
+      if (targetVersion) {
+        this.selectedVersion = targetVersion;
         this.versions.forEach(
-          (v) => (v.isSelected = v.channel.id === preferred.channel.id),
+          (v) => (v.isSelected = v.channel.id === targetVersion.channel.id),
         );
 
-        // If the preferred version is different from the currently loaded series,
-        // switch to the preferred series and reload seasons & episodes!
-        if (this.show && this.show.id !== preferred.channel.id) {
-          this.show = preferred.channel;
+        // If the target version is different from the currently loaded series,
+        // switch to the target series and reload seasons & episodes!
+        if (this.show && this.show.id !== targetVersion.channel.id) {
+          this.show = targetVersion.channel;
           if (
             this.show.media_type == null ||
             Number(this.show.media_type) !== MediaType.serie
@@ -338,7 +372,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
             this.show.media_type = MediaType.serie;
           }
           this.qualityBadge =
-            preferred.qualityBadge || extractQuality(preferred.channel.name);
+            targetVersion.qualityBadge || extractQuality(targetVersion.channel.name);
+
+          if (!this.enrichment || !this.enrichment.backdropPath) {
+            const verCached = this.tmdbEnrichment.getEnrichmentSync(targetVersion.channel);
+            if (verCached) {
+              this.applyEnrichment(verCached);
+            }
+          }
 
           this.seasons = [];
           this.selectedSeason = undefined;
@@ -353,6 +394,17 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.versions.forEach(
           (v) => (v.isSelected = v.channel.id === this.selectedVersion?.channel.id),
         );
+      }
+
+      // If we still do not have a TMDB backdrop, check if any discovered version has one in cache
+      if (!this.enrichment?.backdropPath && this.versions?.length) {
+        for (const v of this.versions) {
+          const vCached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
+          if (vCached?.backdropPath) {
+            this.applyEnrichment(vCached);
+            break;
+          }
+        }
       }
     } catch (err) {
       console.warn('Failed to discover versions for TV show:', err);
@@ -396,6 +448,17 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.toastr.info(`Selected ${ver.badgeLabel || ver.cleanTitle}`);
 
+    // Preserve existing enrichment for the newly selected version
+    if (this.enrichment) {
+      this.applyEnrichment(this.enrichment);
+      this.tmdbCache.saveEnrichment({ ...this.enrichment, providerItemId: ver.channel.id });
+    } else {
+      const verCached = this.tmdbEnrichment.getEnrichmentSync(ver.channel);
+      if (verCached) {
+        this.applyEnrichment(verCached);
+      }
+    }
+
     // Switch active provider series and reload its own seasons/episodes
     // TMDB enrichment metadata is preserved!
     this.seasons = [];
@@ -410,8 +473,30 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.enrichment = enr;
 
     if (enr.backdropPath) {
-      this.backdropUrl = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
-      this.backdropError = false;
+      const highResBackdrop = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+      if (highResBackdrop) {
+        if (this.backdropUrl === highResBackdrop && !this.backdropError) {
+          this.isBackdropFallback = false;
+        } else {
+          const img = new Image();
+          img.onload = () => {
+            this.backdropUrl = highResBackdrop;
+            this.isBackdropFallback = false;
+            this.backdropError = false;
+            this.cdr.markForCheck();
+          };
+          img.onerror = () => {
+            if (!this.backdropUrl && this.show?.image) {
+              this.backdropUrl = this.show.image;
+              this.isBackdropFallback = true;
+            }
+          };
+          img.src = highResBackdrop;
+        }
+      }
+    } else if (!this.backdropUrl && this.show?.image) {
+      this.backdropUrl = this.show.image;
+      this.isBackdropFallback = true;
     }
 
     if (enr.posterPath) {
@@ -924,6 +1009,15 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.toastr.info(`Starting playback for "${enrichedEp.title}"...`);
       invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
 
+      // Persist this played series version preference
+      if (this.show && this.selectedVersion) {
+        this.versionMatching.savePreferredVersion(
+          this.show,
+          this.selectedVersion,
+          this.enrichment?.releaseYear,
+        );
+      }
+
       // Immediately mark as watched in UI
       enrichedEp.isWatched = true;
       (enrichedEp.channel as any).last_watched = Date.now();
@@ -1175,6 +1269,12 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onBackdropError(): void {
+    if (this.backdropUrl && !this.isBackdropFallback && this.show?.image) {
+      this.backdropUrl = this.show.image;
+      this.isBackdropFallback = true;
+      this.backdropError = false;
+      return;
+    }
     this.backdropError = true;
     this.backdropUrl = undefined;
   }

@@ -319,27 +319,195 @@ export class VersionMatchingService {
     }
 
     // Sort versions:
-    // 1. Current selected version
-    // 2. 4K HDR / 4K UHD
-    // 3. 1080p
-    // 4. 720p
-    // 5. Others
+    // 1. English versions near top (preferred non-4K English source first)
+    // 2. Non-4K other versions in middle (preserving relative quality and order)
+    // 3. 4K versions moved to the bottom of the list
     matchedVersions.sort((a, b) => {
-      if (a.channel.id === channel.id) return -1;
-      if (b.channel.id === channel.id) return 1;
-
-      const scoreQuality = (v: MediaVersion) => {
-        if (!v.qualityBadge) return 0;
-        if (v.qualityBadge.includes('4K')) return 40;
-        if (v.qualityBadge.includes('1080p')) return 30;
-        if (v.qualityBadge.includes('720p')) return 20;
-        return 10;
-      };
-
-      return scoreQuality(b) - scoreQuality(a);
+      const scoreDiff = this.scoreVersionOrder(b) - this.scoreVersionOrder(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.rawName.localeCompare(b.rawName);
     });
 
     return matchedVersions;
+  }
+
+  /**
+   * Determines if a version represents an English audio/source version.
+   * Handles labels such as EN, ENG, English, US, UK, GB via language tags,
+   * bracket/parenthesis delimiters, prefixes, and word-boundary metadata
+   * without relying on overly broad substring matching.
+   */
+  isEnglishVersion(version: MediaVersion | Channel): boolean {
+    if (!version) return false;
+    const rawName = 'channel' in version ? version.rawName || version.channel?.name || '' : version.name || '';
+    const clean = 'cleanTitle' in version ? version.cleanTitle : cleanMediaTitle(rawName);
+    const lang = 'countryOrLanguage' in version ? version.countryOrLanguage : this.extractLanguageOrCountry(rawName);
+
+    // 1. Direct language code check from extractLanguageOrCountry
+    if (lang) {
+      const l = lang.toUpperCase();
+      if (l === 'EN' || l === 'ENG' || l === 'ENGLISH' || l === 'US' || l === 'UK' || l === 'GB' || l === 'CA' || l === 'AU') {
+        return true;
+      }
+    }
+
+    // 2. Bracket, parenthesis, pipe, or delimiter tags: [EN], (EN), |EN|, [ENG], (ENG), |ENG|, [English], (English), |English|
+    if (/[\(\[\|\/]\s*(?:EN|ENG|English|US|UK|GB)\s*[\)\]\|\/]/i.test(rawName)) {
+      return true;
+    }
+
+    // 3. Leading prefixes: "EN -", "EN:", "EN |", "ENG -", "ENG:", "ENG |", "English -", "English:"
+    if (/^(?:EN|ENG|English|US|UK|GB)\s*[-:|]/i.test(rawName.trim())) {
+      return true;
+    }
+
+    // 4. Word boundary check in parts of the title outside the clean title
+    const remaining = rawName.replace(clean, '');
+    if (/\b(?:EN|ENG|English)\b/i.test(remaining)) {
+      return true;
+    }
+
+    // 5. Source name tag check (e.g. source named "US VOD", "UK Movies", "EN Cinema")
+    const sourceName = 'sourceName' in version
+      ? version.sourceName
+      : ('source_id' in version && version.source_id ? this.memory.Sources.get(version.source_id)?.name : undefined);
+    if (sourceName && /\b(?:EN|ENG|ENGLISH|UK|US|GB)\b/i.test(sourceName)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Determines if a version is 4K / UHD / 2160p.
+   */
+  is4KVersion(version: MediaVersion | Channel): boolean {
+    if (!version) return false;
+    const rawName = 'channel' in version ? version.rawName || version.channel?.name || '' : version.name || '';
+    const quality = 'qualityBadge' in version ? version.qualityBadge : this.extractQualityBadge(rawName);
+    if (quality && quality.includes('4K')) return true;
+
+    return /\b(?:4K|UHD|2160p)\b/i.test(rawName);
+  }
+
+  /**
+   * Scores version for ordering in the dropdown:
+   * 1. Preferred English non-4K versions at top (1000+)
+   * 2. Non-4K other versions in middle (500+)
+   * 3. 4K English versions near bottom (100+)
+   * 4. 4K other versions at very bottom (0+)
+   * Within each tier, 1080p > 720p > others.
+   */
+  scoreVersionOrder(version: MediaVersion): number {
+    const isEn = this.isEnglishVersion(version);
+    const is4K = this.is4KVersion(version);
+
+    let score = 0;
+    if (!is4K && isEn) {
+      score = 1000;
+    } else if (!is4K && !isEn) {
+      score = 500;
+    } else if (is4K && isEn) {
+      score = 100;
+    } else {
+      score = 0;
+    }
+
+    const q = (version.qualityBadge || '').toUpperCase();
+    if (q.includes('1080P') || q.includes('FHD')) {
+      score += 30;
+    } else if (q.includes('720P') || q.includes('HD')) {
+      score += 20;
+    } else if (q.includes('4K')) {
+      if (q.includes('HDR') || q.includes('DV')) {
+        score += 15;
+      } else {
+        score += 10;
+      }
+    } else {
+      score += 5;
+    }
+
+    return score;
+  }
+
+  /**
+   * Selects the default version for a title opened for the first time:
+   * Defaults to the preferred English version if available;
+   * otherwise falls back to the current channel or top compatible version.
+   */
+  getDefaultVersion(
+    versions: MediaVersion[],
+    fallbackChannel?: Channel,
+  ): MediaVersion | undefined {
+    if (!versions || versions.length === 0) return undefined;
+
+    // 1. Look for English version (sorted versions already place the preferred non-4K English source first)
+    const enVersion = versions.find((v) => this.isEnglishVersion(v));
+    if (enVersion) {
+      return enVersion;
+    }
+
+    // 2. If no English version exists, fall back to existing behavior:
+    // Match the initially passed channel if present in versions
+    if (fallbackChannel?.id) {
+      const match = versions.find((v) => v.channel.id === fallbackChannel.id);
+      if (match) return match;
+    }
+
+    // 3. Otherwise return top compatible non-4K version, or versions[0]
+    const non4K = versions.find((v) => !this.is4KVersion(v));
+    return non4K || versions[0];
+  }
+
+  /**
+   * Checks if any version in the list has previous playback history.
+   */
+  getVersionWithPlaybackHistory(versions: MediaVersion[]): MediaVersion | undefined {
+    if (!versions || versions.length === 0) return undefined;
+
+    try {
+      const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        if (store) {
+          for (const ver of versions) {
+            if (ver.channel?.id == null) continue;
+            const entry = store[ver.channel.id];
+            if (entry) {
+              const time = typeof entry === 'number' ? entry : (entry.time || 0);
+              const pct = entry.percent || 0;
+              if (time > 10 || pct > 1) {
+                return ver;
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    try {
+      for (const ver of versions) {
+        if (ver.channel?.id == null) continue;
+        const id = ver.channel.id;
+        const pctRaw = localStorage.getItem(`watch_progress_${id}`);
+        if (pctRaw) {
+          const pct = parseFloat(pctRaw);
+          if (!isNaN(pct) && pct > 1) {
+            return ver;
+          }
+        }
+        const posRaw = localStorage.getItem(`playback_pos_${id}`);
+        if (posRaw) {
+          const pos = parseFloat(posRaw);
+          if (!isNaN(pos) && pos > 10) {
+            return ver;
+          }
+        }
+      }
+    } catch {}
+
+    return undefined;
   }
 
   /**
@@ -394,40 +562,47 @@ export class VersionMatchingService {
     try {
       const key = this.getGroupedTitleKey(channel, knownYear);
       const raw = localStorage.getItem(key);
-      if (!raw) return undefined;
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (stored) {
+          // 1. Match by channel ID
+          if (stored.channelId != null) {
+            const byId = versions.find((v) => v.channel.id === stored.channelId);
+            if (byId) return byId;
+          }
 
-      const stored = JSON.parse(raw);
-      if (!stored) return undefined;
+          // 2. Match by exact raw provider title and source ID (handles database re-indexing)
+          if (stored.rawName) {
+            const byNameAndSource = versions.find(
+              (v) =>
+                v.rawName === stored.rawName &&
+                (stored.sourceId == null || v.channel.source_id === stored.sourceId),
+            );
+            if (byNameAndSource) return byNameAndSource;
 
-      // 1. Match by channel ID
-      if (stored.channelId != null) {
-        const byId = versions.find((v) => v.channel.id === stored.channelId);
-        if (byId) return byId;
-      }
+            const byName = versions.find((v) => v.rawName === stored.rawName);
+            if (byName) return byName;
+          }
 
-      // 2. Match by exact raw provider title and source ID (handles database re-indexing)
-      if (stored.rawName) {
-        const byNameAndSource = versions.find(
-          (v) =>
-            v.rawName === stored.rawName &&
-            (stored.sourceId == null || v.channel.source_id === stored.sourceId),
-        );
-        if (byNameAndSource) return byNameAndSource;
-
-        const byName = versions.find((v) => v.rawName === stored.rawName);
-        if (byName) return byName;
-      }
-
-      // 3. Match by URL/stream identifier
-      if (stored.url) {
-        const byUrl = versions.find(
-          (v) => v.channel.url && v.channel.url === stored.url,
-        );
-        if (byUrl) return byUrl;
+          // 3. Match by URL/stream identifier
+          if (stored.url) {
+            const byUrl = versions.find(
+              (v) => v.channel.url && v.channel.url === stored.url,
+            );
+            if (byUrl) return byUrl;
+          }
+        }
       }
     } catch (err) {
       console.warn('Failed to read preferred version from localStorage:', err);
     }
+
+    // 4. Check if any version has previous playback history
+    const historyVersion = this.getVersionWithPlaybackHistory(versions);
+    if (historyVersion) {
+      return historyVersion;
+    }
+
     return undefined;
   }
 }

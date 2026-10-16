@@ -64,7 +64,8 @@ export class TmdbEnrichmentService {
     const cached = await this.cacheService.getEnrichment(channel.id);
 
     if (cached) {
-      if (this.cacheService.isStale(cached) && allowBackgroundFetch && this.configService.isEnabled()) {
+      const isIncomplete = priority === 'high' && (!cached.backdropPath || (!cached.overview && !cached.cast));
+      if ((this.cacheService.isStale(cached) || isIncomplete) && allowBackgroundFetch && this.configService.isEnabled()) {
         this.enqueue(channel, priority);
       }
       return cached;

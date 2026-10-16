@@ -26,6 +26,7 @@ import { ViewMode } from '../models/viewMode';
 import { TmdbCastMember, TmdbMediaEnrichment, TmdbVideo } from '../models/tmdb';
 import { MediaVersion } from '../models/version';
 import { MovieDetailService } from '../services/movie-detail.service';
+import { TmdbCacheService } from '../services/tmdb-cache.service';
 import { TmdbConfigService } from '../services/tmdb-config.service';
 import { TmdbEnrichmentService } from '../services/tmdb-enrichment.service';
 import { VersionMatchingService } from '../services/version-matching.service';
@@ -81,6 +82,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   isStartingPlayback: boolean = false;
   imageError: boolean = false;
   backdropError: boolean = false;
+  isBackdropFallback: boolean = false;
   castImageErrors: Set<number> = new Set();
 
   // Embedded player state (Step 2 POC & Step 4 Controls)
@@ -100,6 +102,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
     private movieDetailService: MovieDetailService,
     private tmdbEnrichment: TmdbEnrichmentService,
+    private tmdbCache: TmdbCacheService,
     public tmdbConfig: TmdbConfigService,
     public memory: MemoryService,
     private versionMatching: VersionMatchingService,
@@ -170,8 +173,17 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     // Listen for background TMDB updates
     this.subs.push(
       this.tmdbEnrichment.enrichmentUpdated$.subscribe((updated) => {
-        if (this.movie && updated.providerItemId === this.movie.id) {
+        const isMatch =
+          (this.movie && Number(updated.providerItemId) === Number(this.movie.id)) ||
+          (this.enrichment?.tmdbId && updated.tmdbId === this.enrichment.tmdbId) ||
+          (this.versions && this.versions.some((v) => Number(v.channel.id) === Number(updated.providerItemId))) ||
+          (this.movie && cleanMediaTitle(this.movie.name).toLowerCase() === (updated.normalizedTitle || '').toLowerCase());
+
+        if (isMatch) {
           this.applyEnrichment(updated);
+          if (this.movie?.id && Number(updated.providerItemId) !== Number(this.movie.id)) {
+            this.tmdbCache.saveEnrichment({ ...updated, providerItemId: this.movie.id });
+          }
         }
       }),
     );
@@ -347,7 +359,6 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.qualityBadge = extractQuality(movie.name);
     this.synopsis = selectSynopsis(movie);
     this.posterUrl = movie.image;
-    this.backdropUrl = undefined;
     this.genres = [];
     this.rating = undefined;
     this.voteCount = undefined;
@@ -359,15 +370,35 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.castImageErrors.clear();
     this.hasWatchProgress = false;
 
-    // 1. Synchronous cache read
-    const cached = this.tmdbEnrichment.getEnrichmentSync(movie);
-    if (cached) {
+    // 1. Synchronous cache read: check movie ID, or any grouped version if available
+    let cached = this.tmdbEnrichment.getEnrichmentSync(movie);
+    if (!cached && this.versions?.length) {
+      for (const v of this.versions) {
+        cached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
+        if (cached?.backdropPath) break;
+      }
+    }
+
+    if (cached?.backdropPath) {
+      this.backdropUrl = getTmdbBackdropUrl(cached.backdropPath, 'w1280');
+      this.isBackdropFallback = false;
       this.applyEnrichment(cached);
+    } else {
+      if (cached) {
+        this.applyEnrichment(cached);
+      }
+      if (movie.image) {
+        this.backdropUrl = movie.image;
+        this.isBackdropFallback = true;
+      } else {
+        this.backdropUrl = undefined;
+        this.isBackdropFallback = false;
+      }
     }
 
     // 2. Cache-first async retrieval / background enrichment
     this.tmdbEnrichment.getEnrichment(movie, true, 'high').then((res) => {
-      if (res && res !== cached) {
+      if (res) {
         this.applyEnrichment(res);
       }
     });
@@ -392,22 +423,31 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       );
       this.versions = vers;
 
-      // Check for previously saved version preference
+      // Check for previously saved version preference or playback history
       const preferred = this.versionMatching.getPreferredVersion(
         movie,
         this.versions,
         this.enrichment?.releaseYear,
       );
 
-      if (preferred) {
-        this.selectedVersion = preferred;
+      // Default to English version for titles opened for the first time
+      const targetVersion = preferred || this.versionMatching.getDefaultVersion(this.versions, movie);
+
+      if (targetVersion) {
+        this.selectedVersion = targetVersion;
         this.versions.forEach(
-          (v) => (v.isSelected = v.channel.id === preferred.channel.id),
+          (v) => (v.isSelected = v.channel.id === targetVersion.channel.id),
         );
-        if (this.movie && this.movie.id !== preferred.channel.id) {
-          this.movie = preferred.channel;
+        if (this.movie && this.movie.id !== targetVersion.channel.id) {
+          this.movie = targetVersion.channel;
           this.qualityBadge =
-            preferred.qualityBadge || extractQuality(preferred.channel.name);
+            targetVersion.qualityBadge || extractQuality(targetVersion.channel.name);
+          if (!this.enrichment || !this.enrichment.backdropPath) {
+            const verCached = this.tmdbEnrichment.getEnrichmentSync(targetVersion.channel);
+            if (verCached) {
+              this.applyEnrichment(verCached);
+            }
+          }
         }
       } else {
         this.selectedVersion =
@@ -415,6 +455,17 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.versions.forEach(
           (v) => (v.isSelected = v.channel.id === this.selectedVersion?.channel.id),
         );
+      }
+
+      // If we still do not have a TMDB backdrop, check if any discovered version has one in cache
+      if (!this.enrichment?.backdropPath && this.versions?.length) {
+        for (const v of this.versions) {
+          const vCached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
+          if (vCached?.backdropPath) {
+            this.applyEnrichment(vCached);
+            break;
+          }
+        }
       }
     } catch (err) {
       console.warn('Failed to discover versions for movie:', err);
@@ -457,6 +508,17 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       (v) => (v.isSelected = v.channel.id === ver.channel.id),
     );
 
+    // Preserve existing enrichment for the newly selected version
+    if (this.enrichment) {
+      this.applyEnrichment(this.enrichment);
+      this.tmdbCache.saveEnrichment({ ...this.enrichment, providerItemId: ver.channel.id });
+    } else {
+      const verCached = this.tmdbEnrichment.getEnrichmentSync(ver.channel);
+      if (verCached) {
+        this.applyEnrichment(verCached);
+      }
+    }
+
     this.updateWatchProgress();
     this.toastr.info(`Selected ${ver.badgeLabel || ver.cleanTitle}`);
   }
@@ -464,8 +526,31 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   applyEnrichment(enr: TmdbMediaEnrichment): void {
     this.enrichment = enr;
 
-    if (enr.backdropPath && !this.backdropError) {
-      this.backdropUrl = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+    if (enr.backdropPath) {
+      const highResBackdrop = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+      if (highResBackdrop) {
+        if (this.backdropUrl === highResBackdrop && !this.backdropError) {
+          this.isBackdropFallback = false;
+        } else {
+          const img = new Image();
+          img.onload = () => {
+            this.backdropUrl = highResBackdrop;
+            this.isBackdropFallback = false;
+            this.backdropError = false;
+            this.cdr.markForCheck();
+          };
+          img.onerror = () => {
+            if (!this.backdropUrl && this.movie?.image) {
+              this.backdropUrl = this.movie.image;
+              this.isBackdropFallback = true;
+            }
+          };
+          img.src = highResBackdrop;
+        }
+      }
+    } else if (!this.backdropUrl && this.movie?.image) {
+      this.backdropUrl = this.movie.image;
+      this.isBackdropFallback = true;
     }
 
     if (enr.posterPath && !this.imageError) {
@@ -696,6 +781,15 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.toastr.info(`Starting embedded playback for "${this.cleanTitle}"...`);
       invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
+
+      // Persist this played version preference
+      if (this.movie && this.selectedVersion) {
+        this.versionMatching.savePreferredVersion(
+          this.movie,
+          this.selectedVersion,
+          this.enrichment?.releaseYear,
+        );
+      }
 
       // Save scroll position before activating theater mode
       this.saveScrollPosition();
@@ -990,6 +1084,12 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onBackdropError(): void {
+    if (this.backdropUrl && !this.isBackdropFallback && this.movie?.image) {
+      this.backdropUrl = this.movie.image;
+      this.isBackdropFallback = true;
+      this.backdropError = false;
+      return;
+    }
     this.backdropError = true;
     this.backdropUrl = undefined;
   }

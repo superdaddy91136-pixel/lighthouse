@@ -3183,10 +3183,6 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       return;
     }
     if (channel.media_type === MediaType.serie) {
-      this.versionMatching.savePreferredVersion(
-        channel,
-        this.versionMatching.channelToVersion(channel, true)
-      );
       this.tvDetailService.openTvDetail(channel);
     } else if (channel.media_type === MediaType.movie) {
       const isEpisode = !!(
@@ -3198,10 +3194,6 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (isEpisode) {
         this.play.emit(channel);
       } else {
-        this.versionMatching.savePreferredVersion(
-          channel,
-          this.versionMatching.channelToVersion(channel, true)
-        );
         this.movieDetailService.openMovieDetail(channel);
       }
     } else {
@@ -3258,17 +3250,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (this.isTvShow(channel)) {
       const seriesChannel = await this.resolveSeriesChannel(channel);
       if (seriesChannel) {
-        this.versionMatching.savePreferredVersion(
-          seriesChannel,
-          this.versionMatching.channelToVersion(seriesChannel, true)
-        );
         this.tvDetailService.openTvDetail(seriesChannel);
       }
     } else {
-      this.versionMatching.savePreferredVersion(
-        channel,
-        this.versionMatching.channelToVersion(channel, true)
-      );
       this.movieDetailService.openMovieDetail(channel);
     }
   }

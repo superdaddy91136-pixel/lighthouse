@@ -27,7 +27,8 @@
         [src]="backdropUrl" 
         (error)="onBackdropError()" 
         alt="{{ cleanTitle }}" 
-        class="movie-backdrop-img" />
+        class="movie-backdrop-img"
+        [class.is-fallback]="isBackdropFallback" />
       <div class="movie-backdrop-gradient"></div>
       <div class="movie-backdrop-vignette"></div>
     </div>
