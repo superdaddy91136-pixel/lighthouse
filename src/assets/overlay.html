@@ -964,6 +964,44 @@
       font-style: italic;
     }
 
+    .track-action-btn {
+      color: rgba(255, 255, 255, 0.9);
+      font-weight: 500;
+    }
+
+    .track-action-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+
+    .track-action-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .track-action-icon {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .track-action-btn:hover .track-action-icon {
+      color: #ffffff;
+    }
+
+    .track-list-divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.08);
+      margin: 4px 0;
+      flex-shrink: 0;
+    }
+
     .subtitle-size-control {
       margin-top: 12px;
       padding-top: 10px;
@@ -2069,6 +2107,7 @@
       let hudTimer = null;
       let volumeHudTimer = null;
       let suppressHudUntil = Date.now() + 1500;
+      let isFileDialogOpen = false;
       let tracks = [];
       let currentAid = 1;
       let currentSid = 'no';
@@ -2671,7 +2710,7 @@
 
       function resetHideTimer() {
         clearTimeout(hideTimer);
-        if (isPaused || isDragging || isAnyPanelOpen()) {
+        if (isFileDialogOpen || isPaused || isDragging || isAnyPanelOpen()) {
           return;
         }
         hideTimer = setTimeout(() => {
@@ -2691,7 +2730,7 @@
 
       // Close panels if clicking anywhere outside the open panel or trigger
       document.addEventListener('click', (e) => {
-        if (!isAnyPanelOpen()) return;
+        if (isFileDialogOpen || !isAnyPanelOpen()) return;
         const target = e.target;
         if (
           (modalAudioSubs && modalAudioSubs.contains(target)) ||
@@ -3108,7 +3147,7 @@
         if (!skipSavePref) {
           if (target === 'no') {
             saveSubtitlePreference('off');
-          } else if (trackObj) {
+          } else if (trackObj && !trackObj.external && !trackObj['external-filename']) {
             saveSubtitlePreference(trackObj);
           }
         }
@@ -3149,6 +3188,17 @@
 
       function formatTrackLabel(track, defaultPrefix) {
         if (!track) return defaultPrefix;
+
+        if (track.external || track['external-filename']) {
+          const rawName = (track.title && track.title.trim()) ||
+            (track['external-filename'] ? track['external-filename'].split(/[/\\]/).pop() : '') ||
+            'External Subtitle';
+          if (rawName.toLowerCase().includes('external')) {
+            return rawName;
+          }
+          return `${rawName} (External)`;
+        }
+
         const langKey = (track.lang || '').toLowerCase().trim();
         const langName = ISO_LANG_MAP[langKey] || (track.lang ? track.lang.toUpperCase() : '');
 
@@ -3165,6 +3215,80 @@
         }
 
         return `${defaultPrefix} ${track.id || ''}`.trim();
+      }
+
+      async function openSubtitleFileDialog() {
+        const options = {
+          title: 'Add External Subtitles',
+          multiple: false,
+          directory: false,
+          filters: [
+            {
+              name: 'Subtitles (*.srt, *.ass, *.ssa, *.vtt)',
+              extensions: ['srt', 'ass', 'ssa', 'vtt']
+            }
+          ]
+        };
+
+        const t = await getTauri();
+        if (t?.dialog?.open && typeof t.dialog.open === 'function') {
+          return await t.dialog.open(options);
+        }
+        return await tauriInvoke('plugin:dialog|open', { options });
+      }
+
+      async function handleAddExternalSubtitles() {
+        try {
+          isFileDialogOpen = true;
+          cancelHoverCloseTimer();
+          const result = await openSubtitleFileDialog();
+          isFileDialogOpen = false;
+          showControls();
+
+          if (!result) {
+            // User cancelled file picker
+            return;
+          }
+
+          let filePath = null;
+          if (typeof result === 'string') {
+            filePath = result;
+          } else if (result && typeof result === 'object') {
+            if (typeof result.path === 'string') {
+              filePath = result.path;
+            } else if (Array.isArray(result)) {
+              filePath = typeof result[0] === 'string' ? result[0] : result[0]?.path;
+            }
+          }
+
+          if (!filePath || typeof filePath !== 'string') {
+            return;
+          }
+
+          const extMatch = filePath.match(/\.([a-zA-Z0-9]+)$/);
+          const ext = extMatch ? extMatch[1].toLowerCase() : '';
+          const supported = ['srt', 'ass', 'ssa', 'vtt'];
+          if (!supported.includes(ext)) {
+            showTrackError(`Unsupported subtitle format (.${ext || 'unknown'}). Supported formats: .srt, .ass, .ssa, .vtt`);
+            return;
+          }
+
+          const fileName = filePath.split(/[/\\]/).pop() || filePath;
+          hasAppliedSubPreferenceForCurrentMedia = true;
+
+          const reqId = ++trackRequestIdSeq;
+          pendingTrackRequests[reqId] = {
+            type: 'sub-add',
+            filePath: filePath,
+            fileName: fileName
+          };
+          sendMpv(['sub-add', filePath, 'select', fileName], reqId);
+        } catch (err) {
+          isFileDialogOpen = false;
+          showControls();
+          console.error('[overlay] Error selecting external subtitle file:', err);
+          showTrackError('Failed to open file picker: ' + (err?.message || err));
+        }
       }
 
       function isSubOff(sid) {
@@ -3221,6 +3345,28 @@
           selectSubtitleTrack('no');
         });
         subTrackList.appendChild(offBtn);
+
+        const addExtBtn = document.createElement('button');
+        addExtBtn.className = 'track-option track-action-btn';
+        addExtBtn.id = 'btnAddExternalSub';
+        addExtBtn.title = 'Add subtitle file (.srt, .ass, .ssa, .vtt)';
+        addExtBtn.innerHTML = `
+          <span class="track-action-label">
+            <svg class="track-action-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
+            Add External Subtitles…
+          </span>
+        `;
+        addExtBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleAddExternalSubtitles();
+        });
+        subTrackList.appendChild(addExtBtn);
+
+        const sep = document.createElement('div');
+        sep.className = 'track-list-divider';
+        subTrackList.appendChild(sep);
 
         if (subTracks.length === 0) {
           const empty = document.createElement('div');
@@ -4055,8 +4201,10 @@
 
       function startHoverCloseTimer(menuKey) {
         cancelHoverCloseTimer();
+        if (isFileDialogOpen) return;
         hoverCloseTimer = setTimeout(() => {
           hoverCloseTimer = null;
+          if (isFileDialogOpen) return;
           if (activeHoverMenu === menuKey) {
             const def = hoverMenuDefs[menuKey];
             if (!def) return;
@@ -4177,6 +4325,7 @@
       Object.keys(hoverMenuDefs).forEach(setupHoverMenu);
 
       document.addEventListener('mouseleave', () => {
+        if (isFileDialogOpen) return;
         if (activeHoverMenu && hoverMenuDefs[activeHoverMenu]?.isOpen()) {
           startHoverCloseTimer(activeHoverMenu);
         }
@@ -4545,10 +4694,21 @@
             return;
           }
 
-          // Track command response check (aid/sid set_property)
+          // Track command response check (aid/sid set_property, sub-add)
           if (parsed.request_id && pendingTrackRequests[parsed.request_id]) {
             const pending = pendingTrackRequests[parsed.request_id];
             delete pendingTrackRequests[parsed.request_id];
+
+            if (pending.type === 'sub-add') {
+              if (parsed.error && parsed.error !== 'success') {
+                console.error('[overlay] Failed to load external subtitle:', parsed.error);
+                showTrackError(`Failed to load subtitle file: ${parsed.error === 'generic error' ? 'Invalid or unsupported format' : parsed.error}`);
+              } else {
+                hasAppliedSubPreferenceForCurrentMedia = true;
+                requestTrackInfo();
+              }
+              return;
+            }
 
             if (parsed.error && parsed.error !== 'success') {
               console.error(`[overlay] Failed to set ${pending.type} to ${pending.target}:`, parsed.error);
