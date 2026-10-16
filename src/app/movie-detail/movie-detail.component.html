@@ -116,7 +116,7 @@
                 <path *ngIf="!isPlayingEmbedded" d="M8,5.14V19.14L19,12.14L8,5.14Z" />
                 <path *ngIf="isPlayingEmbedded" d="M18,18H6V6H18V18Z" />
               </svg>
-              <span>{{ isStartingPlayback ? 'Starting...' : (isPlayingEmbedded ? 'Stop' : 'Watch Now') }}</span>
+              <span>{{ isStartingPlayback ? 'Starting...' : (isPlayingEmbedded ? 'Stop' : (hasWatchProgress ? 'Resume' : 'Watch Now')) }}</span>
             </button>
 
             <!-- VERSIONS DROPDOWN (Watch Now | Versions (N) ▾) -->

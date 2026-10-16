@@ -74,6 +74,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   selectedVersion?: MediaVersion;
   showVersionsMenu: boolean = false;
   loadingVersions: boolean = false;
+  hasWatchProgress: boolean = false;
 
   similarMovies: Channel[] = [];
   loadingSimilar: boolean = false;
@@ -185,6 +186,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isFullscreen = false;
       }
       this.restoreScrollPosition();
+      this.updateWatchProgress();
       this.cdr.detectChanges();
     }).then((un) => (this.unlistenStopped = un));
 
@@ -355,6 +357,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.imageError = false;
     this.backdropError = false;
     this.castImageErrors.clear();
+    this.hasWatchProgress = false;
 
     // 1. Synchronous cache read
     const cached = this.tmdbEnrichment.getEnrichmentSync(movie);
@@ -377,6 +380,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Check synopsis length
     this.checkSynopsisLength();
+    this.updateWatchProgress();
   }
 
   async loadVersions(movie: Channel): Promise<void> {
@@ -418,6 +422,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.selectedVersion = this.versions[0];
     } finally {
       this.loadingVersions = false;
+      this.updateWatchProgress();
     }
   }
 
@@ -440,7 +445,10 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.enrichment?.releaseYear,
     );
 
-    if (this.movie?.id === ver.channel.id) return;
+    if (this.movie?.id === ver.channel.id) {
+      this.updateWatchProgress();
+      return;
+    }
 
     this.movie = ver.channel;
     this.qualityBadge = ver.qualityBadge || extractQuality(ver.channel.name);
@@ -449,6 +457,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       (v) => (v.isSelected = v.channel.id === ver.channel.id),
     );
 
+    this.updateWatchProgress();
     this.toastr.info(`Selected ${ver.badgeLabel || ver.cleanTitle}`);
   }
 
@@ -546,6 +555,94 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.enrichment?.originalLanguage ||
       this.qualityBadge
     );
+  }
+
+  updateWatchProgress(): void {
+    this.hasWatchProgress = this.checkWatchProgress();
+    this.cdr.markForCheck();
+  }
+
+  checkWatchProgress(): boolean {
+    if (!this.movie) return false;
+
+    const idsToCheck: number[] = [];
+    if (this.movie.id) idsToCheck.push(this.movie.id);
+    if (this.selectedVersion?.channel?.id && !idsToCheck.includes(this.selectedVersion.channel.id)) {
+      idsToCheck.push(this.selectedVersion.channel.id);
+    }
+    for (const v of this.versions) {
+      if (v.channel?.id && !idsToCheck.includes(v.channel.id)) {
+        idsToCheck.push(v.channel.id);
+      }
+    }
+
+    // 1. Check Channel object properties
+    const chAny = this.movie as any;
+    if (chAny.progress_percent != null && !isNaN(chAny.progress_percent)) {
+      if (chAny.progress_percent > 1 && chAny.progress_percent < 95) {
+        return true;
+      }
+    }
+    if (chAny.progress != null && !isNaN(chAny.progress) && chAny.progress > 10) {
+      return true;
+    }
+
+    // 2. Check localStorage fred_tv_watch_progress
+    try {
+      const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        if (store) {
+          for (const id of idsToCheck) {
+            const entry = store[id];
+            if (entry) {
+              const time = typeof entry === 'number' ? entry : (entry.time || 0);
+              const dur = entry.duration || 0;
+              const pct = entry.percent || (dur > 0 ? (time / dur) * 100 : 0);
+              // If finished (within 30s of end or >=95%), it's completed, not resume
+              if (dur > 0 && (time >= dur - 30 || pct >= 95)) {
+                continue;
+              }
+              if (time > 10 || pct > 1) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Check individual localStorage keys: playback_pos_${id}, watch_progress_${id}
+    try {
+      for (const id of idsToCheck) {
+        const pctRaw = localStorage.getItem(`watch_progress_${id}`);
+        if (pctRaw) {
+          const pct = parseFloat(pctRaw);
+          if (!isNaN(pct) && pct > 1 && pct < 95) {
+            return true;
+          }
+        }
+        const posRaw = localStorage.getItem(`playback_pos_${id}`);
+        if (posRaw) {
+          const pos = parseFloat(posRaw);
+          const durRaw = localStorage.getItem(`playback_dur_${id}`);
+          const dur = durRaw ? parseFloat(durRaw) : 0;
+          if (dur > 0 && (pos >= dur - 30 || (pos / dur) >= 0.95)) {
+            continue;
+          }
+          if (!isNaN(pos) && pos > 10) {
+            return true;
+          }
+        }
+      }
+    } catch {}
+
+    // 4. Check if channel has last_watched timestamp
+    if (chAny.last_watched != null && chAny.last_watched > 0) {
+      return true;
+    }
+
+    return false;
   }
 
   async watchNow(): Promise<void> {
@@ -673,6 +770,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     this.isPlayingEmbedded = false;
     this.restoreScrollPosition();
+    this.updateWatchProgress();
     this.cdr.detectChanges();
   }
 
