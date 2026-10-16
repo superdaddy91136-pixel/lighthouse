@@ -13,6 +13,7 @@ export class DragScrollDirective implements OnInit, OnDestroy {
   private draggedPastThreshold = false;
   private hasPointerCapture = false;
   private clearThresholdTimer: any = null;
+  private scrollEndTimer: any = null;
   private readonly DRAG_THRESHOLD = 6;
 
   constructor(
@@ -32,6 +33,7 @@ export class DragScrollDirective implements OnInit, OnDestroy {
       this.el.addEventListener('pointercancel', this.onPointerCancel);
       this.el.addEventListener('lostpointercapture', this.onLostPointerCapture);
       this.el.addEventListener('dragstart', this.onDragStart);
+      this.el.addEventListener('scroll', this.onScroll, { passive: true });
 
       // Capture phase click listener ensures we intercept clicks BEFORE child card click handlers
       this.el.addEventListener('click', this.onClickCapture, true);
@@ -49,6 +51,7 @@ export class DragScrollDirective implements OnInit, OnDestroy {
     this.el.removeEventListener('pointercancel', this.onPointerCancel);
     this.el.removeEventListener('lostpointercapture', this.onLostPointerCapture);
     this.el.removeEventListener('dragstart', this.onDragStart);
+    this.el.removeEventListener('scroll', this.onScroll);
     this.el.removeEventListener('click', this.onClickCapture, true);
 
     window.removeEventListener('blur', this.onWindowBlur);
@@ -58,6 +61,11 @@ export class DragScrollDirective implements OnInit, OnDestroy {
       clearTimeout(this.clearThresholdTimer);
       this.clearThresholdTimer = null;
     }
+    if (this.scrollEndTimer) {
+      clearTimeout(this.scrollEndTimer);
+      this.scrollEndTimer = null;
+    }
+    this.el.classList.remove('is-scrolling');
   }
 
   private onDragStart = (event: DragEvent) => {
@@ -255,4 +263,21 @@ export class DragScrollDirective implements OnInit, OnDestroy {
       }
     }
   };
+
+  private onScroll = () => {
+    this.markScrolling();
+  };
+
+  private markScrolling(): void {
+    if (!this.el.classList.contains('is-scrolling')) {
+      this.el.classList.add('is-scrolling');
+    }
+    if (this.scrollEndTimer) {
+      clearTimeout(this.scrollEndTimer);
+    }
+    this.scrollEndTimer = setTimeout(() => {
+      this.el.classList.remove('is-scrolling');
+      this.scrollEndTimer = null;
+    }, 150);
+  }
 }

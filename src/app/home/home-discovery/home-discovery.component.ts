@@ -4,6 +4,7 @@ import {
   Component,
   EventEmitter,
   HostListener,
+  NgZone,
   OnDestroy,
   OnInit,
   Output,
@@ -139,9 +140,19 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   selectedContentPref: ContentPreference = 'all';
 
+  trackByRowId = (_index: number, row: DiscoveryRow): string => {
+    return row.id;
+  };
+
+  trackByChannelId = (_index: number, item: Channel): any => {
+    return item ? (item.id != null ? item.id : (item.url || item.name)) : _index;
+  };
+
   // State tracking for row horizontal overflow / scroll arrows
   rowCanScrollRight: { [rowId: string]: boolean } = {};
   private resizeObserver?: ResizeObserver;
+  private rowScrollHandler?: (event: Event) => void;
+  private rafScrollChecks = new Map<string, number>();
 
   // Hero pool state & transition
   isTransitioning: boolean = false;
@@ -154,8 +165,18 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   groupedHistoryIds: Map<number, number[]> = new Map();
   loadedSeries: Channel[] = [];
   seriesNameMap: Map<string, string> = new Map();
+  seriesLookupMap: Map<string, Channel> = new Map();
   episodeStillMap: Map<number, string> = new Map();
   private inFlightStillFetches: Set<number> = new Set();
+
+  // High-performance template memoization maps (eliminate per-frame regex and array scans)
+  private cleanTitleCache = new Map<number | string, string>();
+  private cwTitleCache = new Map<number | string, string>();
+  private isTvShowCache = new Map<number | string, boolean>();
+  private cardArtworkCache = new Map<number | string, string | undefined>();
+  private cwArtworkCache = new Map<number | string, string | undefined>();
+  private cachedWatchProgressStore: Record<string, any> | null = null;
+  private lastWatchProgressReadTime: number = 0;
 
   private heroTimer?: any;
   private subs: Subscription[] = [];
@@ -173,6 +194,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     public versionMatching: VersionMatchingService,
     public embeddedPlayer: EmbeddedPlayerService,
     private cdr: ChangeDetectorRef,
+    private ngZone: NgZone,
   ) {}
 
   ngOnInit(): void {
@@ -235,8 +257,38 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.resizeObserver.observe(container);
       }
     }
+
+    // Attach passive capture scroll listener outside Angular Zone to track arrow visibility without running change detection during scrolling
+    this.ngZone.runOutsideAngular(() => {
+      this.rowScrollHandler = (event: Event) => {
+        const target = event.target as HTMLElement;
+        if (!target || !target.classList?.contains('row-track') || !target.id) return;
+        this.scheduleScrollStateCheck(target.id, target);
+      };
+      const container = document.querySelector('.discovery-rows-container');
+      if (container) {
+        container.addEventListener('scroll', this.rowScrollHandler, { passive: true, capture: true });
+      }
+    });
+
     setTimeout(() => this.checkAllRowsScrollState(), 100);
     setTimeout(() => this.checkAllRowsScrollState(), 500);
+  }
+
+  private scheduleScrollStateCheck(rowId: string, el: HTMLElement): void {
+    if (this.rafScrollChecks.has(rowId)) return;
+    const rafId = requestAnimationFrame(() => {
+      this.rafScrollChecks.delete(rowId);
+      const maxScrollLeft = el.scrollWidth - el.clientWidth;
+      const canScroll = maxScrollLeft - el.scrollLeft > 6;
+      if (this.rowCanScrollRight[rowId] !== canScroll) {
+        this.ngZone.run(() => {
+          this.rowCanScrollRight[rowId] = canScroll;
+          this.cdr.markForCheck();
+        });
+      }
+    });
+    this.rafScrollChecks.set(rowId, rafId);
   }
 
   ngOnDestroy(): void {
@@ -250,6 +302,17 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.resizeObserver.disconnect();
       this.resizeObserver = undefined;
     }
+    if (this.rowScrollHandler) {
+      const container = document.querySelector('.discovery-rows-container');
+      if (container) {
+        container.removeEventListener('scroll', this.rowScrollHandler, { capture: true } as any);
+      }
+      this.rowScrollHandler = undefined;
+    }
+    for (const rafId of this.rafScrollChecks.values()) {
+      cancelAnimationFrame(rafId);
+    }
+    this.rafScrollChecks.clear();
     this.subs.forEach((s) => s.unsubscribe());
   }
 
@@ -373,6 +436,15 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
+  clearMemoCaches(): void {
+    this.cleanTitleCache.clear();
+    this.cwTitleCache.clear();
+    this.isTvShowCache.clear();
+    this.cardArtworkCache.clear();
+    this.cwArtworkCache.clear();
+    this.cachedWatchProgressStore = null;
+  }
+
   scrollRow(rowId: string, direction: "left" | "right") {
     const el = document.getElementById(rowId);
     if (el) {
@@ -468,6 +540,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       // Cache loaded series for fast resolution and episode show title lookup
       this.loadedSeries = seriesRes || [];
       this.seriesNameMap.clear();
+      this.seriesLookupMap.clear();
       for (const s of this.loadedSeries) {
         const sId = s.url || (s.id ? String(s.id) : undefined);
         if (sId && s.name) {
@@ -476,7 +549,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
             this.seriesNameMap.set(`${s.source_id}_${s.id}`, s.name);
           }
         }
+        if (sId) {
+          this.seriesLookupMap.set(`${s.source_id}_${sId}`, s);
+          this.seriesLookupMap.set(`${sId}`, s);
+        }
+        if (s.id) {
+          this.seriesLookupMap.set(`${s.source_id}_${s.id}`, s);
+          this.seriesLookupMap.set(`${s.id}`, s);
+        }
       }
+      this.clearMemoCaches();
 
       // Deduplicate Continue Watching: one card per grouped movie/TV title, keeping most recent version
       const deduplicatedHistory = this.deduplicateContinueWatching(historyRes);
@@ -629,6 +711,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   public async refreshContinueWatching(): Promise<void> {
     if (this.isDestroyed) return;
+    this.cachedWatchProgressStore = null;
+    this.cwTitleCache.clear();
+    this.cwArtworkCache.clear();
     try {
       const enabledSourceIds = Array.from(this.memory.Sources.keys());
       if (enabledSourceIds.length === 0) return;
@@ -2407,21 +2492,32 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   isTvShow(channel?: Channel): boolean {
     if (!channel) return false;
-    if (channel.media_type === MediaType.serie) return true;
-    if (
+    const key = channel.id != null ? channel.id : (channel.url || channel.name);
+    if (key != null) {
+      const cached = this.isTvShowCache.get(key);
+      if (cached !== undefined) return cached;
+    }
+    let res = false;
+    if (channel.media_type === MediaType.serie) {
+      res = true;
+    } else if (
       channel.season_id != null ||
       channel.series_id != null ||
       channel.episode_num != null
     ) {
-      return true;
+      res = true;
+    } else {
+      const name = channel.name || "";
+      if (
+        /\b(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|\b\d{1,2}x\d{1,2}\b)/i.test(name)
+      ) {
+        res = true;
+      }
     }
-    const name = channel.name || "";
-    if (
-      /\b(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|\b\d{1,2}x\d{1,2}\b)/i.test(name)
-    ) {
-      return true;
+    if (key != null) {
+      this.isTvShowCache.set(key, res);
     }
-    return false;
+    return res;
   }
 
   isMovie(channel?: Channel): boolean {
@@ -2433,7 +2529,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (typeof itemOrRaw === "string") {
       return cleanMediaTitle(itemOrRaw);
     }
-    return this.getCleanTitleForChannel(itemOrRaw);
+    const key = itemOrRaw.id != null ? itemOrRaw.id : (itemOrRaw.url || itemOrRaw.name);
+    if (key != null) {
+      const cached = this.cleanTitleCache.get(key);
+      if (cached !== undefined) return cached;
+    }
+    const res = this.getCleanTitleForChannel(itemOrRaw);
+    if (key != null) {
+      this.cleanTitleCache.set(key, res);
+    }
+    return res;
   }
 
   getSeriesTitle(channel: Channel): string {
@@ -2449,14 +2554,20 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
           return cleanMediaTitle(name);
         }
       }
+      const sMatch =
+        this.seriesLookupMap.get(key) ||
+        this.seriesLookupMap.get(String(channel.series_id));
+      if (sMatch?.name) {
+        return cleanMediaTitle(sMatch.name);
+      }
       if (this.loadedSeries && this.loadedSeries.length > 0) {
-        const sMatch = this.loadedSeries.find(
+        const sMatchLinear = this.loadedSeries.find(
           (s) =>
             (channel.source_id == null || s.source_id === channel.source_id) &&
             (s.url === String(channel.series_id) || s.id === channel.series_id)
         );
-        if (sMatch?.name) {
-          return cleanMediaTitle(sMatch.name);
+        if (sMatchLinear?.name) {
+          return cleanMediaTitle(sMatchLinear.name);
         }
       }
     }
@@ -2484,41 +2595,54 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   getContinueWatchingTitle(channel: Channel): string {
+    if (!channel) return "Untitled";
+    const key = channel.id != null ? channel.id : (channel.url || channel.name);
+    if (key != null) {
+      const cached = this.cwTitleCache.get(key);
+      if (cached !== undefined) return cached;
+    }
+
+    let res: string;
     if (!this.isTvShow(channel)) {
-      return this.getCleanTitleForChannel(channel);
+      res = this.getCleanTitleForChannel(channel);
+    } else {
+      const rawName = channel.name || "";
+      const seriesTitle = this.getSeriesTitle(channel);
+      let episodeTitle = cleanMediaTitle(rawName);
+
+      if (episodeTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
+        episodeTitle = episodeTitle.slice(seriesTitle.length);
+      }
+
+      episodeTitle = episodeTitle
+        .replace(/^\s*[-:|]\s*/, "")
+        .replace(/^\b(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|e\d{1,3}|ep(?:isode)?\s*\d{1,3})\b\s*[-:|]?\s*/i, "")
+        .trim();
+
+      const seasonNum = this.extractSeasonNumber(rawName, 0);
+      const episodeNum =
+        channel.episode_num != null && channel.episode_num > 0
+          ? channel.episode_num
+          : this.extractEpisodeNumber(rawName, 0);
+
+      const episodeCode =
+        seasonNum > 0 && episodeNum > 0
+          ? `S${String(seasonNum).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")}`
+          : episodeNum > 0
+            ? `Episode ${episodeNum}`
+            : "";
+
+      if (episodeTitle && episodeTitle.toLowerCase() !== seriesTitle.toLowerCase()) {
+        res = episodeCode ? `${episodeCode} · ${episodeTitle}` : episodeTitle;
+      } else {
+        res = episodeCode || seriesTitle;
+      }
     }
 
-    const rawName = channel.name || "";
-    const seriesTitle = this.getSeriesTitle(channel);
-    let episodeTitle = cleanMediaTitle(rawName);
-
-    if (episodeTitle.toLowerCase().startsWith(seriesTitle.toLowerCase())) {
-      episodeTitle = episodeTitle.slice(seriesTitle.length);
+    if (key != null) {
+      this.cwTitleCache.set(key, res);
     }
-
-    episodeTitle = episodeTitle
-      .replace(/^\s*[-:|]\s*/, "")
-      .replace(/^\b(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|e\d{1,3}|ep(?:isode)?\s*\d{1,3})\b\s*[-:|]?\s*/i, "")
-      .trim();
-
-    const seasonNum = this.extractSeasonNumber(rawName, 0);
-    const episodeNum =
-      channel.episode_num != null && channel.episode_num > 0
-        ? channel.episode_num
-        : this.extractEpisodeNumber(rawName, 0);
-
-    const episodeCode =
-      seasonNum > 0 && episodeNum > 0
-        ? `S${String(seasonNum).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")}`
-        : episodeNum > 0
-          ? `Episode ${episodeNum}`
-          : "";
-
-    if (episodeTitle && episodeTitle.toLowerCase() !== seriesTitle.toLowerCase()) {
-      return episodeCode ? `${episodeCode} · ${episodeTitle}` : episodeTitle;
-    }
-
-    return episodeCode || seriesTitle;
+    return res;
   }
 
   parseYear(raw?: string): string | undefined {
@@ -2731,6 +2855,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   applyEnrichmentUpdate(enrichment: TmdbMediaEnrichment): void {
     if (!enrichment.providerItemId) return;
 
+    if (enrichment.providerItemId) {
+      this.cardArtworkCache.delete(enrichment.providerItemId);
+      this.cwArtworkCache.delete(enrichment.providerItemId);
+    }
+
     const matches = [
       ...this.masterHeroItems.filter((h) => h.channel.id === enrichment.providerItemId),
       ...this.heroItems.filter((h) => h.channel.id === enrichment.providerItemId),
@@ -2760,65 +2889,108 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   getCardArtwork(channel: Channel): string | undefined {
-    const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
-    if (cached?.posterPath) {
-      const poster = getTmdbPosterUrl(cached.posterPath, 'w500');
-      if (poster) return poster;
+    if (!channel) return undefined;
+    const key = channel.id != null ? channel.id : (channel.url || channel.name);
+    if (key != null) {
+      const cached = this.cardArtworkCache.get(key);
+      if (cached !== undefined) return cached;
     }
-    if (channel.image) return channel.image;
+
+    let art: string | undefined;
+    const cachedTmdb = this.tmdbEnrichment.getEnrichmentSync(channel);
+    if (cachedTmdb?.posterPath) {
+      const poster = getTmdbPosterUrl(cachedTmdb.posterPath, 'w500');
+      if (poster) art = poster;
+    }
+    if (!art && channel.image) {
+      art = channel.image;
+    }
 
     // For episodes, fall back to parent series image if available
-    if (this.isTvShow(channel) && channel.series_id != null) {
-      const sMatch = this.loadedSeries.find(
-        (s) =>
-          (channel.source_id == null || s.source_id === channel.source_id) &&
-          (s.url === String(channel.series_id) || s.id === channel.series_id)
-      );
-      if (sMatch?.image) return sMatch.image;
-    }
-
-    return undefined;
-  }
-
-  getContinueWatchingArtwork(channel: Channel): string | undefined {
-    if (!channel) return undefined;
-    if (this.isTvShow(channel)) {
-      if (channel.series_id != null && this.loadedSeries && this.loadedSeries.length > 0) {
-        const sMatch = this.loadedSeries.find(
+    if (!art && this.isTvShow(channel) && channel.series_id != null) {
+      const sMatch =
+        this.seriesLookupMap.get(`${channel.source_id}_${channel.series_id}`) ||
+        this.seriesLookupMap.get(String(channel.series_id));
+      if (sMatch?.image) {
+        art = sMatch.image;
+      } else if (this.loadedSeries && this.loadedSeries.length > 0) {
+        const sMatchLinear = this.loadedSeries.find(
           (s) =>
             (channel.source_id == null || s.source_id === channel.source_id) &&
             (s.url === String(channel.series_id) || s.id === channel.series_id)
         );
+        if (sMatchLinear?.image) art = sMatchLinear.image;
+      }
+    }
+
+    if (key != null) {
+      this.cardArtworkCache.set(key, art);
+    }
+    return art;
+  }
+
+  getContinueWatchingArtwork(channel: Channel): string | undefined {
+    if (!channel) return undefined;
+    const key = channel.id != null ? channel.id : (channel.url || channel.name);
+    if (key != null) {
+      const cached = this.cwArtworkCache.get(key);
+      if (cached !== undefined) return cached;
+    }
+
+    let art: string | undefined;
+    if (this.isTvShow(channel)) {
+      if (channel.series_id != null) {
+        const sMatch =
+          this.seriesLookupMap.get(`${channel.source_id}_${channel.series_id}`) ||
+          this.seriesLookupMap.get(String(channel.series_id));
         if (sMatch) {
           const sArt = this.getCardArtwork(sMatch) || sMatch.image;
-          if (sArt) return sArt;
+          if (sArt) art = sArt;
+        } else if (this.loadedSeries && this.loadedSeries.length > 0) {
+          const sMatchLinear = this.loadedSeries.find(
+            (s) =>
+              (channel.source_id == null || s.source_id === channel.source_id) &&
+              (s.url === String(channel.series_id) || s.id === channel.series_id)
+          );
+          if (sMatchLinear) {
+            const sArt = this.getCardArtwork(sMatchLinear) || sMatchLinear.image;
+            if (sArt) art = sArt;
+          }
         }
       }
-      const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
-      if (cached?.backdropPath) {
-        const bd = getTmdbBackdropUrl(cached.backdropPath, 'w780');
-        if (bd) return bd;
+      if (!art) {
+        const cachedTmdb = this.tmdbEnrichment.getEnrichmentSync(channel);
+        if (cachedTmdb?.backdropPath) {
+          const bd = getTmdbBackdropUrl(cachedTmdb.backdropPath, 'w780');
+          if (bd) art = bd;
+        } else if (cachedTmdb?.posterPath) {
+          const poster = getTmdbPosterUrl(cachedTmdb.posterPath, 'w500');
+          if (poster) art = poster;
+        }
       }
-      if (cached?.posterPath) {
-        const poster = getTmdbPosterUrl(cached.posterPath, 'w500');
-        if (poster) return poster;
+      if (!art && channel.id && this.episodeStillMap.has(channel.id)) {
+        art = this.episodeStillMap.get(channel.id);
       }
-      if (channel.id && this.episodeStillMap.has(channel.id)) {
-        return this.episodeStillMap.get(channel.id);
-      }
-      if (channel.id && !this.inFlightStillFetches.has(channel.id)) {
+      if (!art && channel.id && !this.inFlightStillFetches.has(channel.id)) {
         this.resolveEpisodeStill(channel);
       }
     } else {
       // For movies in landscape, prefer high-res TMDB backdrop if available
-      const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
-      if (cached?.backdropPath) {
-        const bd = getTmdbBackdropUrl(cached.backdropPath, 'w780');
-        if (bd) return bd;
+      const cachedTmdb = this.tmdbEnrichment.getEnrichmentSync(channel);
+      if (cachedTmdb?.backdropPath) {
+        const bd = getTmdbBackdropUrl(cachedTmdb.backdropPath, 'w780');
+        if (bd) art = bd;
       }
     }
     // Fall back to standard card artwork or provider thumbnail
-    return this.getCardArtwork(channel) || channel.image;
+    if (!art) {
+      art = this.getCardArtwork(channel) || channel.image;
+    }
+
+    if (key != null) {
+      this.cwArtworkCache.set(key, art);
+    }
+    return art;
   }
 
   async resolveEpisodeStill(channel: Channel): Promise<void> {
@@ -2876,6 +3048,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
             const stillUrl = getTmdbStillUrl(matchedEp.stillPath, 'original');
             if (stillUrl) {
               this.episodeStillMap.set(channel.id, stillUrl);
+              this.cwArtworkCache.delete(channel.id);
             }
           }
         }
@@ -2943,49 +3116,33 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       return Math.min(100, Math.max(0, Math.round(chAny.progress_percent)));
     }
     try {
-      const idsToCheck = [channel.id];
-      if (this.groupedHistoryIds.has(channel.id)) {
-        const grouped = this.groupedHistoryIds.get(channel.id) || [];
-        for (const gId of grouped) {
-          if (!idsToCheck.includes(gId)) idsToCheck.push(gId);
-        }
+      const now = Date.now();
+      if (!this.cachedWatchProgressStore || now - this.lastWatchProgressReadTime > 2000) {
+        const storeRaw = localStorage.getItem("fred_tv_watch_progress");
+        this.cachedWatchProgressStore = storeRaw ? JSON.parse(storeRaw) : {};
+        this.lastWatchProgressReadTime = now;
       }
-
-      const storeRaw = localStorage.getItem("fred_tv_watch_progress");
-      if (storeRaw) {
-        const store = JSON.parse(storeRaw);
-        if (store) {
-          for (const id of idsToCheck) {
-            if (store[id]) {
-              const entry = store[id];
-              const pct =
-                typeof entry === "number"
-                  ? entry
-                  : entry.percent ||
-                    (entry.time && entry.duration && entry.duration > 0
-                      ? (entry.time / entry.duration) * 100
-                      : 0);
-              if (pct > 0) return Math.min(100, Math.max(1, Math.round(pct)));
-            }
+      const store = this.cachedWatchProgressStore;
+      if (store) {
+        const idsToCheck = [channel.id];
+        if (this.groupedHistoryIds.has(channel.id)) {
+          const grouped = this.groupedHistoryIds.get(channel.id) || [];
+          for (const gId of grouped) {
+            if (!idsToCheck.includes(gId)) idsToCheck.push(gId);
           }
         }
-      }
 
-      for (const id of idsToCheck) {
-        const itemKey =
-          localStorage.getItem(`watch_progress_${id}`) ||
-          localStorage.getItem(`playback_pos_${id}`);
-        if (itemKey) {
-          const val = parseFloat(itemKey);
-          if (!isNaN(val) && val > 0) {
-            const durKey = localStorage.getItem(`playback_dur_${id}`);
-            if (durKey) {
-              const dur = parseFloat(durKey);
-              if (!isNaN(dur) && dur > 0) {
-                return Math.min(100, Math.max(1, Math.round((val / dur) * 100)));
-              }
-            }
-            return Math.min(100, Math.max(1, Math.round(val <= 1 ? val * 100 : val)));
+        for (const id of idsToCheck) {
+          if (store[id]) {
+            const entry = store[id];
+            const pct =
+              typeof entry === "number"
+                ? entry
+                : entry.percent ||
+                  (entry.time && entry.duration && entry.duration > 0
+                    ? (entry.time / entry.duration) * 100
+                    : 0);
+            if (pct > 0) return Math.min(100, Math.max(1, Math.round(pct)));
           }
         }
       }

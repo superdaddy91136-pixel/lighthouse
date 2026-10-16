@@ -723,7 +723,7 @@ body::-webkit-scrollbar-thumb:active {
   display: flex;
   gap: 16px;
   overflow-x: auto;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
   padding: 8px 48px 12px 108px;
@@ -731,6 +731,9 @@ body::-webkit-scrollbar-thumb:active {
   width: 100%;
   user-select: none;
   -webkit-user-select: none;
+  contain: layout;
+  will-change: scroll-position;
+  overscroll-behavior-x: contain;
 }
 
 @media screen and (max-width: 767px) {
@@ -760,13 +763,16 @@ body::-webkit-scrollbar-thumb:active {
 }
 
 .row-track.is-dragging .media-card,
+.row-track.is-scrolling .media-card,
 .cast-track.is-dragging .cast-card,
-.season-selector-track.is-dragging .season-pill-btn {
+.cast-track.is-scrolling .cast-card,
+.season-selector-track.is-dragging .season-pill-btn,
+.season-selector-track.is-scrolling .season-pill-btn {
   pointer-events: none;
-  cursor: grabbing !important;
 }
 
-.row-track.is-dragging .media-card {
+.row-track.is-dragging .media-card,
+.row-track.is-scrolling .media-card {
   transform: none !important;
 }
 
@@ -776,6 +782,8 @@ body::-webkit-scrollbar-thumb:active {
   flex: 0 0 196px;
   cursor: pointer;
   transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1);
+  content-visibility: auto;
+  contain-intrinsic-size: 196px 294px;
 }
 .media-card:hover {
   transform: translateY(-6px);
@@ -785,6 +793,7 @@ body::-webkit-scrollbar-thumb:active {
 .media-card.cw-card {
   width: 280px;
   flex: 0 0 280px;
+  contain-intrinsic-size: 280px 168px;
 }
 
 .poster-container {
