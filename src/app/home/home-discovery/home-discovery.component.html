@@ -194,11 +194,16 @@
 
               <!-- Hover Play Overlay -->
               <div class="card-hover-overlay">
-                <div class="hover-play-circle">
+                <button 
+                  type="button" 
+                  class="hover-play-circle" 
+                  (click)="onPlayCardClick(item, row.id, $event)"
+                  title="Play"
+                  aria-label="Play">
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
                   </svg>
-                </div>
+                </button>
               </div>
 
               <!-- Title Overlay (Revealed on Hover) -->

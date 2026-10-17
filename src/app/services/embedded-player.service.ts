@@ -9,9 +9,14 @@ import { Channel } from '../models/channel';
 import { MediaType } from '../models/mediaType';
 import { ViewMode } from '../models/viewMode';
 import { SortType } from '../models/sortType';
+import { Filters } from '../models/filters';
+import { fromMediaType } from '../models/nodeType';
 import { MemoryService } from '../memory.service';
 import { cleanMediaTitle } from '../utils/media-presentation';
 import { isInputFocused } from '../utils';
+import { VersionMatchingService } from './version-matching.service';
+import { MovieDetailService } from './movie-detail.service';
+import { TvDetailService } from './tv-detail.service';
 
 export type ContentMode = 'movie' | 'episode' | 'live';
 
@@ -132,6 +137,9 @@ export class EmbeddedPlayerService implements OnDestroy {
     private toastr: ToastrService,
     private router: Router,
     private memory: MemoryService,
+    private versionMatching: VersionMatchingService,
+    private movieDetailService: MovieDetailService,
+    private tvDetailService: TvDetailService,
   ) {
     this.initGlobalListeners();
     this.routerSubscription = this.router.events
@@ -427,9 +435,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     if (event.key === 'ArrowLeft') {
       if (this.currentMode !== 'live') {
-        invoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: ['seek', -10, 'relative'] }),
-        }).catch(console.warn);
+        emit('player-seek-left').catch(console.warn);
       }
       event.preventDefault();
       event.stopPropagation();
@@ -438,9 +444,7 @@ export class EmbeddedPlayerService implements OnDestroy {
 
     if (event.key === 'ArrowRight') {
       if (this.currentMode !== 'live') {
-        invoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: ['seek', 10, 'relative'] }),
-        }).catch(console.warn);
+        emit('player-seek-right').catch(console.warn);
       }
       event.preventDefault();
       event.stopPropagation();
@@ -1141,6 +1145,354 @@ export class EmbeddedPlayerService implements OnDestroy {
     } catch (e) {
       console.warn('Failed to save watch progress:', e);
     }
+  }
+
+  public resolveVideoCanvasId(preferredCanvasId?: string): string {
+    if (preferredCanvasId) return preferredCanvasId;
+    const url = this.router.url || '';
+    if (url.includes('movie-detail')) return 'movie-video-canvas';
+    if (url.includes('tv-detail')) return 'tv-video-canvas';
+    return 'home-video-canvas';
+  }
+
+  public async playMediaDirectly(channel: Channel, hostCanvasId?: string): Promise<void> {
+    if (!channel) return;
+
+    // Handle group / season folder navigation
+    if (channel.media_type === MediaType.group || channel.media_type === MediaType.season) {
+      this.memory.SetNode.next({
+        id: channel.id!,
+        name: channel.name!,
+        type: fromMediaType(channel.media_type),
+        sourceId: channel.source_id,
+      });
+      return;
+    }
+
+    const canvas = this.resolveVideoCanvasId(hostCanvasId);
+
+    // 1. Live TV / livestream
+    if (channel.media_type === MediaType.livestream) {
+      await this.startPlayer(channel, canvas, {
+        title: cleanMediaTitle(channel.name || 'Live TV'),
+        mode: 'live',
+      });
+      return;
+    }
+
+    // 2. Individual TV Episode
+    const isEpisode = !!(
+      channel.season_id != null ||
+      channel.episode_num != null ||
+      (channel.series_id != null && channel.media_type !== MediaType.serie) ||
+      (/\b(?:s\d{1,2}\s*e\d{1,2}|season\s*\d+|\b\d{1,2}x\d{1,2}\b)/i.test(channel.name || '') &&
+        channel.media_type !== MediaType.serie)
+    );
+
+    if (isEpisode) {
+      await this.playEpisodeDirectly(channel, canvas);
+      return;
+    }
+
+    // 3. TV Show (MediaType.serie)
+    if (channel.media_type === MediaType.serie) {
+      await this.playSeriesDirectly(channel, canvas);
+      return;
+    }
+
+    // 4. Movie (MediaType.movie or default)
+    await this.playMovieDirectly(channel, canvas);
+  }
+
+  private async playMovieDirectly(channel: Channel, canvas: string): Promise<void> {
+    let playChannel: Channel = channel;
+    try {
+      const versions = await this.versionMatching.findVersions(channel);
+      if (versions && versions.length > 0) {
+        const preferred =
+          this.versionMatching.getPreferredVersion(channel, versions) ||
+          this.versionMatching.getDefaultVersion(versions, channel);
+        if (preferred?.channel) {
+          playChannel = { ...preferred.channel, favorite: !!channel.favorite };
+          this.versionMatching.savePreferredVersion(channel, preferred);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to find versions for movie in playMediaDirectly:', e);
+    }
+
+    if (!playChannel.url || !playChannel.source_id) {
+      try {
+        const results = (await invoke('search', {
+          filters: {
+            source_ids: playChannel.source_id ? [playChannel.source_id] : Array.from(this.memory.Sources.keys()),
+            view_type: ViewMode.All,
+            media_types: [MediaType.movie],
+            query: playChannel.name,
+            page: 1,
+            sort: SortType.provider,
+            use_keywords: false,
+          },
+        })) as Channel[];
+        const fresh = results?.find((c) => c.id === playChannel.id);
+        if (fresh) {
+          playChannel = { ...fresh, media_type: MediaType.movie, favorite: !!fresh.favorite };
+        }
+      } catch (err) {
+        console.warn('Failed to query fresh channel record for movie:', err);
+      }
+    }
+
+    const startPos = this.getSavedPosition(playChannel.id, playChannel);
+    await this.startPlayer(playChannel, canvas, {
+      title: cleanMediaTitle(playChannel.name),
+      mode: 'movie',
+      startTime: startPos,
+    });
+  }
+
+  private async playSeriesDirectly(channel: Channel, canvas: string): Promise<void> {
+    let seriesChannel: Channel = channel;
+    try {
+      const versions = await this.versionMatching.findVersions(channel);
+      if (versions && versions.length > 0) {
+        const preferred =
+          this.versionMatching.getPreferredVersion(channel, versions) ||
+          this.versionMatching.getDefaultVersion(versions, channel);
+        if (preferred?.channel) {
+          seriesChannel = preferred.channel;
+          this.versionMatching.savePreferredVersion(channel, preferred);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to find versions for series in playMediaDirectly:', e);
+    }
+
+    const seriesId =
+      seriesChannel.series_id ||
+      (seriesChannel.url && /^\d+$/.test(seriesChannel.url.trim())
+        ? parseInt(seriesChannel.url.trim(), 10)
+        : seriesChannel.id);
+
+    if (!seriesId) {
+      this.tvDetailService.openTvDetail(seriesChannel);
+      return;
+    }
+
+    if (!this.memory.SeriesRefreshed.has(seriesChannel.id!)) {
+      try {
+        await invoke('get_episodes', { channel: seriesChannel });
+        this.memory.SeriesRefreshed.set(seriesChannel.id!, true);
+      } catch (e) {
+        console.warn('Failed to get_episodes for series:', e);
+      }
+    }
+
+    const sourceIds = seriesChannel.source_id
+      ? [seriesChannel.source_id]
+      : Array.from(this.memory.Sources.keys());
+
+    const filters: Filters = {
+      source_ids: sourceIds,
+      series_id: seriesId,
+      media_types: [MediaType.serie],
+      view_type: ViewMode.All,
+      use_keywords: false,
+      page: 1,
+      sort: SortType.alphabeticalAscending,
+    };
+
+    let seasonChannels = (await invoke('search', { filters })) as Channel[];
+    if ((!seasonChannels || seasonChannels.length === 0) && !this.memory.SeriesRefreshed.has(seriesChannel.id!)) {
+      try {
+        await invoke('get_episodes', { channel: seriesChannel });
+        this.memory.SeriesRefreshed.set(seriesChannel.id!, true);
+        seasonChannels = (await invoke('search', { filters })) as Channel[];
+      } catch {}
+    }
+
+    if (!seasonChannels || seasonChannels.length === 0) {
+      this.tvDetailService.openTvDetail(seriesChannel);
+      return;
+    }
+
+    // Check watch history for this series
+    let lastWatchedEp: Channel | undefined;
+    try {
+      const historyFilters: Filters = {
+        source_ids: sourceIds,
+        series_id: seriesId,
+        media_types: [MediaType.movie],
+        view_type: ViewMode.History,
+        use_keywords: false,
+        page: 1,
+        sort: 0,
+      };
+      const watchedEpisodes = (await invoke('search', { filters: historyFilters })) as Channel[];
+      if (watchedEpisodes && watchedEpisodes.length > 0) {
+        lastWatchedEp = watchedEpisodes[0];
+      } else {
+        const globalHistory = (await invoke('search', {
+          filters: {
+            source_ids: sourceIds,
+            media_types: [MediaType.movie],
+            view_type: ViewMode.History,
+            use_keywords: false,
+            page: 1,
+            sort: 0,
+          },
+        })) as Channel[];
+        if (globalHistory && globalHistory.length > 0) {
+          const seriesTitleLower = cleanMediaTitle(seriesChannel.name).toLowerCase();
+          const found = globalHistory.find((h) => {
+            if (h.series_id != null && h.series_id === seriesId) return true;
+            const hClean = cleanMediaTitle(h.name).toLowerCase();
+            return hClean.startsWith(seriesTitleLower) || seriesTitleLower.startsWith(hClean);
+          });
+          if (found) lastWatchedEp = found;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to query history for series in playMediaDirectly:', e);
+    }
+
+    let targetSeason: Channel | undefined;
+    if (lastWatchedEp) {
+      if (lastWatchedEp.season_id != null) {
+        targetSeason = seasonChannels.find((s) => s.id === lastWatchedEp!.season_id);
+      }
+      if (!targetSeason) {
+        const sMatch =
+          lastWatchedEp.name?.match(/\bS(\d{1,2})\s*E\d{1,2}\b/i) ||
+          lastWatchedEp.name?.match(/(\d+)x(\d+)/i) ||
+          lastWatchedEp.name?.match(/\bSeason\s*(\d{1,2})\b/i);
+        if (sMatch) {
+          const sNum = parseInt(sMatch[1], 10);
+          targetSeason = seasonChannels.find((s, idx) => {
+            const numMatch = s.name?.match(/(\d+)/);
+            const num = numMatch ? parseInt(numMatch[1], 10) : idx + 1;
+            return num === sNum;
+          });
+        }
+      }
+    }
+
+    if (!targetSeason) {
+      targetSeason = seasonChannels[0];
+    }
+
+    const sMatch = targetSeason.name?.match(/(\d+)/);
+    const targetSeasonNum = sMatch ? parseInt(sMatch[1], 10) : 1;
+
+    const epFilters: Filters = {
+      source_ids: sourceIds,
+      series_id: seriesId,
+      season: targetSeason.id,
+      media_types: [MediaType.movie],
+      view_type: ViewMode.All,
+      use_keywords: false,
+      page: 1,
+      sort: SortType.alphabeticalAscending,
+    };
+
+    const episodeChannels = (await invoke('search', { filters: epFilters })) as Channel[];
+    if (!episodeChannels || episodeChannels.length === 0) {
+      this.tvDetailService.openTvDetail(seriesChannel);
+      return;
+    }
+
+    let targetEpisode: Channel | undefined;
+    if (lastWatchedEp) {
+      targetEpisode = episodeChannels.find((e) => e.id === lastWatchedEp!.id);
+    }
+    if (!targetEpisode) {
+      targetEpisode = episodeChannels[0];
+    }
+
+    const seriesTitle = cleanMediaTitle(seriesChannel.name);
+    const epNum = targetEpisode.episode_num ?? this.extractEpisodeNumber(targetEpisode.name);
+    const epTitle = cleanMediaTitle(targetEpisode.name || `Episode ${epNum}`);
+    const sNumPadded = String(targetSeasonNum).padStart(2, '0');
+    const eNumPadded = String(epNum).padStart(2, '0');
+    const overlayTitle = `${seriesTitle} - S${sNumPadded}E${eNumPadded}: ${epTitle}`;
+
+    const switcherSeasons: SwitcherSeasonData[] = seasonChannels.map((s, idx) => {
+      const numMatch = s.name?.match(/(\d+)/);
+      return {
+        id: s.id!,
+        seasonNum: numMatch ? parseInt(numMatch[1], 10) : idx + 1,
+        name: s.name || `Season ${idx + 1}`,
+      };
+    });
+
+    const switcherEpisodes: SwitcherEpisodeData[] = episodeChannels.map((ch, idx) => {
+      const eNumber = ch.episode_num ?? (idx + 1);
+      return {
+        id: ch.id!,
+        channel: ch,
+        episodeNum: eNumber,
+        seasonNum: targetSeasonNum,
+        title: cleanMediaTitle(ch.name || `Episode ${eNumber}`),
+        stillUrl: ch.image,
+        isWatched: (ch as any).last_watched != null,
+        isCurrent: ch.id === targetEpisode!.id,
+      };
+    });
+
+    const startPos = this.getSavedPosition(targetEpisode.id, targetEpisode);
+
+    await this.startPlayer(targetEpisode, canvas, {
+      title: overlayTitle,
+      mode: 'episode',
+      startTime: startPos,
+      seriesChannel: seriesChannel,
+      seriesTitle: seriesTitle,
+      seasons: switcherSeasons,
+      currentSeasonNum: targetSeasonNum,
+      episodes: switcherEpisodes,
+    });
+  }
+
+  private async playEpisodeDirectly(channel: Channel, canvas: string): Promise<void> {
+    let playChannel: Channel = channel;
+    if (!playChannel.url || !playChannel.source_id) {
+      try {
+        const results = (await invoke('search', {
+          filters: {
+            source_ids: playChannel.source_id ? [playChannel.source_id] : Array.from(this.memory.Sources.keys()),
+            view_type: ViewMode.All,
+            media_types: [MediaType.movie],
+            query: playChannel.name,
+            page: 1,
+            sort: SortType.provider,
+            use_keywords: false,
+          },
+        })) as Channel[];
+        const fresh = results?.find((c) => c.id === playChannel.id);
+        if (fresh) {
+          playChannel = { ...fresh, media_type: MediaType.movie, favorite: !!fresh.favorite };
+        }
+      } catch {}
+    }
+
+    const startPos = this.getSavedPosition(playChannel.id, playChannel);
+    const seriesTitle = this.extractSeriesTitle(playChannel);
+    const seasonNum = this.extractSeasonNumber(playChannel);
+    const epNum = this.extractEpisodeNumber(playChannel.name);
+    const epTitle = cleanMediaTitle(playChannel.name || `Episode ${epNum}`);
+    const sNumPadded = String(seasonNum).padStart(2, '0');
+    const eNumPadded = String(epNum).padStart(2, '0');
+    const overlayTitle = seriesTitle
+      ? `${seriesTitle} - S${sNumPadded}E${eNumPadded}: ${epTitle}`
+      : epTitle;
+
+    await this.startPlayer(playChannel, canvas, {
+      title: overlayTitle,
+      mode: 'episode',
+      startTime: startPos,
+      seriesTitle: seriesTitle || undefined,
+      currentSeasonNum: seasonNum,
+    });
   }
 
   ngOnDestroy(): void {

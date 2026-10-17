@@ -3177,11 +3177,55 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     return channelId ? this.imageErrorSet.has(channelId) : true;
   }
 
-  handleCardClick(channel: Channel, rowId?: string) {
+  async onPlayCardClick(channel: Channel, rowId: string | undefined, event: MouseEvent): Promise<void> {
+    event.stopPropagation();
     if (rowId === 'row-continue-watching') {
       this.resume.emit(channel);
       return;
     }
+    await this.embeddedPlayer.playMediaDirectly(channel);
+  }
+
+  handleCardClick(channel: Channel, rowId?: string) {
+    if (rowId === 'row-continue-watching') {
+      if (this.isTvShow(channel)) {
+        let seriesChannel: Channel | undefined;
+        if (channel.media_type === MediaType.serie && !channel.season_id && !channel.episode_num) {
+          seriesChannel = channel;
+        } else {
+          const sTitle = this.getSeriesTitle(channel);
+          if (channel.series_id != null) {
+            const key = `${channel.source_id}_${channel.series_id}`;
+            seriesChannel = this.seriesLookupMap.get(key) || this.seriesLookupMap.get(String(channel.series_id));
+            if (!seriesChannel && this.loadedSeries) {
+              seriesChannel = this.loadedSeries.find(
+                (s) =>
+                  (channel.source_id == null || s.source_id === channel.source_id) &&
+                  (s.url === String(channel.series_id) || s.id === channel.series_id)
+              );
+            }
+          }
+          if (!seriesChannel) {
+            seriesChannel = {
+              ...channel,
+              name: sTitle,
+              media_type: MediaType.serie,
+              id: channel.series_id || channel.id,
+              url: channel.series_id ? String(channel.series_id) : channel.url,
+            };
+          }
+        }
+        this.tvDetailService.openTvDetail(seriesChannel);
+        return;
+      } else if (channel.media_type === MediaType.movie) {
+        this.movieDetailService.openMovieDetail(channel);
+        return;
+      } else {
+        this.resume.emit(channel);
+        return;
+      }
+    }
+
     if (channel.media_type === MediaType.serie) {
       this.tvDetailService.openTvDetail(channel);
     } else if (channel.media_type === MediaType.movie) {
@@ -3375,12 +3419,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
-  handleHeroPlay(hero: HeroItem) {
-    if (hero.channel.media_type === MediaType.serie) {
-      this.tvDetailService.openTvDetail(hero.channel);
-    } else {
-      this.play.emit(hero.channel);
-    }
+  async handleHeroPlay(hero: HeroItem): Promise<void> {
+    await this.embeddedPlayer.playMediaDirectly(hero.channel);
   }
 
   handleHeroDetails(hero: HeroItem) {

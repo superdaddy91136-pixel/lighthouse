@@ -12,7 +12,7 @@ import {
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ToastrService } from 'ngx-toastr';
 import { Subscription } from 'rxjs';
@@ -25,6 +25,7 @@ import { SortType } from '../models/sortType';
 import { ViewMode } from '../models/viewMode';
 import { TmdbCastMember, TmdbMediaEnrichment, TmdbVideo } from '../models/tmdb';
 import { MediaVersion } from '../models/version';
+import { EmbeddedPlayerService } from '../services/embedded-player.service';
 import { MovieDetailService } from '../services/movie-detail.service';
 import { TmdbCacheService } from '../services/tmdb-cache.service';
 import { TmdbConfigService } from '../services/tmdb-config.service';
@@ -113,6 +114,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private error: ErrorService,
     private sanitizer: DomSanitizer,
     private cdr: ChangeDetectorRef,
+    public embeddedPlayer: EmbeddedPlayerService,
   ) {}
 
   private resetScrollPosition(): void {
@@ -281,30 +283,22 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
       if (event.key === 'ArrowLeft') {
-        invoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: ['seek', -10, 'relative'] }),
-        }).catch(console.warn);
+        emit('player-seek-left').catch(console.warn);
         event.preventDefault();
         return;
       }
       if (event.key === 'ArrowRight') {
-        invoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: ['seek', 10, 'relative'] }),
-        }).catch(console.warn);
+        emit('player-seek-right').catch(console.warn);
         event.preventDefault();
         return;
       }
-      if (event.key === 'ArrowUp') {
-        invoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: ['add', 'volume', 5] }),
-        }).catch(console.warn);
+      if (event.key === 'ArrowUp' || event.key === 'AudioVolumeUp') {
+        emit('player-volume-up').catch(console.warn);
         event.preventDefault();
         return;
       }
-      if (event.key === 'ArrowDown') {
-        invoke('send_embedded_poc_ipc', {
-          command: JSON.stringify({ command: ['add', 'volume', -5] }),
-        }).catch(console.warn);
+      if (event.key === 'ArrowDown' || event.key === 'AudioVolumeDown') {
+        emit('player-volume-down').catch(console.warn);
         event.preventDefault();
         return;
       }
@@ -1038,6 +1032,14 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     } finally {
       this.loadingSimilar = false;
     }
+  }
+
+  async onPlaySimilarClick(movie: Channel, event: MouseEvent): Promise<void> {
+    event.stopPropagation();
+    if (this.isPlayingEmbedded) {
+      await this.stopEmbedded();
+    }
+    await this.embeddedPlayer.playMediaDirectly(movie, 'movie-video-canvas');
   }
 
   selectSimilarMovie(channel: Channel): void {

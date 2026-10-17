@@ -1253,6 +1253,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  async onPlaySimilarClick(show: Channel, event: MouseEvent): Promise<void> {
+    event.stopPropagation();
+    if (this.embeddedPlayer.isPlayingEmbedded) {
+      await this.embeddedPlayer.stopPlayer();
+    }
+    await this.embeddedPlayer.playMediaDirectly(show, 'tv-video-canvas');
+  }
+
   selectSimilarShow(channel: Channel): void {
     if (this.embeddedPlayer.isPlayingEmbedded) {
       this.embeddedPlayer.stopPlayer().catch(console.warn);

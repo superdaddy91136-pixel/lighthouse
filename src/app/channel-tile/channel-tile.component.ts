@@ -114,6 +114,17 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
     this.renderer.setStyle(element, "background", background);
   }
 
+  async onPlayClick(event: MouseEvent): Promise<void> {
+    event.stopPropagation();
+    if (this.isGroup()) {
+      this.click();
+      return;
+    }
+    if (this.channel) {
+      await this.embeddedPlayer.playMediaDirectly(this.channel);
+    }
+  }
+
   async click(record = false) {
     if (this.starting === true) {
       try {
