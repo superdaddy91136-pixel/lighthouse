@@ -56,6 +56,8 @@ export interface CategoryOption {
   sourceId: number;
   sourceName?: string;
   channelCount?: number;
+  cleanName?: string;
+  isPinned?: boolean;
 }
 
 export type SortOption = 'default' | 'title-asc' | 'title-desc' | 'year-desc' | 'year-asc';
@@ -171,8 +173,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   selectedSort: SortOption = 'default';
   isFilterMenuOpen = false;
   availableCategories: CategoryOption[] = [];
+  displayedLiveCategories: CategoryOption[] = [];
   categorySearchTerm = '';
   categoryLoading = false;
+  private categoryLoadingInFlight = new Set<string>();
   private categoryCache: Map<string, CategoryOption[]> = new Map();
   private tabFilterStates: Map<NavTab, TabFilterSortState> = new Map();
 
@@ -406,12 +410,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   setFolderSort(sort: LiveFolderSort): void {
     this.liveFolderSort = sort;
     localStorage.setItem('lighthouse_live_folder_sort', sort);
+    this.updateDisplayedLiveCategories();
     this.cdr.markForCheck();
   }
 
   resetFolderSort(): void {
     this.liveFolderSort = 'default';
     localStorage.setItem('lighthouse_live_folder_sort', 'default');
+    this.updateDisplayedLiveCategories();
     this.cdr.markForCheck();
   }
 
@@ -421,30 +427,30 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     switch (this.liveFolderSort) {
       case 'name-asc':
         return copy.sort((a, b) => {
-          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
-          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          const nameA = (a.cleanName || a.name || '').toLowerCase();
+          const nameB = (b.cleanName || b.name || '').toLowerCase();
           return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
         });
       case 'name-desc':
         return copy.sort((a, b) => {
-          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
-          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          const nameA = (a.cleanName || a.name || '').toLowerCase();
+          const nameB = (b.cleanName || b.name || '').toLowerCase();
           return nameB.localeCompare(nameA, undefined, { numeric: true, sensitivity: 'base' });
         });
       case 'count-desc':
         return copy.sort((a, b) => {
           const countDiff = (b.channelCount ?? 0) - (a.channelCount ?? 0);
           if (countDiff !== 0) return countDiff;
-          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
-          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          const nameA = (a.cleanName || a.name || '').toLowerCase();
+          const nameB = (b.cleanName || b.name || '').toLowerCase();
           return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
         });
       case 'count-asc':
         return copy.sort((a, b) => {
           const countDiff = (a.channelCount ?? 0) - (b.channelCount ?? 0);
           if (countDiff !== 0) return countDiff;
-          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
-          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          const nameA = (a.cleanName || a.name || '').toLowerCase();
+          const nameB = (b.cleanName || b.name || '').toLowerCase();
           return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
         });
       case 'default':
@@ -453,24 +459,47 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  get displayedLiveCategories(): CategoryOption[] {
-    let list = this.availableCategories;
-    if (!list || list.length === 0) return [];
-
-    if (this.liveFolderSearchQuery && this.liveFolderSearchQuery.trim().length > 0) {
-      const q = this.liveFolderSearchQuery.trim().toLowerCase();
-      list = list.filter((cat) => cleanMediaTitle(cat.name).toLowerCase().includes(q));
+  updateDisplayedLiveCategories(): void {
+    const list = this.availableCategories;
+    if (!list || list.length === 0) {
+      this.displayedLiveCategories = [];
+      return;
     }
 
-    const sorted = this.sortFolders(list);
+    const pinnedGroupIds = new Set(
+      this.pinService
+        .getPinnedChannelsForTab(NavTab.LiveTV)
+        .filter((item) => item.media_type === MediaType.group)
+        .map((item) => item.id),
+    );
+
+    for (const cat of list) {
+      cat.isPinned = pinnedGroupIds.has(cat.id);
+    }
+
+    let filtered = list;
+    if (this.liveFolderSearchQuery && this.liveFolderSearchQuery.trim().length > 0) {
+      const q = this.liveFolderSearchQuery.trim().toLowerCase();
+      filtered = list.filter((cat) => (cat.cleanName || cat.name || '').toLowerCase().includes(q));
+    }
+
+    const sorted = this.sortFolders(filtered);
     const pinnedFolders: CategoryOption[] = [];
     const unpinnedFolders: CategoryOption[] = [];
 
     for (const category of sorted) {
-      (this.isCategoryPinned(category) ? pinnedFolders : unpinnedFolders).push(category);
+      if (category.isPinned) {
+        pinnedFolders.push(category);
+      } else {
+        unpinnedFolders.push(category);
+      }
     }
 
-    return [...pinnedFolders, ...unpinnedFolders];
+    this.displayedLiveCategories = [...pinnedFolders, ...unpinnedFolders];
+  }
+
+  trackCategoryById(_index: number, item: CategoryOption): number {
+    return item.id;
   }
 
   toCategoryChannel(cat: CategoryOption): Channel {
@@ -491,6 +520,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     event.preventDefault();
     this.pinService.togglePin(this.toCategoryChannel(cat), NavTab.LiveTV);
     this.updatePinnedItems();
+    this.updateDisplayedLiveCategories();
     this.cdr.markForCheck();
   }
 
@@ -557,6 +587,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   onLiveFolderSearchInput(event: Event): void {
     const val = (event.target as HTMLInputElement).value;
     this.liveFolderSearchQuery = val;
+    this.updateDisplayedLiveCategories();
     this.cdr.markForCheck();
   }
 
@@ -572,6 +603,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (this.liveSearchInput?.nativeElement) {
       this.liveSearchInput.nativeElement.value = '';
     }
+    this.updateDisplayedLiveCategories();
     this.cdr.markForCheck();
   }
 
@@ -715,6 +747,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     const tab = this.memory.activeNavTab.value;
     if (tab !== NavTab.LiveTV && tab !== NavTab.Movies && tab !== NavTab.TVShows) {
       this.availableCategories = [];
+      this.updateDisplayedLiveCategories();
       return;
     }
 
@@ -729,14 +762,21 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
     if (sourceIds.length === 0) {
       this.availableCategories = [];
+      this.updateDisplayedLiveCategories();
       return;
     }
 
     const cacheKey = `${tab}_${sourceIds.slice().sort().join(',')}`;
     if (!forceReload && this.categoryCache.has(cacheKey)) {
       this.availableCategories = this.categoryCache.get(cacheKey)!;
+      this.updateDisplayedLiveCategories();
       return;
     }
+
+    if (this.categoryLoadingInFlight.has(cacheKey)) {
+      return;
+    }
+    this.categoryLoadingInFlight.add(cacheKey);
 
     this.categoryLoading = true;
     try {
@@ -744,6 +784,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       let page = 1;
       let hasMore = true;
       while (hasMore) {
+        if (this.memory.activeNavTab.value !== tab) {
+          break;
+        }
+
         const catFilters: Filters = {
           source_ids: sourceIds,
           media_types: mediaTypes,
@@ -759,12 +803,21 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
               collected.push({
                 id: g.id,
                 name: g.name,
+                cleanName: cleanMediaTitle(g.name),
                 sourceId: g.source_id ?? 0,
                 sourceName: g.source_id ? this.memory.Sources.get(g.source_id)?.name : undefined,
                 channelCount: g.stream_id ?? 0,
               });
             }
           }
+
+          if (page === 1 && collected.length > 0 && this.memory.activeNavTab.value === tab) {
+            this.availableCategories = [...collected];
+            this.updateDisplayedLiveCategories();
+            this.categoryLoading = false;
+            this.cdr.markForCheck();
+          }
+
           if (groups.length < this.PAGE_SIZE) {
             hasMore = false;
           } else {
@@ -776,13 +829,78 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         }
       }
       this.categoryCache.set(cacheKey, collected);
-      this.availableCategories = collected;
+      if (this.memory.activeNavTab.value === tab) {
+        this.availableCategories = collected;
+        this.updateDisplayedLiveCategories();
+      }
     } catch (e) {
       console.error('Failed to load categories:', e);
     } finally {
+      this.categoryLoadingInFlight.delete(cacheKey);
       this.categoryLoading = false;
       this.cdr.markForCheck();
     }
+  }
+
+  preloadLiveCategories(): void {
+    const sourceIds = Array.from(this.memory.Sources.keys());
+    if (sourceIds.length === 0) return;
+    const cacheKey = `${NavTab.LiveTV}_${sourceIds.slice().sort().join(',')}`;
+    if (this.categoryCache.has(cacheKey) || this.categoryLoadingInFlight.has(cacheKey)) {
+      return;
+    }
+    this.categoryLoadingInFlight.add(cacheKey);
+
+    (async () => {
+      try {
+        const collected: CategoryOption[] = [];
+        let page = 1;
+        let hasMore = true;
+        while (hasMore) {
+          const catFilters: Filters = {
+            source_ids: sourceIds,
+            media_types: [MediaType.livestream],
+            view_type: ViewMode.Categories,
+            page,
+            use_keywords: false,
+            sort: SortType.provider,
+          };
+          const groups = (await invoke('search', { filters: catFilters })) as Channel[];
+          if (groups && groups.length > 0) {
+            for (const g of groups) {
+              if (g.media_type === MediaType.group && g.id != null && g.name) {
+                collected.push({
+                  id: g.id,
+                  name: g.name,
+                  cleanName: cleanMediaTitle(g.name),
+                  sourceId: g.source_id ?? 0,
+                  sourceName: g.source_id ? this.memory.Sources.get(g.source_id)?.name : undefined,
+                  channelCount: g.stream_id ?? 0,
+                });
+              }
+            }
+            if (groups.length < this.PAGE_SIZE) {
+              hasMore = false;
+            } else {
+              page++;
+              if (page > 30) hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+        this.categoryCache.set(cacheKey, collected);
+        if (this.memory.activeNavTab.value === NavTab.LiveTV && this.availableCategories.length === 0) {
+          this.availableCategories = collected;
+          this.updateDisplayedLiveCategories();
+          this.cdr.markForCheck();
+        }
+      } catch (err) {
+        console.error('Failed to preload live categories:', err);
+      } finally {
+        this.categoryLoadingInFlight.delete(cacheKey);
+      }
+    })();
   }
 
   applySortToChannels(channels: Channel[]): Channel[] {
@@ -1257,6 +1375,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             }
             if (this.isCatalogTab) {
               this.loadAvailableCategories();
+            } else {
+              setTimeout(() => this.preloadLiveCategories(), 400);
             }
           });
         }
@@ -1372,6 +1492,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.subscriptions.push(
       this.pinService.pinnedItems$.subscribe(() => {
         this.updatePinnedItems();
+        this.updateDisplayedLiveCategories();
       }),
     );
     this.subscriptions.push(

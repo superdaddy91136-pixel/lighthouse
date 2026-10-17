@@ -83,9 +83,10 @@
   max-height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(18, 22, 30, 0.65);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: rgba(18, 22, 30, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateZ(0);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   padding: 1rem;
@@ -324,6 +325,8 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  contain: strict;
+  will-change: scroll-position;
 }
 
 /* Compact Scrollbar for Category list */
@@ -399,8 +402,11 @@
   font-size: 0.83rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition: background 0.12s ease, color 0.12s ease;
   user-select: none;
+  contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 36px;
 }
 
 .sidebar-category-item:hover {
@@ -497,9 +503,10 @@
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  background: rgba(18, 22, 30, 0.65);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: rgba(18, 22, 30, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateZ(0);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   padding: 1.25rem 1.25rem 3rem 1.25rem;

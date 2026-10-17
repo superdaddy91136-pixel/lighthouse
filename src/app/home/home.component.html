@@ -733,21 +733,21 @@
           <div class="sidebar-category-group" *ngIf="displayedLiveCategories.length > 0">
             <div 
               class="sidebar-category-item" 
-              *ngFor="let cat of displayedLiveCategories" 
-              [class.pinned]="isCategoryPinned(cat)"
+              *ngFor="let cat of displayedLiveCategories; trackBy: trackCategoryById" 
+              [class.pinned]="cat.isPinned"
               [class.active]="liveSidebarSelection?.type === 'category' && liveSidebarSelection?.id === cat.id"
               (click)="selectLiveSidebarCategory(cat)">
               <svg viewBox="0 0 24 24" fill="currentColor" class="category-item-icon">
                 <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"/>
               </svg>
-              <span class="category-item-name" [title]="cat.name">{{ cleanCategoryTitle(cat.name) }}</span>
+              <span class="category-item-name" [title]="cat.name">{{ cat.cleanName || cat.name }}</span>
               <span class="category-item-count" *ngIf="cat.channelCount != null && cat.channelCount > 0">{{ cat.channelCount }}</span>
               <button 
                 type="button" 
                 class="sidebar-pin-btn" 
-                [class.active]="isCategoryPinned(cat)"
+                [class.active]="cat.isPinned"
                 (click)="toggleCategoryPin(cat, $event)" 
-                [title]="isCategoryPinned(cat) ? 'Unpin folder' : 'Pin folder to top'">
+                [title]="cat.isPinned ? 'Unpin folder' : 'Pin folder to top'">
                 <svg viewBox="0 0 24 24" fill="currentColor" class="pin-svg">
                   <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
                 </svg>
