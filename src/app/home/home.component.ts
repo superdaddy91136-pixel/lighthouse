@@ -462,7 +462,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       list = list.filter((cat) => cleanMediaTitle(cat.name).toLowerCase().includes(q));
     }
 
-    return this.sortFolders(list);
+    const sorted = this.sortFolders(list);
+    const pinnedFolders: CategoryOption[] = [];
+    const unpinnedFolders: CategoryOption[] = [];
+
+    for (const category of sorted) {
+      (this.isCategoryPinned(category) ? pinnedFolders : unpinnedFolders).push(category);
+    }
+
+    return [...pinnedFolders, ...unpinnedFolders];
   }
 
   toCategoryChannel(cat: CategoryOption): Channel {
