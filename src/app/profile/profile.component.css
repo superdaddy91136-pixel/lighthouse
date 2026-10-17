@@ -1,3 +1,33 @@
+:host {
+  display: block;
+  width: 100%;
+  position: relative;
+}
+
+.movie-embedded-host-wrapper,
+.embedded-player-host-wrapper {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  background: #000000 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  z-index: 999999 !important;
+}
+
+.movie-video-canvas,
+.embedded-video-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
 .arrow {
   position: absolute;
   top: 2%;

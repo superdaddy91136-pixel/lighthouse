@@ -1,7 +1,8 @@
-import { Component, HostListener, OnInit } from "@angular/core";
+import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit } from "@angular/core";
 import { Router } from "@angular/router";
 import { invoke } from "@tauri-apps/api/core";
 import { ToastrService } from "ngx-toastr";
+import { Subscription } from "rxjs";
 import { MemoryService } from "../memory.service";
 import { Channel } from "../models/channel";
 import { Filters } from "../models/filters";
@@ -10,14 +11,16 @@ import { NavTab } from "../models/navTab";
 import { SortType } from "../models/sortType";
 import { SourceType } from "../models/sourceType";
 import { ViewMode } from "../models/viewMode";
+import { EmbeddedPlayerService } from "../services/embedded-player.service";
 
 @Component({
   selector: "app-profile",
   templateUrl: "./profile.component.html",
   styleUrl: "./profile.component.css",
 })
-export class ProfileComponent implements OnInit {
+export class ProfileComponent implements OnInit, OnDestroy {
   activeSection: "favorites" | "history" | "hidden" = "favorites";
+  private playerSub?: Subscription;
 
   // Favorites state
   favoriteChannels: Channel[] = [];
@@ -83,6 +86,8 @@ export class ProfileComponent implements OnInit {
     private router: Router,
     public memory: MemoryService,
     private toastr: ToastrService,
+    public embeddedPlayer: EmbeddedPlayerService,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   isInputFocused(): boolean {
@@ -96,6 +101,10 @@ export class ProfileComponent implements OnInit {
 
   @HostListener("document:keydown", ["$event"])
   onKeyDown(event: KeyboardEvent) {
+    if (this.embeddedPlayer.isPlayingEmbedded) {
+      // Key events during embedded playback are handled directly by EmbeddedPlayerService
+      return;
+    }
     if (
       event.key === "Escape" ||
       event.key === "BrowserBack" ||
@@ -112,9 +121,19 @@ export class ProfileComponent implements OnInit {
 
   ngOnInit(): void {
     this.memory.activeNavTab.next(NavTab.Profile);
+    this.playerSub = this.embeddedPlayer.isPlayingEmbedded$.subscribe(() => {
+      this.cdr.detectChanges();
+    });
     this.loadFavorites();
     this.loadHistory();
     this.loadHidden();
+  }
+
+  ngOnDestroy(): void {
+    this.playerSub?.unsubscribe();
+    if (this.embeddedPlayer.isPlayingEmbedded) {
+      this.embeddedPlayer.stopPlayer().catch(console.warn);
+    }
   }
 
   setSection(section: "favorites" | "history" | "hidden") {
@@ -351,6 +370,10 @@ export class ProfileComponent implements OnInit {
   }
 
   goBack() {
+    if (this.embeddedPlayer.isPlayingEmbedded) {
+      this.embeddedPlayer.stopPlayer().catch(console.warn);
+      return;
+    }
     this.memory.activeNavTab.next(NavTab.Home);
     this.router.navigateByUrl("");
   }

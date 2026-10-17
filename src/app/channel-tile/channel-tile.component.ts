@@ -116,12 +116,19 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
 
   async onPlayClick(event: MouseEvent): Promise<void> {
     event.stopPropagation();
+    if (this.starting) return;
     if (this.isGroup()) {
       this.click();
       return;
     }
     if (this.channel) {
-      await this.embeddedPlayer.playMediaDirectly(this.channel);
+      this.starting = true;
+      try {
+        const canvas = this.embeddedPlayer.resolveVideoCanvasId();
+        await this.embeddedPlayer.playMediaDirectly(this.channel, canvas);
+      } finally {
+        this.starting = false;
+      }
     }
   }
 
@@ -178,7 +185,8 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
 
     if (!record && (this.channel?.media_type === MediaType.livestream || this.isLiveTv())) {
       try {
-        await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+        const canvas = this.embeddedPlayer.resolveVideoCanvasId();
+        await this.embeddedPlayer.startPlayer(playChannel, canvas, {
           title: cleanMediaTitle(this.channel?.name || 'Live TV'),
           mode: 'live',
         });
@@ -193,7 +201,8 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
     if (!record) {
       try {
         const mode = isEpisode ? 'episode' : 'movie';
-        await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
+        const canvas = this.embeddedPlayer.resolveVideoCanvasId();
+        await this.embeddedPlayer.startPlayer(playChannel, canvas, {
           title: cleanMediaTitle(this.channel?.name || (isEpisode ? 'Episode' : 'Video')),
           mode,
         });

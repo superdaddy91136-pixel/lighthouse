@@ -260,7 +260,7 @@ export class EmbeddedPlayerService implements OnDestroy {
             const overlayTitle = seriesName
               ? `${seriesName} - S${sNum}E${eNum}: ${targetEp!.title}`.trim()
               : `S${sNum}E${eNum}: ${targetEp!.title}`.trim();
-            this.startPlayer(targetEp!.channel, this.hostTarget || 'home-video-canvas', {
+            this.startPlayer(targetEp!.channel, this.hostTarget || this.resolveVideoCanvasId(), {
               mode: 'episode',
               title: overlayTitle,
               seriesChannel: this.seriesChannel,
@@ -315,9 +315,19 @@ export class EmbeddedPlayerService implements OnDestroy {
   }
 
   private getHostElement(): HTMLElement | null {
-    if (!this.hostTarget) return null;
+    if (!this.hostTarget) {
+      const fallbackId = this.resolveVideoCanvasId();
+      return document.getElementById(fallbackId);
+    }
     if (typeof this.hostTarget === 'string') {
-      return document.getElementById(this.hostTarget);
+      const el = document.getElementById(this.hostTarget);
+      if (el) return el;
+      // Fallback: in case hostTarget ID doesn't exist on current route, resolve dynamically
+      const dynamicId = this.resolveVideoCanvasId();
+      if (dynamicId !== this.hostTarget) {
+        return document.getElementById(dynamicId);
+      }
+      return null;
     }
     return this.hostTarget;
   }
@@ -501,14 +511,22 @@ export class EmbeddedPlayerService implements OnDestroy {
       if (!this.isPlayingEmbedded || this.isFullscreen) return;
 
       const el = this.getHostElement();
-      if (!el) return;
-
-      const rect = el.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      const x = Math.round(rect.x * dpr);
-      const y = Math.round(rect.y * dpr);
-      const width = Math.round(rect.width * dpr);
-      const height = Math.round(rect.height * dpr);
+      let x = 0;
+      let y = 0;
+      let width = Math.round(window.innerWidth * dpr);
+      let height = Math.round(window.innerHeight * dpr);
+
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          x = Math.round(rect.x * dpr);
+          y = Math.round(rect.y * dpr);
+          width = Math.round(rect.width * dpr);
+          height = Math.round(rect.height * dpr);
+        }
+      }
+
       if (width <= 0 || height <= 0) return;
 
       invoke('resize_embedded_poc', { x, y, width, height }).catch((err) => {
@@ -757,17 +775,19 @@ export class EmbeddedPlayerService implements OnDestroy {
         el = this.getHostElement();
       }
 
-      let x = 0,
-        y = 0,
-        width = 800,
-        height = 600;
+      const dpr = window.devicePixelRatio || 1;
+      let x = 0;
+      let y = 0;
+      let width = Math.round(window.innerWidth * dpr);
+      let height = Math.round(window.innerHeight * dpr);
       if (el) {
         const rect = el.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        x = Math.round(rect.x * dpr);
-        y = Math.round(rect.y * dpr);
-        width = Math.round(rect.width * dpr);
-        height = Math.round(rect.height * dpr);
+        if (rect.width > 0 && rect.height > 0) {
+          x = Math.round(rect.x * dpr);
+          y = Math.round(rect.y * dpr);
+          width = Math.round(rect.width * dpr);
+          height = Math.round(rect.height * dpr);
+        }
       }
 
       await invoke('start_embedded_player', {
@@ -882,7 +902,7 @@ export class EmbeddedPlayerService implements OnDestroy {
       await invoke('switch_embedded_channel', { channel });
     } catch (err) {
       console.warn('switch_embedded_channel error, falling back to startPlayer:', err);
-      await this.startPlayer(channel, this.hostTarget || 'home-video-canvas', {
+      await this.startPlayer(channel, this.hostTarget || this.resolveVideoCanvasId(), {
         mode: 'live',
         title: channelTitle,
       });
@@ -1152,6 +1172,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     const url = this.router.url || '';
     if (url.includes('movie-detail')) return 'movie-video-canvas';
     if (url.includes('tv-detail')) return 'tv-video-canvas';
+    if (url.includes('profile')) return 'profile-video-canvas';
     return 'home-video-canvas';
   }
 

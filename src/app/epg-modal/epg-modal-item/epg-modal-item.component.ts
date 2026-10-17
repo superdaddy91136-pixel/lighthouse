@@ -101,7 +101,7 @@ export class EpgModalItemComponent implements OnDestroy {
           this.activeModal.dismiss();
         } catch {}
       }
-      await this.embeddedPlayer.startPlayer(channel, 'home-video-canvas', {
+      await this.embeddedPlayer.startPlayer(channel, this.embeddedPlayer.resolveVideoCanvasId(), {
         title: cleanMediaTitle(this.epg?.title || 'Catchup'),
         mode: 'movie',
       });

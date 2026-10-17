@@ -29,7 +29,9 @@ body.fullscreen-player-active .app-main {
 }
 
 body.theater-mode-active .movie-detail-container > *:not(.movie-embedded-host-wrapper):not(.embedded-player-host-wrapper),
-body.fullscreen-player-active .movie-detail-container > *:not(.movie-embedded-host-wrapper):not(.embedded-player-host-wrapper) {
+body.fullscreen-player-active .movie-detail-container > *:not(.movie-embedded-host-wrapper):not(.embedded-player-host-wrapper),
+body.theater-mode-active .profile-page-container > *:not(.movie-embedded-host-wrapper):not(.embedded-player-host-wrapper),
+body.fullscreen-player-active .profile-page-container > *:not(.movie-embedded-host-wrapper):not(.embedded-player-host-wrapper) {
   display: none !important;
 }
 
