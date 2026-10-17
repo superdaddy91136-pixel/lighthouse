@@ -8,10 +8,16 @@
   <div id="home-video-canvas" class="movie-video-canvas embedded-video-canvas"></div>
 </div>
 
-<div class="mb-5">
-  <div [class.container-lg]="!isHomeDiscoveryMode" [class.reserve-settings-space]="!isHomeDiscoveryMode" [class.home-discovery-layout]="isHomeDiscoveryMode">
+<div [class.mb-5]="!isLiveTvTab" [class.live-tv-page-root]="isLiveTvTab">
+  <div [class.container-lg]="!isHomeDiscoveryMode && !isLiveTvTab" 
+       [class.container-fluid]="isLiveTvTab" 
+       [class.live-tv-fluid-wrap]="isLiveTvTab" 
+       [class.px-md-4]="isLiveTvTab" 
+       [class.px-3]="isLiveTvTab" 
+       [class.reserve-settings-space]="!isHomeDiscoveryMode && !isLiveTvTab" 
+       [class.home-discovery-layout]="isHomeDiscoveryMode">
     <!-- EXPANDABLE FROSTED GLASS SEARCH CONTROL -->
-    <div class="home-search-control-wrap" [class.expanded]="isSearchExpanded || isSearching">
+    <div class="home-search-control-wrap" [class.expanded]="isSearchExpanded || isSearching" [class.d-none]="isLiveTvTab">
       <div class="search-glass-pill" (click)="expandSearch($event)">
         <button 
           type="button" 
@@ -51,7 +57,7 @@
 
 
     <!-- Category / View Mode Switcher + Filter & Sort Control (Live TV, Movies, TV Shows) -->
-    <div class="view-mode-bar mx-auto d-flex flex-wrap justify-content-center align-items-center gap-2 mb-3" *ngIf="isCatalogTab && !isHomeDiscoveryMode && !isSearching">
+    <div class="view-mode-bar mx-auto d-flex flex-wrap justify-content-center align-items-center gap-2 mb-3" *ngIf="isCatalogTab && !isLiveTvTab && !isHomeDiscoveryMode && !isSearching">
       <div class="view-mode-pill-group">
         <button 
           type="button" 
@@ -108,187 +114,192 @@
         </button>
 
         <!-- Liquid-Glass Dropdown Popover -->
-        <div class="filter-sort-popover" *ngIf="isFilterMenuOpen" (click)="$event.stopPropagation()">
-          <!-- Popover Header -->
-          <div class="popover-header d-flex align-items-center justify-content-between">
-            <div class="d-flex align-items-center gap-2">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="popover-title-icon">
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-              </svg>
-              <span class="popover-title">Filter & Sort</span>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <button *ngIf="hasActiveFilters" type="button" class="btn-reset-filters" (click)="resetFilters()">
-                Reset
-              </button>
-              <button type="button" class="btn-close-popover" (click)="closeFilterMenu()" aria-label="Close filter menu">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <!-- Section 1: Source Filter -->
-          <div class="popover-section">
-            <label class="popover-label">SOURCE / PROVIDER</label>
-            <div class="source-pills-row">
-              <button 
-                type="button" 
-                class="filter-pill" 
-                [class.active]="selectedSourceId === 'all'" 
-                (click)="selectSource('all')">
-                <span>All Sources</span>
-                <span class="pill-badge" *ngIf="enabledSourcesList.length > 0">{{ enabledSourcesList.length }}</span>
-              </button>
-              <button 
-                *ngFor="let s of enabledSourcesList" 
-                type="button" 
-                class="filter-pill" 
-                [class.active]="selectedSourceId === s.id" 
-                (click)="selectSource(s.id!)">
-                <span>{{ s.name || ('Source ' + s.id) }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Section 2: Category Filter -->
-          <div class="popover-section">
-            <div class="d-flex align-items-center justify-content-between mb-1">
-              <label class="popover-label mb-0">CATEGORY</label>
-              <span class="category-count-label" *ngIf="availableCategories.length > 0">
-                {{ availableCategories.length }} available
-              </span>
-            </div>
-
-            <!-- Search inside categories if > 8 -->
-            <div class="category-search-box mb-2" *ngIf="availableCategories.length > 8">
-              <svg viewBox="0 0 24 24" fill="currentColor" class="category-search-icon">
-                <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
-              </svg>
-              <input 
-                type="text" 
-                class="category-search-input" 
-                placeholder="Filter categories..." 
-                [(ngModel)]="categorySearchTerm"
-                (click)="$event.stopPropagation()" />
-              <button *ngIf="categorySearchTerm" type="button" class="category-clear-btn" (click)="categorySearchTerm = ''">✕</button>
-            </div>
-
-            <!-- Scrollable Category Options List -->
-            <div class="category-scroll-list">
-              <button 
-                type="button" 
-                class="category-item-btn" 
-                [class.active]="selectedCategoryId === undefined" 
-                (click)="selectCategory(undefined)">
-                <span>All Categories</span>
-                <svg *ngIf="selectedCategoryId === undefined" viewBox="0 0 24 24" fill="currentColor" class="check-icon">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-              <div *ngIf="categoryLoading" class="category-loading text-center py-2 text-muted">
-                <small>Loading categories...</small>
-              </div>
-              <button 
-                *ngFor="let cat of displayedCategories" 
-                type="button" 
-                class="category-item-btn" 
-                [class.active]="selectedCategoryId === cat.id" 
-                (click)="selectCategory(cat)">
-                <span class="cat-name-wrap">
-                  <span class="cat-name">{{ cat.name }}</span>
-                  <span class="cat-source-tag" *ngIf="selectedSourceId === 'all' && cat.sourceName">
-                    {{ cat.sourceName }}
-                  </span>
-                </span>
-                <svg *ngIf="selectedCategoryId === cat.id" viewBox="0 0 24 24" fill="currentColor" class="check-icon">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-              <div *ngIf="!categoryLoading && displayedCategories.length === 0 && categorySearchTerm" class="no-cats text-center py-2 text-muted">
-                <small>No matching categories</small>
-              </div>
-            </div>
-          </div>
-
-          <!-- Section 3: Sort Order -->
-          <div class="popover-section">
-            <label class="popover-label">SORT ORDER</label>
-            <div class="sort-options-list">
-              <button 
-                type="button" 
-                class="sort-option-btn" 
-                [class.active]="selectedSort === 'default'" 
-                (click)="selectSort('default')">
-                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
-                  <path d="M3,4H21V6H3V4M3,11H21V13H3V11M3,18H21V20H3V18Z"/>
-                </svg>
-                <span>Default (Provider Order)</span>
-                <svg *ngIf="selectedSort === 'default'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-              <button 
-                type="button" 
-                class="sort-option-btn" 
-                [class.active]="selectedSort === 'title-asc'" 
-                (click)="selectSort('title-asc')">
-                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
-                  <path d="M9.25,5L12.5,13.5H10.5L9.85,11.75H7.15L6.5,13.5H4.5L7.75,5H9.25M8.5,8L7.65,10.25H9.35L8.5,8M15,5H19.5V7H16.8L19.5,11.5V13.5H15V11.5H17.7L15,7V5Z"/>
-                </svg>
-                <span>Alphabetical: A – Z</span>
-                <svg *ngIf="selectedSort === 'title-asc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-              <button 
-                type="button" 
-                class="sort-option-btn" 
-                [class.active]="selectedSort === 'title-desc'" 
-                (click)="selectSort('title-desc')">
-                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
-                  <path d="M19,7H22L18,3L14,7H17V21H19M2,17H12V19H2M6,5V7H2V5M2,11H9V13H2V11Z"/>
-                </svg>
-                <span>Reverse Alphabetical: Z – A</span>
-                <svg *ngIf="selectedSort === 'title-desc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-              <button 
-                type="button" 
-                class="sort-option-btn" 
-                [class.active]="selectedSort === 'year-desc'" 
-                (click)="selectSort('year-desc')">
-                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
-                  <path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5v-5z"/>
-                </svg>
-                <span>Release Year: Newest first (Descending)</span>
-                <svg *ngIf="selectedSort === 'year-desc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-              <button 
-                type="button" 
-                class="sort-option-btn" 
-                [class.active]="selectedSort === 'year-asc'" 
-                (click)="selectSort('year-asc')">
-                <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
-                  <path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5v-5z"/>
-                </svg>
-                <span>Release Year: Oldest first (Ascending)</span>
-                <svg *ngIf="selectedSort === 'year-asc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
-                  <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
+        <ng-container *ngTemplateOutlet="filterSortPopover"></ng-container>
       </div>
     </div>
 
+    <!-- Reusable Filter & Sort Dropdown Popover Template -->
+    <ng-template #filterSortPopover>
+      <div class="filter-sort-popover" *ngIf="isFilterMenuOpen" (click)="$event.stopPropagation()">
+        <!-- Popover Header -->
+        <div class="popover-header d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="popover-title-icon">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            <span class="popover-title">Filter & Sort</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button *ngIf="hasActiveFilters" type="button" class="btn-reset-filters" (click)="resetFilters()">
+              Reset
+            </button>
+            <button type="button" class="btn-close-popover" (click)="closeFilterMenu()" aria-label="Close filter menu">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 1: Source Filter -->
+        <div class="popover-section">
+          <label class="popover-label">SOURCE / PROVIDER</label>
+          <div class="source-pills-row">
+            <button 
+              type="button" 
+              class="filter-pill" 
+              [class.active]="selectedSourceId === 'all'" 
+              (click)="selectSource('all')">
+              <span>All Sources</span>
+              <span class="pill-badge" *ngIf="enabledSourcesList.length > 0">{{ enabledSourcesList.length }}</span>
+            </button>
+            <button 
+              *ngFor="let s of enabledSourcesList" 
+              type="button" 
+              class="filter-pill" 
+              [class.active]="selectedSourceId === s.id" 
+              (click)="selectSource(s.id!)">
+              <span>{{ s.name || ('Source ' + s.id) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 2: Category Filter (Hidden on Live TV since Live TV uses Left Sidebar) -->
+        <div class="popover-section" *ngIf="!isLiveTvTab">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <label class="popover-label mb-0">CATEGORY</label>
+            <span class="category-count-label" *ngIf="availableCategories.length > 0">
+              {{ availableCategories.length }} available
+            </span>
+          </div>
+
+          <!-- Search inside categories if > 8 -->
+          <div class="category-search-box mb-2" *ngIf="availableCategories.length > 8">
+            <svg viewBox="0 0 24 24" fill="currentColor" class="category-search-icon">
+              <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
+            </svg>
+            <input 
+              type="text" 
+              class="category-search-input" 
+              placeholder="Filter categories..." 
+              [(ngModel)]="categorySearchTerm"
+              (click)="$event.stopPropagation()" />
+            <button *ngIf="categorySearchTerm" type="button" class="category-clear-btn" (click)="categorySearchTerm = ''">✕</button>
+          </div>
+
+          <!-- Scrollable Category Options List -->
+          <div class="category-scroll-list">
+            <button 
+              type="button" 
+              class="category-item-btn" 
+              [class.active]="selectedCategoryId === undefined" 
+              (click)="selectCategory(undefined)">
+              <span>All Categories</span>
+              <svg *ngIf="selectedCategoryId === undefined" viewBox="0 0 24 24" fill="currentColor" class="check-icon">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+            <div *ngIf="categoryLoading" class="category-loading text-center py-2 text-muted">
+              <small>Loading categories...</small>
+            </div>
+            <button 
+              *ngFor="let cat of displayedCategories" 
+              type="button" 
+              class="category-item-btn" 
+              [class.active]="selectedCategoryId === cat.id" 
+              (click)="selectCategory(cat)">
+              <span class="cat-name-wrap">
+                <span class="cat-name">{{ cat.name }}</span>
+                <span class="cat-source-tag" *ngIf="selectedSourceId === 'all' && cat.sourceName">
+                  {{ cat.sourceName }}
+                </span>
+              </span>
+              <svg *ngIf="selectedCategoryId === cat.id" viewBox="0 0 24 24" fill="currentColor" class="check-icon">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+            <div *ngIf="!categoryLoading && displayedCategories.length === 0 && categorySearchTerm" class="no-cats text-center py-2 text-muted">
+              <small>No matching categories</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Sort Order -->
+        <div class="popover-section">
+          <label class="popover-label">SORT ORDER</label>
+          <div class="sort-options-list">
+            <button 
+              type="button" 
+              class="sort-option-btn" 
+              [class.active]="selectedSort === 'default'" 
+              (click)="selectSort('default')">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                <path d="M3,4H21V6H3V4M3,11H21V13H3V11M3,18H21V20H3V18Z"/>
+              </svg>
+              <span>Default (Provider Order)</span>
+              <svg *ngIf="selectedSort === 'default'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+            <button 
+              type="button" 
+              class="sort-option-btn" 
+              [class.active]="selectedSort === 'title-asc'" 
+              (click)="selectSort('title-asc')">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                <path d="M9.25,5L12.5,13.5H10.5L9.85,11.75H7.15L6.5,13.5H4.5L7.75,5H9.25M8.5,8L7.65,10.25H9.35L8.5,8M15,5H19.5V7H16.8L19.5,11.5V13.5H15V11.5H17.7L15,7V5Z"/>
+              </svg>
+              <span>Alphabetical: A – Z</span>
+              <svg *ngIf="selectedSort === 'title-asc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+            <button 
+              type="button" 
+              class="sort-option-btn" 
+              [class.active]="selectedSort === 'title-desc'" 
+              (click)="selectSort('title-desc')">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                <path d="M19,7H22L18,3L14,7H17V21H19M2,17H12V19H2M6,5V7H2V5M2,11H9V13H2V11Z"/>
+              </svg>
+              <span>Reverse Alphabetical: Z – A</span>
+              <svg *ngIf="selectedSort === 'title-desc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+            <button 
+              type="button" 
+              class="sort-option-btn" 
+              [class.active]="selectedSort === 'year-desc'" 
+              (click)="selectSort('year-desc')">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                <path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5v-5z"/>
+              </svg>
+              <span>Release Year: Newest first (Descending)</span>
+              <svg *ngIf="selectedSort === 'year-desc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+            <button 
+              type="button" 
+              class="sort-option-btn" 
+              [class.active]="selectedSort === 'year-asc'" 
+              (click)="selectSort('year-asc')">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                <path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5v-5z"/>
+              </svg>
+              <span>Release Year: Oldest first (Ascending)</span>
+              <svg *ngIf="selectedSort === 'year-asc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </ng-template>
+
     <!-- Active Filter Chips Bar -->
-    <div class="active-filter-chips-bar mx-auto d-flex flex-wrap align-items-center justify-content-center gap-2 mb-3" *ngIf="hasActiveFilters && isCatalogTab && !isHomeDiscoveryMode && !isSearching">
+    <div class="active-filter-chips-bar mx-auto d-flex flex-wrap align-items-center justify-content-center gap-2 mb-3" *ngIf="hasActiveFilters && isCatalogTab && !isHomeDiscoveryMode && !isSearching && !isLiveTvTab">
       <span class="active-chips-label">Active filters:</span>
       <span class="filter-chip" *ngIf="selectedSourceId !== 'all'">
         <span class="chip-text">Source: {{ getSelectedSourceName() }}</span>
@@ -315,7 +326,7 @@
     </app-home-discovery>
 
     <!-- UNIVERSAL SEARCH RESULTS MODE -->
-    <ng-container *ngIf="isSearching">
+    <ng-container *ngIf="isSearching && !isLiveTvTab">
       <div class="search-results-container" [@fade]="channelsVisible ? 'visible' : 'hidden'">
         <!-- Search Toolbar: Content Type Filter and Sorting Controls -->
         <div class="search-toolbar mb-4" *ngIf="totalSearchResultsCount > 0">
@@ -475,8 +486,8 @@
     </ng-container>
 
 
-    <!-- DRILLDOWN / CATALOG GRID (Live TV, Movies, TV Shows & other catalog browsing) -->
-    <ng-container *ngIf="!isHomeDiscoveryMode && !isSearching">
+    <!-- DRILLDOWN / CATALOG GRID (Movies, TV Shows & other catalog browsing) -->
+    <ng-container *ngIf="!isHomeDiscoveryMode && !isSearching && !isLiveTvTab">
       <div class="category-breadcrumb-bar mb-3 d-flex align-items-center" *ngIf="
           (filters?.view_type == viewModeEnum.Categories && filters?.group_id) || filters?.series_id
         ">
@@ -524,6 +535,299 @@
         Load More
       </button>
     </ng-container>
+
+    <!-- ======================================================================
+         UNIFIED TWO-COLUMN LIVE TV LAYOUT (Sidebar + Channel Grid)
+         ====================================================================== -->
+    <div class="live-tv-container" *ngIf="isLiveTvTab">
+      <!-- LEFT COLUMN: NAVIGATION SIDEBAR (~25%) -->
+      <aside class="live-tv-sidebar" aria-label="Live TV navigation">
+        <!-- Search Box at Top of Sidebar (Folder Name Search) -->
+        <div class="live-sidebar-search-box">
+          <div class="live-sidebar-search-pill">
+            <svg class="live-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input 
+              #liveSearchInput
+              id="liveSearchInput"
+              type="text" 
+              autocomplete="off" 
+              class="live-search-input" 
+              placeholder="Search folders..." 
+              [value]="liveFolderSearchQuery"
+              (input)="onLiveFolderSearchInput($event)"
+              (keydown)="onLiveFolderSearchKeydown($event)" />
+            <button 
+              *ngIf="liveFolderSearchQuery" 
+              type="button" 
+              class="live-search-clear-btn" 
+              (click)="clearLiveFolderSearch()" 
+              title="Clear search (Esc)">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="live-search-clear-svg">
+                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Top Nav Items: All Channels & Favorites (Fixed Above Categories) -->
+        <div class="live-sidebar-nav-group">
+          <button 
+            type="button" 
+            class="live-sidebar-nav-item" 
+            [class.active]="liveSidebarSelection?.type === 'all'"
+            (click)="selectLiveSidebarAll()">
+            <svg viewBox="0 0 24 24" fill="currentColor" class="sidebar-item-icon">
+              <path d="M3,5H21V7H3V5M3,11H21V13H3V11M3,17H21V19H3V17Z"/>
+            </svg>
+            <span class="sidebar-item-label">All Channels</span>
+          </button>
+
+          <button 
+            type="button" 
+            class="live-sidebar-nav-item" 
+            [class.active]="liveSidebarSelection?.type === 'favorites'"
+            (click)="selectLiveSidebarFavorites()">
+            <svg viewBox="0 0 24 24" fill="currentColor" class="sidebar-item-icon fav-icon">
+              <path d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z"/>
+            </svg>
+            <span class="sidebar-item-label">Favorites</span>
+          </button>
+        </div>
+
+        <div class="live-sidebar-divider"></div>
+
+        <!-- Categories Header with Folder Filter & Sort Trigger -->
+        <div class="live-sidebar-section-header">
+          <div class="d-flex align-items-center gap-2">
+            <span class="sidebar-section-heading">Categories</span>
+            <span class="sidebar-count-badge" *ngIf="displayedLiveCategories.length > 0">
+              {{ displayedLiveCategories.length }}<span *ngIf="displayedLiveCategories.length !== availableCategories.length"> / {{ availableCategories.length }}</span>
+            </span>
+          </div>
+
+          <!-- Folder Sort Popover Trigger -->
+          <div class="filter-sort-wrapper live-folder-filter-wrapper" #liveFolderFilterWrapper>
+            <button 
+              type="button" 
+              class="live-folder-filter-btn"
+              [class.has-active-filters]="hasActiveFolderSort"
+              [class.open]="isFolderFilterMenuOpen"
+              (click)="toggleFolderFilterMenu($event)"
+              title="Sort">
+              <svg class="filter-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18M6 12h12M10 18h4"/>
+              </svg>
+              <span class="live-sort-label">Sort</span>
+              <svg class="chevron-icon" [class.rotated]="isFolderFilterMenuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+
+            <!-- Liquid-Glass Dropdown Popover for Folders -->
+            <div class="filter-sort-popover live-folder-popover" *ngIf="isFolderFilterMenuOpen" (click)="$event.stopPropagation()">
+              <div class="popover-header d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="popover-title-icon">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                  </svg>
+                  <span class="popover-title">Sort</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <button *ngIf="hasActiveFolderSort" type="button" class="btn-reset-filters" (click)="resetFolderSort()">
+                    Reset
+                  </button>
+                  <button type="button" class="btn-close-popover" (click)="closeFolderFilterMenu()" aria-label="Close menu">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="popover-body">
+                <!-- Sort Options -->
+                <div class="popover-section">
+                  <div class="sort-options-list">
+                    <button 
+                      type="button" 
+                      class="sort-option-btn" 
+                      [class.active]="liveFolderSort === 'default'" 
+                      (click)="setFolderSort('default')">
+                      <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                        <path d="M3,4H21V6H3V4M3,11H21V13H3V11M3,18H21V20H3V18Z"/>
+                      </svg>
+                      <span>Custom / Default Order</span>
+                      <svg *ngIf="liveFolderSort === 'default'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                        <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+                      </svg>
+                    </button>
+                    <button 
+                      type="button" 
+                      class="sort-option-btn" 
+                      [class.active]="liveFolderSort === 'name-asc'" 
+                      (click)="setFolderSort('name-asc')">
+                      <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                        <path d="M9.25,5L12.5,13.5H10.5L9.85,11.75H7.15L6.5,13.5H4.5L7.75,5H9.25M8.5,8L7.65,10.25H9.35L8.5,8M15,5H19.5V7H16.8L19.5,11.5V13.5H15V11.5H17.7L15,7V5Z"/>
+                      </svg>
+                      <span>Name (A–Z)</span>
+                      <svg *ngIf="liveFolderSort === 'name-asc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                        <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+                      </svg>
+                    </button>
+                    <button 
+                      type="button" 
+                      class="sort-option-btn" 
+                      [class.active]="liveFolderSort === 'name-desc'" 
+                      (click)="setFolderSort('name-desc')">
+                      <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                        <path d="M9.25,5L12.5,13.5H10.5L9.85,11.75H7.15L6.5,13.5H4.5L7.75,5H9.25M8.5,8L7.65,10.25H9.35L8.5,8M15,5H19.5V7H16.8L19.5,11.5V13.5H15V11.5H17.7L15,7V5Z"/>
+                      </svg>
+                      <span>Name (Z–A)</span>
+                      <svg *ngIf="liveFolderSort === 'name-desc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                        <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+                      </svg>
+                    </button>
+                    <button 
+                      type="button" 
+                      class="sort-option-btn" 
+                      [class.active]="liveFolderSort === 'count-desc'" 
+                      (click)="setFolderSort('count-desc')">
+                      <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                        <path d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,19H5V5H19V19M11,7H13V17H11V7M7,11H9V17H7V11M15,9H17V17H15V9Z"/>
+                      </svg>
+                      <span>Channel Count (High to Low)</span>
+                      <svg *ngIf="liveFolderSort === 'count-desc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                        <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+                      </svg>
+                    </button>
+                    <button 
+                      type="button" 
+                      class="sort-option-btn" 
+                      [class.active]="liveFolderSort === 'count-asc'" 
+                      (click)="setFolderSort('count-asc')">
+                      <svg viewBox="0 0 24 24" fill="currentColor" class="sort-icon">
+                        <path d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,19H5V5H19V19M7,13H9V17H7V13M11,10H13V17H11V10M15,7H17V17H15V7Z"/>
+                      </svg>
+                      <span>Channel Count (Low to High)</span>
+                      <svg *ngIf="liveFolderSort === 'count-asc'" viewBox="0 0 24 24" fill="currentColor" class="check-icon ms-auto">
+                        <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scrollable Category Folders List -->
+        <div class="live-sidebar-categories-scroll">
+          <div *ngIf="categoryLoading && availableCategories.length === 0" class="sidebar-loading-wrap">
+            <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+            <span class="loading-label">Loading categories...</span>
+          </div>
+
+          <div class="sidebar-category-group" *ngIf="displayedLiveCategories.length > 0">
+            <div 
+              class="sidebar-category-item" 
+              *ngFor="let cat of displayedLiveCategories" 
+              [class.pinned]="isCategoryPinned(cat)"
+              [class.active]="liveSidebarSelection?.type === 'category' && liveSidebarSelection?.id === cat.id"
+              (click)="selectLiveSidebarCategory(cat)">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="category-item-icon">
+                <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"/>
+              </svg>
+              <span class="category-item-name" [title]="cat.name">{{ cleanCategoryTitle(cat.name) }}</span>
+              <span class="category-item-count" *ngIf="cat.channelCount != null && cat.channelCount > 0">{{ cat.channelCount }}</span>
+              <button 
+                type="button" 
+                class="sidebar-pin-btn" 
+                [class.active]="isCategoryPinned(cat)"
+                (click)="toggleCategoryPin(cat, $event)" 
+                [title]="isCategoryPinned(cat) ? 'Unpin folder' : 'Pin folder to top'">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="pin-svg">
+                  <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div *ngIf="!categoryLoading && displayedLiveCategories.length === 0 && availableCategories.length > 0" class="text-center py-4 text-muted">
+            <small>No folders match</small>
+          </div>
+        </div>
+      </aside>
+
+      <!-- RIGHT COLUMN: CHANNEL CONTENT (~75%) -->
+      <main class="live-tv-content" #liveTvContent (scroll)="onLiveContentScroll($event)" aria-label="Channel content">
+        <!-- NORMAL CHANNEL BROWSING IN RIGHT COLUMN -->
+        <ng-container *ngIf="liveSidebarSelection">
+          <!-- Content Header: Title and Channel Count -->
+          <div class="live-content-header d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="d-flex align-items-center gap-2">
+              <h3 class="live-content-title mb-0">{{ liveSelectedTitle }}</h3>
+              <span class="live-content-badge" *ngIf="regularChannels.length > 0 || liveContentPinnedItems.length > 0">
+                {{ regularChannels.length + liveContentPinnedItems.length }}
+              </span>
+            </div>
+          </div>
+
+          <!-- PINNED CHANNELS SECTION -->
+          <div class="pinned-section mb-4" *ngIf="liveContentPinnedItems.length > 0">
+            <div class="pinned-header d-flex align-items-center gap-2 mb-3">
+              <svg class="pinned-header-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+              </svg>
+              <h4 class="pinned-section-title mb-0">Pinned Channels</h4>
+              <span class="pinned-count-badge">{{ liveContentPinnedItems.length }}</span>
+            </div>
+            <div class="row g-2 g-md-3">
+              <app-channel-tile 
+                *ngFor="let item of liveContentPinnedItems; let i = index"
+                class="col-compact-card" 
+                [id]="i + 50000" 
+                [channel]="item" 
+                [viewMode]="viewType" 
+                [isLiveTvCard]="true">
+              </app-channel-tile>
+            </div>
+          </div>
+
+          <!-- REGULAR CHANNELS GRID -->
+          <div class="row g-2 g-md-3" [@fade]="channelsVisible ? 'visible' : 'hidden'">
+            <app-channel-tile 
+              [attr.id]="i == 0 ? 'first' : null" 
+              *ngFor="let channel of regularChannels; let i = index"
+              class="col-compact-card" 
+              [id]="i" 
+              [channel]="channel" 
+              [viewMode]="viewType" 
+              [isLiveTvCard]="true">
+            </app-channel-tile>
+          </div>
+
+          <!-- Empty State -->
+          <div *ngIf="!loading && regularChannels.length === 0 && liveContentPinnedItems.length === 0" class="text-center py-5 text-muted">
+            <p class="fs-5">{{ liveEmptyStateMessage }}</p>
+            <button *ngIf="hasActiveFilters" type="button" class="btn btn-sm btn-outline-light mt-2" (click)="resetFilters()">
+              Clear filters
+            </button>
+          </div>
+
+          <!-- Load More Button -->
+          <button 
+            [@fade]="channelsVisible ? 'visible' : 'hidden'" 
+            *ngIf="reachedMax === false && channels.length > 0" 
+            (click)="loadMore()"
+            class="btn btn-outline-primary mx-auto d-block mt-3">
+            Load More
+          </button>
+        </ng-container>
+      </main>
+    </div>
   </div>
 </div>
 

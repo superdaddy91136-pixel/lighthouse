@@ -10,6 +10,7 @@ import {
 import { Router } from "@angular/router";
 import { AllowIn, ShortcutInput } from "ng-keyboard-shortcuts";
 import {
+  Subject,
   Subscription,
   debounceTime,
   distinctUntilChanged,
@@ -54,9 +55,12 @@ export interface CategoryOption {
   name: string;
   sourceId: number;
   sourceName?: string;
+  channelCount?: number;
 }
 
 export type SortOption = 'default' | 'title-asc' | 'title-desc' | 'year-desc' | 'year-asc';
+
+export type LiveFolderSort = 'default' | 'name-asc' | 'name-desc' | 'count-desc' | 'count-asc';
 
 export interface TabFilterSortState {
   sourceId: number | 'all';
@@ -149,6 +153,19 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   private currentScrollPosition: number = 0;
 
   @ViewChild('filterSortWrapper') filterSortWrapper?: ElementRef;
+  @ViewChild('liveFolderFilterWrapper') liveFolderFilterWrapper?: ElementRef;
+  @ViewChild('liveSearchInput') liveSearchInput?: ElementRef;
+  @ViewChild('liveTvContent') liveTvContent?: ElementRef<HTMLElement>;
+  liveFolderSort: LiveFolderSort = 'default';
+  liveFolderSearchQuery = '';
+  isFolderFilterMenuOpen = false;
+  liveSearchSubject = new Subject<string>();
+  liveSidebarSelection: {
+    type: 'all' | 'favorites' | 'category';
+    id?: number;
+    name?: string;
+    sourceId?: number;
+  } | null = null;
   selectedSourceId: number | 'all' = 'all';
   selectedCategoryId?: number;
   selectedSort: SortOption = 'default';
@@ -300,7 +317,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       let filteredTvShows = this.rawSearchResults.tvShows;
       let filteredCategories = this.rawSearchResults.categories;
 
-      if (this.selectedCategoryId != null) {
+      if (this.selectedCategoryId != null && currentTab !== NavTab.LiveTV) {
         filteredChannels = filteredChannels.filter((c) => c.group_id === this.selectedCategoryId);
         filteredMovies = filteredMovies.filter((c) => c.group_id === this.selectedCategoryId);
         filteredTvShows = filteredTvShows.filter((c) => c.group_id === this.selectedCategoryId);
@@ -327,6 +344,240 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       tvShows: showTv ? this.sortList(this.rawSearchResults.tvShows) : [],
       categories: showLive ? this.sortList(this.rawSearchResults.categories) : [],
     };
+  }
+
+  get isLiveTvTab(): boolean {
+    return this.memory.activeNavTab.value === NavTab.LiveTV;
+  }
+
+  get liveSelectedTitle(): string {
+    if (this.isSearching) {
+      return `Search: "${this.searchKeyword}"`;
+    }
+    if (!this.liveSidebarSelection) {
+      return '';
+    }
+    if (this.liveSidebarSelection.type === 'favorites') {
+      return 'Favorites';
+    }
+    if (this.liveSidebarSelection.type === 'category') {
+      return cleanMediaTitle(this.liveSidebarSelection.name || 'Category');
+    }
+    return 'All Channels';
+  }
+
+  get liveEmptyStateMessage(): string {
+    if (!this.liveSidebarSelection) {
+      return '';
+    }
+    if (this.liveSidebarSelection.type === 'favorites') {
+      return 'No favorite channels yet. Click the heart on any channel to favorite it.';
+    }
+    if (this.liveSidebarSelection.type === 'category') {
+      return `No channels found in ${cleanMediaTitle(this.liveSidebarSelection.name || 'this folder')}.`;
+    }
+    return 'No channels found.';
+  }
+
+  get liveContentPinnedItems(): Channel[] {
+    if (!this.liveSidebarSelection) {
+      return [];
+    }
+    const items = this.currentPinnedItems.filter((item) => item.media_type !== MediaType.group);
+    if (this.liveSidebarSelection.type === 'favorites') {
+      return items.filter((item) => item.favorite);
+    }
+    return items;
+  }
+
+  get hasActiveFolderSort(): boolean {
+    return this.liveFolderSort !== 'default';
+  }
+
+  toggleFolderFilterMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.isFolderFilterMenuOpen = !this.isFolderFilterMenuOpen;
+  }
+
+  closeFolderFilterMenu(): void {
+    this.isFolderFilterMenuOpen = false;
+  }
+
+  setFolderSort(sort: LiveFolderSort): void {
+    this.liveFolderSort = sort;
+    localStorage.setItem('lighthouse_live_folder_sort', sort);
+    this.cdr.markForCheck();
+  }
+
+  resetFolderSort(): void {
+    this.liveFolderSort = 'default';
+    localStorage.setItem('lighthouse_live_folder_sort', 'default');
+    this.cdr.markForCheck();
+  }
+
+  private sortFolders(list: CategoryOption[]): CategoryOption[] {
+    if (!list || list.length <= 1) return list;
+    const copy = [...list];
+    switch (this.liveFolderSort) {
+      case 'name-asc':
+        return copy.sort((a, b) => {
+          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
+          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      case 'name-desc':
+        return copy.sort((a, b) => {
+          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
+          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          return nameB.localeCompare(nameA, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      case 'count-desc':
+        return copy.sort((a, b) => {
+          const countDiff = (b.channelCount ?? 0) - (a.channelCount ?? 0);
+          if (countDiff !== 0) return countDiff;
+          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
+          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      case 'count-asc':
+        return copy.sort((a, b) => {
+          const countDiff = (a.channelCount ?? 0) - (b.channelCount ?? 0);
+          if (countDiff !== 0) return countDiff;
+          const nameA = cleanMediaTitle(a.name || '').toLowerCase();
+          const nameB = cleanMediaTitle(b.name || '').toLowerCase();
+          return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      case 'default':
+      default:
+        return copy;
+    }
+  }
+
+  get displayedLiveCategories(): CategoryOption[] {
+    let list = this.availableCategories;
+    if (!list || list.length === 0) return [];
+
+    if (this.liveFolderSearchQuery && this.liveFolderSearchQuery.trim().length > 0) {
+      const q = this.liveFolderSearchQuery.trim().toLowerCase();
+      list = list.filter((cat) => cleanMediaTitle(cat.name).toLowerCase().includes(q));
+    }
+
+    return this.sortFolders(list);
+  }
+
+  toCategoryChannel(cat: CategoryOption): Channel {
+    return {
+      id: cat.id,
+      name: cat.name,
+      media_type: MediaType.group,
+      source_id: cat.sourceId,
+    };
+  }
+
+  isCategoryPinned(cat: CategoryOption): boolean {
+    return this.pinService.isPinned(this.toCategoryChannel(cat), NavTab.LiveTV);
+  }
+
+  toggleCategoryPin(cat: CategoryOption, event: MouseEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.pinService.togglePin(this.toCategoryChannel(cat), NavTab.LiveTV);
+    this.updatePinnedItems();
+    this.cdr.markForCheck();
+  }
+
+  selectLiveSidebarAll(): void {
+    this.liveSidebarSelection = { type: 'all' };
+    this.selectedCategoryId = undefined;
+    if (this.filters) {
+      this.filters.group_id = undefined;
+      this.filters.view_type = ViewMode.All;
+      this.filters.page = 1;
+    }
+    this.nodeStack.clear();
+    this.saveTabFilterState();
+    this.updatePinnedItems();
+    this.load();
+    if (this.liveTvContent?.nativeElement) {
+      this.liveTvContent.nativeElement.scrollTop = 0;
+    }
+  }
+
+  selectLiveSidebarFavorites(): void {
+    this.liveSidebarSelection = { type: 'favorites' };
+    this.selectedCategoryId = undefined;
+    if (this.filters) {
+      this.filters.group_id = undefined;
+      this.filters.view_type = ViewMode.Favorites;
+      this.filters.page = 1;
+    }
+    this.nodeStack.clear();
+    this.saveTabFilterState();
+    this.updatePinnedItems();
+    this.load();
+    if (this.liveTvContent?.nativeElement) {
+      this.liveTvContent.nativeElement.scrollTop = 0;
+    }
+  }
+
+  selectLiveSidebarCategory(cat: CategoryOption): void {
+    this.liveSidebarSelection = {
+      type: 'category',
+      id: cat.id,
+      name: cat.name,
+      sourceId: cat.sourceId,
+    };
+    this.selectedCategoryId = cat.id;
+    if (this.filters) {
+      this.filters.group_id = cat.id;
+      this.filters.view_type = ViewMode.All;
+      this.filters.page = 1;
+    }
+    this.nodeStack.clear();
+    this.saveTabFilterState();
+    this.updatePinnedItems();
+    this.load();
+    if (this.liveTvContent?.nativeElement) {
+      this.liveTvContent.nativeElement.scrollTop = 0;
+    }
+  }
+
+  cleanCategoryTitle(name: string): string {
+    return cleanMediaTitle(name || '');
+  }
+
+  onLiveFolderSearchInput(event: Event): void {
+    const val = (event.target as HTMLInputElement).value;
+    this.liveFolderSearchQuery = val;
+    this.cdr.markForCheck();
+  }
+
+  onLiveFolderSearchKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.clearLiveFolderSearch();
+    }
+  }
+
+  clearLiveFolderSearch(): void {
+    this.liveFolderSearchQuery = '';
+    if (this.liveSearchInput?.nativeElement) {
+      this.liveSearchInput.nativeElement.value = '';
+    }
+    this.cdr.markForCheck();
+  }
+
+  async onLiveContentScroll(event: Event): Promise<void> {
+    const el = event.target as HTMLElement;
+    if (!el) return;
+    const scrollHeight = el.scrollHeight;
+    const scrollTop = el.scrollTop;
+    const clientHeight = el.clientHeight;
+    this.showScrollTop = scrollTop > 300;
+    if (this.reachedMax === true || this.loading === true) return;
+    if (scrollTop + clientHeight >= scrollHeight * 0.75) {
+      await this.loadMore();
+    }
   }
 
   get isHomeDiscoveryMode(): boolean {
@@ -434,6 +685,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         this.isFilterMenuOpen = false;
       }
     }
+    if (this.isFolderFilterMenuOpen && this.liveFolderFilterWrapper?.nativeElement) {
+      if (!this.liveFolderFilterWrapper.nativeElement.contains(event.target)) {
+        this.isFolderFilterMenuOpen = false;
+      }
+    }
   }
 
   private saveTabFilterState(): void {
@@ -486,7 +742,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
           view_type: ViewMode.Categories,
           page,
           use_keywords: false,
-          sort: SortType.alphabeticalAscending,
+          sort: SortType.provider,
         };
         const groups = (await invoke('search', { filters: catFilters })) as Channel[];
         if (groups && groups.length > 0) {
@@ -497,6 +753,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
                 name: g.name,
                 sourceId: g.source_id ?? 0,
                 sourceName: g.source_id ? this.memory.Sources.get(g.source_id)?.name : undefined,
+                channelCount: g.stream_id ?? 0,
               });
             }
           }
@@ -510,7 +767,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
           hasMore = false;
         }
       }
-      collected.sort((a, b) => cleanMediaTitle(a.name).localeCompare(cleanMediaTitle(b.name)));
       this.categoryCache.set(cacheKey, collected);
       this.availableCategories = collected;
     } catch (e) {
@@ -674,6 +930,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   scrollToTop() {
+    if (this.isLiveTvTab && this.liveTvContent?.nativeElement) {
+      this.liveTvContent.nativeElement.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -818,6 +1078,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     private searchStateService: SearchStateService,
     private cdr: ChangeDetectorRef,
   ) {
+    const savedFolderSort = localStorage.getItem('lighthouse_live_folder_sort') as LiveFolderSort;
+    if (savedFolderSort && ['default', 'name-asc', 'name-desc', 'count-desc', 'count-asc'].includes(savedFolderSort)) {
+      this.liveFolderSort = savedFolderSort;
+    }
     this.getSources();
     this.updatePinnedItems();
   }
@@ -825,6 +1089,10 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   updatePinnedItems(): void {
     const tab = this.memory.activeNavTab.value;
     if (tab !== NavTab.LiveTV && tab !== NavTab.Movies && tab !== NavTab.TVShows) {
+      this.currentPinnedItems = [];
+      return;
+    }
+    if (tab === NavTab.LiveTV && !this.liveSidebarSelection) {
       this.currentPinnedItems = [];
       return;
     }
@@ -1045,6 +1313,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
           this.saveTabFilterState();
           if (currentTab === NavTab.LiveTV) {
             this.filters!.media_types = [MediaType.livestream];
+            this.liveSidebarSelection = {
+              type: 'category',
+              id: dto.id,
+              name: dto.name,
+              sourceId: dto.sourceId,
+            };
           } else if (currentTab === NavTab.Movies) {
             this.filters!.media_types = [MediaType.movie];
           } else if (currentTab === NavTab.TVShows) {
@@ -1103,6 +1377,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.searchRequestId++;
     if (this.search?.nativeElement) {
       this.search.nativeElement.value = "";
+    }
+    if (this.liveSearchInput?.nativeElement) {
+      this.liveSearchInput.nativeElement.value = "";
     }
     this.prevSearchValue = "";
     if (this.filters) {
@@ -1275,6 +1552,16 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (this.isSearching) {
       await this.performUniversalSearch(this.filters!.query!);
       this.loading = false;
+      return;
+    }
+
+    if (this.isLiveTvTab && !this.liveSidebarSelection) {
+      this.channels = [];
+      this.reachedMax = true;
+      this.loading = false;
+      this.updatePinnedItems();
+      this.channelsVisible = true;
+      this.cdr.markForCheck();
       return;
     }
 
@@ -1512,7 +1799,24 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         this.chkMovie = false;
         this.chkSerie = false;
         this.filters.media_types = [MediaType.livestream];
-        this.filters.view_type = ViewMode.All;
+        if (this.liveSidebarSelection?.type === 'category' && this.liveSidebarSelection.id != null) {
+          this.filters.view_type = ViewMode.All;
+          this.filters.group_id = this.liveSidebarSelection.id;
+          this.selectedCategoryId = this.liveSidebarSelection.id;
+        } else if (this.liveSidebarSelection?.type === 'favorites') {
+          this.filters.view_type = ViewMode.Favorites;
+          this.filters.group_id = undefined;
+          this.selectedCategoryId = undefined;
+        } else if (this.liveSidebarSelection?.type === 'all') {
+          this.filters.view_type = ViewMode.All;
+          this.filters.group_id = undefined;
+          this.selectedCategoryId = undefined;
+        } else {
+          this.liveSidebarSelection = null;
+          this.filters.view_type = ViewMode.All;
+          this.filters.group_id = undefined;
+          this.selectedCategoryId = undefined;
+        }
         break;
       case NavTab.Movies:
         this.chkLiveStream = false;
@@ -1590,10 +1894,14 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   searchFocused(): boolean {
-    return document.activeElement?.id == "search";
+    return document.activeElement?.id == "search" || document.activeElement?.id == "liveSearchInput";
   }
 
   focusSearch() {
+    if (this.isLiveTvTab && this.liveSearchInput?.nativeElement) {
+      this.liveSearchInput.nativeElement.focus();
+      return;
+    }
     this.isSearchExpanded = true;
     if (this.searchFocused()) {
       this.selectFirstChannel();

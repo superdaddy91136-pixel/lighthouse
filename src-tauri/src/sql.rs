@@ -942,7 +942,7 @@ pub fn search_group(filters: Filters) -> Result<Vec<Channel>> {
     let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(2 + filters.source_ids.len());
     let mut sql_query = format!(
         r#"
-        SELECT *
+        SELECT *, (SELECT COUNT(1) FROM channels c WHERE c.group_id = groups.id AND c.hidden = 0) as channel_count
         FROM groups
         WHERE ({})
         AND source_id in ({})
@@ -987,7 +987,7 @@ fn row_to_group(row: &Row) -> std::result::Result<Channel, rusqlite::Error> {
         group_id: None,
         favorite: false,
         source_id: row.get("source_id")?,
-        stream_id: None,
+        stream_id: row.get::<_, Option<i64>>("channel_count").ok().flatten().map(|c| c.max(0) as u64),
         tv_archive: None,
         season_id: None,
         episode_num: None,
