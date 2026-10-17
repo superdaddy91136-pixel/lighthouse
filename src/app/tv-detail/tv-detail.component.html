@@ -223,15 +223,35 @@
           Episodes
         </h3>
 
-        <!-- Season Selector Pills -->
-        <div class="season-selector-track" appDragScroll *ngIf="seasons.length > 0">
+        <!-- Season Selector Dropdown -->
+        <div class="season-dropdown-container" *ngIf="seasons.length > 0">
           <button 
-            *ngFor="let s of seasons" 
-            class="season-pill-btn" 
-            [class.active]="selectedSeason?.id === s.id"
-            (click)="selectSeason(s)">
-            {{ s.name }}
+            type="button" 
+            class="season-dropdown-btn" 
+            [class.active]="showSeasonMenu"
+            (click)="toggleSeasonMenu($event)"
+            title="Select season"
+            aria-haspopup="true"
+            [attr.aria-expanded]="showSeasonMenu">
+            <span class="season-dropdown-label">{{ selectedSeason?.name || 'Season 1' }}</span>
+            <svg class="season-dropdown-chevron" [class.rotated]="showSeasonMenu" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" />
+            </svg>
           </button>
+
+          <div class="season-dropdown-menu" *ngIf="showSeasonMenu" (click)="$event.stopPropagation()">
+            <button 
+              *ngFor="let s of seasons" 
+              type="button" 
+              class="season-menu-item" 
+              [class.active]="selectedSeason?.id === s.id"
+              (click)="selectSeason(s)">
+              <span>{{ s.name }}</span>
+              <svg *ngIf="selectedSeason?.id === s.id" class="season-check-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 

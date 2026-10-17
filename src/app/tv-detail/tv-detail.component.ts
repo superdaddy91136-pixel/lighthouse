@@ -104,6 +104,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   seasons: Channel[] = [];
   selectedSeason?: Channel;
   selectedSeasonNumber: number = 1;
+  showSeasonMenu: boolean = false;
   episodes: Channel[] = [];
   enrichedEpisodes: EnrichedEpisode[] = [];
   continueEpisode?: EnrichedEpisode;
@@ -226,7 +227,9 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       event.key === 'BrowserBack' ||
       (event.key === 'Backspace' && !isInputFocused())
     ) {
-      if (this.showVersionsMenu) {
+      if (this.showSeasonMenu) {
+        this.showSeasonMenu = false;
+      } else if (this.showVersionsMenu) {
         this.showVersionsMenu = false;
       } else if (this.showTrailerModal) {
         this.closeTrailer();
@@ -240,8 +243,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
     if (this.showVersionsMenu) {
-      const target = event.target as HTMLElement;
       const container = this.elementRef.nativeElement.querySelector(
         '.versions-dropdown-container',
       );
@@ -249,10 +252,19 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.showVersionsMenu = false;
       }
     }
+    if (this.showSeasonMenu) {
+      const seasonContainer = this.elementRef.nativeElement.querySelector(
+        '.season-dropdown-container',
+      );
+      if (seasonContainer && !seasonContainer.contains(target)) {
+        this.showSeasonMenu = false;
+      }
+    }
   }
 
   initShow(show: Channel): void {
     this.resetScrollPosition();
+    this.showSeasonMenu = false;
     this.show = show;
     if (this.show.media_type == null || Number(this.show.media_type) !== MediaType.serie) {
       this.show.media_type = MediaType.serie;
@@ -418,6 +430,21 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   toggleVersionsMenu(event?: Event): void {
     if (event) event.stopPropagation();
     this.showVersionsMenu = !this.showVersionsMenu;
+    if (this.showVersionsMenu) {
+      this.showSeasonMenu = false;
+    }
+  }
+
+  toggleSeasonMenu(event?: Event): void {
+    if (event) event.stopPropagation();
+    this.showSeasonMenu = !this.showSeasonMenu;
+    if (this.showSeasonMenu) {
+      this.showVersionsMenu = false;
+    }
+  }
+
+  closeSeasonMenu(): void {
+    this.showSeasonMenu = false;
   }
 
   async selectVersion(ver: MediaVersion): Promise<void> {
@@ -749,6 +776,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async selectSeason(season: Channel, targetEpisode?: Channel): Promise<void> {
+    this.showSeasonMenu = false;
     this.selectedSeason = season;
     this.loadingEpisodes = true;
     this.episodeImageErrors.clear();
