@@ -169,6 +169,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   episodeStillMap: Map<number, string> = new Map();
   private inFlightStillFetches: Set<number> = new Set();
   private nextEpisodeCardIds = new Set<number>();
+  private seasonNumCache = new Map<number, number>();
 
   // High-performance template memoization maps (eliminate per-frame regex and array scans)
   private cleanTitleCache = new Map<number | string, string>();
@@ -444,6 +445,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.cardArtworkCache.clear();
     this.cwArtworkCache.clear();
     this.cachedWatchProgressStore = null;
+    this.seasonNumCache.clear();
   }
 
   scrollRow(rowId: string, direction: "left" | "right") {
@@ -729,6 +731,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       });
 
       if (this.isDestroyed) return;
+      this.cwTitleCache.clear();
       const deduplicatedHistory = await this.deduplicateContinueWatching(historyRes);
 
       const cwRowIndex = this.masterDiscoveryRows.findIndex(
@@ -2515,6 +2518,44 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     }
 
+    // Pre-resolve season numbers for TV items if season_id > 50 and not yet cached
+    for (const g of groups) {
+      if (g.isTv && g.representative?.id) {
+        const item = g.representative;
+        if (
+          item.season_id != null &&
+          item.season_id > 50 &&
+          !this.seasonNumCache.has(item.season_id) &&
+          item.series_id != null &&
+          item.source_id != null
+        ) {
+          try {
+            const seasons = (await invoke("search", {
+              filters: {
+                source_ids: [item.source_id],
+                series_id: item.series_id,
+                media_types: [MediaType.serie],
+                view_type: ViewMode.All,
+                use_keywords: false,
+                page: 1,
+                sort: SortType.alphabeticalAscending,
+              },
+            })) as Channel[];
+            if (seasons) {
+              for (let i = 0; i < seasons.length; i++) {
+                const s = seasons[i];
+                if (s.id != null) {
+                  const match = s.name?.match(/(\d+)/);
+                  const sNum = match ? parseInt(match[1], 10) : i + 1;
+                  this.seasonNumCache.set(s.id, sNum);
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+
     // Filter out completed movies from Continue Watching (95% completion threshold)
     const activeGroups: GroupCandidate[] = [];
     for (const g of groups) {
@@ -2673,21 +2714,50 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       episodeTitle = episodeTitle
         .replace(/^\s*[-:|]\s*/, "")
-        .replace(/^\b(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|e\d{1,3}|ep(?:isode)?\s*\d{1,3})\b\s*[-:|]?\s*/i, "")
+        .replace(/^\b(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|season\s*\d+\s*(?:ep(?:isode)?\s*\d+)?|e\d{1,3}|ep(?:isode)?\s*\d{1,3})\b\s*[-:|]?\s*/i, "")
+        .replace(/^\s*[-:|·]\s*/, "")
         .trim();
 
-      const seasonNum = this.extractSeasonNumber(rawName, 0);
-      const episodeNum =
-        channel.episode_num != null && channel.episode_num > 0
-          ? channel.episode_num
-          : this.extractEpisodeNumber(rawName, 0);
+      // Resolve season number: prefer reliable metadata, fallback to title extraction
+      let seasonNum = 0;
+      const chAny = channel as any;
+      if (chAny?.seasonNum != null && chAny.seasonNum > 0) {
+        seasonNum = Number(chAny.seasonNum);
+      } else if (chAny?.season_number != null && chAny.season_number > 0) {
+        seasonNum = Number(chAny.season_number);
+      } else if (chAny?.season != null && !isNaN(Number(chAny.season)) && Number(chAny.season) > 0) {
+        seasonNum = Number(chAny.season);
+      } else if (channel.season_id != null && this.seasonNumCache.has(channel.season_id)) {
+        seasonNum = this.seasonNumCache.get(channel.season_id)!;
+      } else if (channel.season_id != null && channel.season_id > 0 && channel.season_id <= 50) {
+        seasonNum = channel.season_id;
+      }
 
-      const episodeCode =
-        seasonNum > 0 && episodeNum > 0
-          ? `S${String(seasonNum).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")}`
-          : episodeNum > 0
-            ? `Episode ${episodeNum}`
-            : "";
+      if (!seasonNum) {
+        seasonNum = this.extractSeasonNumber(rawName, 0);
+      }
+
+      // Resolve episode number: prefer reliable metadata, fallback to title extraction
+      let episodeNum = 0;
+      if (channel.episode_num != null && channel.episode_num > 0) {
+        episodeNum = channel.episode_num;
+      } else if (chAny?.episodeNum != null && chAny.episodeNum > 0) {
+        episodeNum = Number(chAny.episodeNum);
+      } else if (chAny?.episode_number != null && chAny.episode_number > 0) {
+        episodeNum = Number(chAny.episode_number);
+      } else {
+        episodeNum = this.extractEpisodeNumber(rawName, 0);
+      }
+
+      // Format episode code with uppercase S and uppercase E (e.g., "S1 E5")
+      let episodeCode = "";
+      if (seasonNum > 0 && episodeNum > 0) {
+        episodeCode = `S${seasonNum} E${episodeNum}`;
+      } else if (seasonNum > 0) {
+        episodeCode = `S${seasonNum}`;
+      } else if (episodeNum > 0) {
+        episodeCode = `E${episodeNum}`;
+      }
 
       if (episodeTitle && episodeTitle.toLowerCase() !== seriesTitle.toLowerCase()) {
         res = episodeCode ? `${episodeCode} · ${episodeTitle}` : episodeTitle;
