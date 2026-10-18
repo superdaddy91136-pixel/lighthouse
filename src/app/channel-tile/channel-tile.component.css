@@ -22,14 +22,14 @@
 .lh-card { width: 100%; max-width: 220px; margin: 0 auto; cursor: pointer; user-select: none; transition: transform .25s cubic-bezier(.2,0,.2,1); display: flex; flex-direction: column; }
 .lh-card:hover { transform: translateY(-5px); }
 .lh-card:focus { outline: none; }
-.lh-card:focus .poster-container { box-shadow: 0 0 0 2px rgba(255,255,255,.4), 0 10px 26px rgba(0,0,0,.5); }
-.poster-container { aspect-ratio: 2/3; width: 100%; border-radius: 12px; overflow: hidden; position: relative; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.09); box-shadow: 0 4px 16px rgba(0,0,0,.35); transition: box-shadow .25s, border-color .25s; }
-.lh-card:hover .poster-container { box-shadow: 0 10px 28px rgba(0,0,0,.55); border-color: rgba(255,255,255,.22); }
+.lh-card:focus .poster-container { box-shadow: inset 0 0 0 2px rgba(255,255,255,.4); }
+.poster-container { aspect-ratio: 2/3; width: 100%; border-radius: 12px; overflow: hidden; position: relative; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.09); box-shadow: none; transition: box-shadow .25s, border-color .25s; }
+.lh-card:hover .poster-container { box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); border-color: rgba(255,255,255,.46); }
 .poster-img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
 .lh-card:hover .poster-img { transform: scale(1.05); }
 .poster-container.live-poster { aspect-ratio: 16/10; background: rgba(16,20,28,.7); display: flex; align-items: center; justify-content: center; }
 .poster-container.live-poster .poster-img { object-fit: contain; padding: 10px; }
-.lh-card.playing .poster-container { border-color: rgba(255,255,255,.45); box-shadow: 0 0 0 2px rgba(255,255,255,.35), 0 8px 24px rgba(0,0,0,.4); animation: pulse 2s infinite ease-in-out; }
+.lh-card.playing .poster-container { border-color: rgba(255,255,255,.45); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); animation: pulse 2s infinite ease-in-out; }
 .lh-card .card-info { margin-top: 6px; }
 .lh-card .card-title { font-size: .8rem; font-weight: 600; color: rgba(255,255,255,.95); line-height: 1.25; margin: 0; }
 .lh-card .card-meta-line { font-size: .7rem; color: rgba(255,255,255,.5); margin-top: 2px; }
