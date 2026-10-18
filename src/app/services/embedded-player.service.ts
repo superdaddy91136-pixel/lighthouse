@@ -17,6 +17,7 @@ import { isInputFocused } from '../utils';
 import { VersionMatchingService } from './version-matching.service';
 import { MovieDetailService } from './movie-detail.service';
 import { TvDetailService } from './tv-detail.service';
+import { HomeDiscoveryStateService } from './home-discovery-state.service';
 
 export type ContentMode = 'movie' | 'episode' | 'live';
 
@@ -126,6 +127,8 @@ export class EmbeddedPlayerService implements OnDestroy {
   private unlistenRequestChannels?: UnlistenFn;
   private unlistenSelectChannel?: UnlistenFn;
   private unlistenSaveProgress?: UnlistenFn;
+  private unlistenRequestRecommendations?: UnlistenFn;
+  private unlistenPlayRecommendedMovie?: UnlistenFn;
 
   private routerSubscription?: Subscription;
 
@@ -140,6 +143,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     private versionMatching: VersionMatchingService,
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
+    private homeDiscoveryState: HomeDiscoveryStateService,
   ) {
     this.initGlobalListeners();
     this.routerSubscription = this.router.events
@@ -309,7 +313,27 @@ export class EmbeddedPlayerService implements OnDestroy {
     this.unlistenSaveProgress = await listen('save-playback-progress', (event: any) => {
       const payload = event?.payload;
       if (payload?.channelId != null && payload?.time > 0) {
-        this.saveWatchProgress(payload.channelId, payload.time, payload.duration || 0);
+        this.saveWatchProgress(payload.channelId, payload.time, payload.duration || 0, payload.completed);
+      }
+    });
+
+    // Listen for movie recommendations request from overlay
+    this.unlistenRequestRecommendations = await listen('request-movie-recommendations', () => {
+      if (this.currentMode === 'movie' && this.currentChannel) {
+        this.emitMovieRecommendations(this.currentChannel).catch(console.warn);
+      }
+    });
+
+    // Listen for recommended movie play request from overlay
+    this.unlistenPlayRecommendedMovie = await listen('play-recommended-movie', async (event: any) => {
+      const payload = event?.payload;
+      const targetChannel: Channel | undefined = payload?.channel;
+      if (targetChannel) {
+        this.ngZone.run(async () => {
+          this.movieDetailService.setSelectedMovie(targetChannel);
+          const canvas = typeof this.hostTarget === 'string' ? this.hostTarget : this.resolveVideoCanvasId();
+          await this.playMediaDirectly(targetChannel, canvas);
+        });
       }
     });
   }
@@ -829,6 +853,8 @@ export class EmbeddedPlayerService implements OnDestroy {
         this.emitEpisodesData();
       } else if (this.currentMode === 'live') {
         this.emitChannelsData();
+      } else if (this.currentMode === 'movie') {
+        this.emitMovieRecommendations(playChannel).catch(console.warn);
       }
 
       if (!wasAlreadyPlaying) {
@@ -852,7 +878,38 @@ export class EmbeddedPlayerService implements OnDestroy {
     }
   }
 
-  public emitEpisodesData(): void {
+  public async emitEpisodesData(): Promise<void> {
+    let nextEp: any = null;
+    if (this.currentChannel && this.currentChannel.id != null) {
+      try {
+        const channelId = this.currentChannel.id;
+        const seriesKey = this.getSeriesKey(this.currentChannel);
+        let found = this.getPersistedNextEpisode(seriesKey, channelId);
+        if (found === undefined) {
+          found = await this.findNextEpisode(this.currentChannel);
+          if (seriesKey) {
+            this.setPersistedNextEpisode(seriesKey, channelId, found);
+          }
+        }
+        if (found) {
+          const epNum = found.episode_num ?? this.extractEpisodeNumber(found.name);
+          const sNum = found.season_id != null
+            ? (this.seasons.find((s) => s.id === found.season_id)?.seasonNum || this.extractSeasonNumber(found))
+            : this.extractSeasonNumber(found);
+          nextEp = {
+            id: found.id!,
+            title: cleanMediaTitle(found.name || `Episode ${epNum}`),
+            episodeNum: epNum,
+            seasonNum: sNum,
+            stillUrl: found.image,
+            channel: found,
+          };
+        }
+      } catch (err) {
+        console.warn('Failed to resolve next episode in emitEpisodesData:', err);
+      }
+    }
+
     emit('embedded-player-episodes-data', {
       seriesTitle: this.seriesTitle,
       seasons: this.seasons,
@@ -862,7 +919,112 @@ export class EmbeddedPlayerService implements OnDestroy {
         ...e,
         isCurrent: e.id === this.currentChannel?.id,
       })),
+      nextEpisode: nextEp,
     }).catch(console.warn);
+  }
+
+  public async emitMovieRecommendations(movieChannel?: Channel): Promise<void> {
+    const target = movieChannel || this.currentChannel;
+    if (!target) return;
+    try {
+      const recs = await this.getMovieRecommendations(target);
+      emit('embedded-player-movie-recommendations', {
+        channelId: target.id,
+        recommendations: recs,
+      }).catch(console.warn);
+    } catch (e) {
+      console.warn('Failed to emit movie recommendations:', e);
+    }
+  }
+
+  public async getMovieRecommendations(movieChannel: Channel): Promise<any[]> {
+    try {
+      const currentId = movieChannel.id;
+      const recs: Channel[] = [];
+      const seenIds = new Set<number>();
+      if (currentId) seenIds.add(currentId);
+
+      // 1. Check HomeDiscoveryStateService.getAllRecommended()
+      const allRecs = this.homeDiscoveryState.getAllRecommended();
+      for (const c of allRecs) {
+        if (
+          c.id &&
+          !seenIds.has(c.id) &&
+          c.season_id == null &&
+          c.series_id == null &&
+          c.media_type !== MediaType.serie &&
+          c.media_type !== MediaType.livestream
+        ) {
+          seenIds.add(c.id);
+          recs.push(c);
+          if (recs.length >= 6) break;
+        }
+      }
+
+      // 2. Check cached TMDB rows in HomeDiscoveryStateService
+      if (recs.length < 6) {
+        const rows = this.homeDiscoveryState.getCachedTmdbRows();
+        for (const row of rows) {
+          if (
+            row.id === 'row-recommended' ||
+            row.id === 'row-popular-movies' ||
+            row.id === 'row-trending-movies'
+          ) {
+            for (const c of row.items) {
+              if (
+                c.id &&
+                !seenIds.has(c.id) &&
+                c.season_id == null &&
+                c.series_id == null &&
+                c.media_type !== MediaType.serie
+              ) {
+                seenIds.add(c.id);
+                recs.push(c);
+                if (recs.length >= 6) break;
+              }
+            }
+          }
+          if (recs.length >= 6) break;
+        }
+      }
+
+      // 3. Fallback: Search provider catalog for movies in the same group or general movies
+      if (recs.length < 4) {
+        const sourceIds = movieChannel.source_id
+          ? [movieChannel.source_id]
+          : Array.from(this.memory.Sources.keys());
+        if (sourceIds.length > 0) {
+          const results = (await invoke('search', {
+            filters: {
+              source_ids: sourceIds,
+              group_id: movieChannel.group_id,
+              media_types: [MediaType.movie],
+              view_type: ViewMode.All,
+              use_keywords: false,
+              page: 1,
+              sort: SortType.alphabeticalAscending,
+            },
+          })) as Channel[];
+          for (const c of results || []) {
+            if (c.id && !seenIds.has(c.id)) {
+              seenIds.add(c.id);
+              recs.push(c);
+              if (recs.length >= 6) break;
+            }
+          }
+        }
+      }
+
+      return recs.slice(0, 6).map((c) => ({
+        id: c.id!,
+        title: cleanMediaTitle(c.name || 'Movie'),
+        poster: c.image || (c as any).poster || '',
+        channel: c,
+      }));
+    } catch (e) {
+      console.warn('Failed to load movie recommendations:', e);
+      return [];
+    }
   }
 
   public emitChannelsData(): void {
@@ -976,8 +1138,8 @@ export class EmbeddedPlayerService implements OnDestroy {
     return 1;
   }
 
-  public extractEpisodeNumber(name?: string): number {
-    if (!name) return 1;
+  public extractEpisodeNumber(name?: string, fallback: number = 1): number {
+    if (!name) return fallback;
     const match =
       name.match(/\b(?:e|ep|episode)[\s._-]*(\d{1,3})\b/i) ||
       name.match(/\b\d{1,2}x(\d{1,3})\b/i);
@@ -985,7 +1147,7 @@ export class EmbeddedPlayerService implements OnDestroy {
       const parsed = parseInt(match[1], 10);
       if (!isNaN(parsed) && parsed > 0) return parsed;
     }
-    return 1;
+    return fallback;
   }
 
   public extractSeriesTitle(channel?: Channel): string {
@@ -1097,32 +1259,51 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (!channelId && !channel?.id) return 0;
     const id = channelId || channel?.id;
     try {
+      const targetChannel = channel || (this.currentChannel?.id === id ? this.currentChannel : undefined);
+      const isEpisode = this.currentMode === 'episode' || (
+        targetChannel && (
+          targetChannel.season_id != null ||
+          targetChannel.series_id != null ||
+          targetChannel.episode_num != null ||
+          (targetChannel as any).media_type === MediaType.serie ||
+          this.extractSeasonNumber(targetChannel) > 0
+        )
+      );
+      const thresholdPct = isEpisode ? 90 : 95;
+      const thresholdRatio = isEpisode ? 0.90 : 0.95;
+
       const storeRaw = localStorage.getItem('fred_tv_watch_progress');
       if (storeRaw) {
         const store = JSON.parse(storeRaw);
         if (store && id && store[id]) {
           const entry = store[id];
+          if (entry.completed === true) return 0;
           const t = typeof entry === 'number' ? entry : (entry.time || 0);
           const dur = entry.duration || 0;
-          if (dur > 0 && (t >= dur - 30 || (t / dur) > 0.95)) {
+          const pct = entry.percent != null ? entry.percent : (dur > 0 ? (t / dur) * 100 : 0);
+          if (pct >= thresholdPct) return 0;
+          if (dur > 0 && (t >= dur - 30 || (t / dur) >= thresholdRatio)) {
             return 0;
           }
           if (t > 5) return Math.round(t);
         }
       }
+      const pctRaw = localStorage.getItem(`watch_progress_${id}`);
+      if (pctRaw && parseFloat(pctRaw) >= thresholdPct) return 0;
+
       const posRaw = localStorage.getItem(`playback_pos_${id}`);
       if (posRaw) {
         const pos = parseFloat(posRaw);
         const durRaw = localStorage.getItem(`playback_dur_${id}`);
         const dur = durRaw ? parseFloat(durRaw) : 0;
-        if (dur > 0 && (pos >= dur - 30 || (pos / dur) > 0.95)) {
+        if (dur > 0 && (pos >= dur - 30 || (pos / dur) >= thresholdRatio)) {
           return 0;
         }
         if (!isNaN(pos) && pos > 5) {
           return Math.round(pos);
         }
       }
-      const chAny = channel as any;
+      const chAny = (targetChannel || channel) as any;
       if (chAny?.progress && chAny.progress > 5) {
         return Math.round(chAny.progress);
       }
@@ -1132,18 +1313,378 @@ export class EmbeddedPlayerService implements OnDestroy {
     return 0;
   }
 
-  public saveWatchProgress(channelId: number, time: number, duration: number): void {
+  public isEpisodeCompleted(channelOrId?: Channel | number, channel?: Channel): boolean {
+    if (!channelOrId && !channel) return false;
+    const id = typeof channelOrId === 'number' ? channelOrId : (channelOrId?.id || channel?.id);
+    if (!id) return false;
+    const targetChannel = typeof channelOrId === 'object' ? channelOrId : channel;
+
+    const chAny = targetChannel as any;
+    if (chAny?.completed === true) return true;
+    if (chAny?.progress_percent != null && chAny.progress_percent >= 90) return true;
+    if (chAny?.duration > 0 && chAny?.progress != null) {
+      if (chAny.progress >= chAny.duration - 30 || (chAny.progress / chAny.duration) >= 0.90) return true;
+    }
+
+    try {
+      const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        if (store && store[id]) {
+          const entry = store[id];
+          if (entry.completed === true) return true;
+          const t = typeof entry === 'number' ? entry : (entry.time || 0);
+          const dur = entry.duration || 0;
+          const pct = entry.percent != null ? entry.percent : (dur > 0 ? (t / dur) * 100 : 0);
+          if (pct >= 90) return true;
+          if (dur > 30 && t >= dur - 30) return true;
+          if (dur > 0 && (t / dur) >= 0.90) return true;
+        }
+      }
+      const pctRaw = localStorage.getItem(`watch_progress_${id}`);
+      if (pctRaw) {
+        const pct = parseFloat(pctRaw);
+        if (!isNaN(pct) && pct >= 90) return true;
+      }
+      const posRaw = localStorage.getItem(`playback_pos_${id}`);
+      const durRaw = localStorage.getItem(`playback_dur_${id}`);
+      if (posRaw && durRaw) {
+        const pos = parseFloat(posRaw);
+        const dur = parseFloat(durRaw);
+        if (dur > 30 && pos >= dur - 30) return true;
+        if (dur > 0 && (pos / dur) >= 0.90) return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  public isMovieCompleted(channelOrId?: Channel | number, channel?: Channel, alternateIds?: number[]): boolean {
+    if (!channelOrId && !channel && (!alternateIds || alternateIds.length === 0)) return false;
+    const primaryId = typeof channelOrId === 'number' ? channelOrId : (channelOrId?.id || channel?.id);
+    const targetChannel = typeof channelOrId === 'object' ? channelOrId : channel;
+
+    const chAny = targetChannel as any;
+    if (chAny?.completed === true) return true;
+    if (chAny?.progress_percent != null && chAny.progress_percent >= 95) return true;
+    if (chAny?.duration > 0 && chAny?.progress != null) {
+      if (chAny.progress >= chAny.duration - 30 || (chAny.progress / chAny.duration) >= 0.95) return true;
+    }
+
+    try {
+      const idsToCheck: number[] = [];
+      if (primaryId != null) idsToCheck.push(primaryId);
+      if (Array.isArray(alternateIds)) {
+        for (const aid of alternateIds) {
+          if (aid != null && !idsToCheck.includes(aid)) idsToCheck.push(aid);
+        }
+      }
+
+      const storeRaw = localStorage.getItem('fred_tv_watch_progress');
+      let store: Record<string, any> | null = null;
+      if (storeRaw) {
+        try {
+          store = JSON.parse(storeRaw);
+        } catch {
+          store = null;
+        }
+      }
+
+      // If primaryId has active unfinished progress (0 < pct < 95 and not completed),
+      // the user actively started watching this movie, so it should not be considered completed.
+      if (primaryId != null && store && store[primaryId]) {
+        const primaryEntry = store[primaryId];
+        if (primaryEntry.completed === true) return true;
+        const pt = typeof primaryEntry === 'number' ? primaryEntry : (primaryEntry.time || 0);
+        const pdur = primaryEntry.duration || 0;
+        const ppct = primaryEntry.percent != null ? primaryEntry.percent : (pdur > 0 ? (pt / pdur) * 100 : 0);
+        if (ppct >= 95 || (pdur > 30 && pt >= pdur - 30) || (pdur > 0 && (pt / pdur) >= 0.95)) {
+          return true;
+        }
+        if (ppct > 0 && ppct < 95 && primaryEntry.completed === false) {
+          return false;
+        }
+      }
+
+      for (const id of idsToCheck) {
+        if (store && store[id]) {
+          const entry = store[id];
+          if (entry.completed === true) return true;
+          const t = typeof entry === 'number' ? entry : (entry.time || 0);
+          const dur = entry.duration || 0;
+          const pct = entry.percent != null ? entry.percent : (dur > 0 ? (t / dur) * 100 : 0);
+          if (pct >= 95) return true;
+          if (dur > 30 && t >= dur - 30) return true;
+          if (dur > 0 && (t / dur) >= 0.95) return true;
+        }
+        const pctRaw = localStorage.getItem(`watch_progress_${id}`);
+        if (pctRaw) {
+          const pct = parseFloat(pctRaw);
+          if (!isNaN(pct) && pct >= 95) return true;
+        }
+        const posRaw = localStorage.getItem(`playback_pos_${id}`);
+        const durRaw = localStorage.getItem(`playback_dur_${id}`);
+        if (posRaw && durRaw) {
+          const pos = parseFloat(posRaw);
+          const dur = parseFloat(durRaw);
+          if (dur > 30 && pos >= dur - 30) return true;
+          if (dur > 0 && (pos / dur) >= 0.95) return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  public getSeriesKey(channel?: Channel): string {
+    if (!channel) return '';
+    if (channel.series_id != null) return `sid_${channel.source_id}_${channel.series_id}`;
+    const sTitle = this.extractSeriesTitle(channel);
+    if (sTitle) return `title_${channel.source_id}_${sTitle.toLowerCase()}`;
+    return `cid_${channel.id}`;
+  }
+
+  public getPersistedNextEpisode(seriesKey: string, fromEpisodeId?: number): Channel | null | undefined {
+    if (!seriesKey) return undefined;
+    try {
+      const raw = localStorage.getItem(`fred_tv_series_next_ep_${seriesKey}`);
+      if (!raw) return undefined;
+      const data = JSON.parse(raw);
+      if (!data) return undefined;
+      if (fromEpisodeId != null && data.fromEpisodeId != null && data.fromEpisodeId !== fromEpisodeId) {
+        return undefined;
+      }
+      return data.nextEpisode;
+    } catch {
+      return undefined;
+    }
+  }
+
+  public setPersistedNextEpisode(seriesKey: string, fromEpisodeId: number, nextEpisode: Channel | null): void {
+    if (!seriesKey) return;
+    try {
+      localStorage.setItem(
+        `fred_tv_series_next_ep_${seriesKey}`,
+        JSON.stringify({
+          nextEpisode,
+          fromEpisodeId,
+          completed: !nextEpisode,
+          updatedAt: Date.now(),
+        })
+      );
+    } catch {}
+  }
+
+  public clearPersistedNextEpisode(seriesKey: string): void {
+    if (!seriesKey) return;
+    try {
+      localStorage.removeItem(`fred_tv_series_next_ep_${seriesKey}`);
+    } catch {}
+  }
+
+  public async findNextEpisode(channel: Channel): Promise<Channel | null> {
+    if (!channel) return null;
+    try {
+      const sourceId = channel.source_id;
+      const sourceIds = sourceId != null ? [sourceId] : Array.from(this.memory.Sources.keys());
+      if (sourceIds.length === 0) return null;
+
+      let seriesId = channel.series_id;
+      if (!seriesId && channel.url && /^\d+$/.test(channel.url.trim())) {
+        seriesId = parseInt(channel.url.trim(), 10);
+      }
+      if (!seriesId && this.seriesChannel?.id) {
+        seriesId = this.seriesChannel.series_id || this.seriesChannel.id;
+      }
+
+      if (!seriesId) {
+        const sTitle = this.extractSeriesTitle(channel);
+        if (sTitle) {
+          const seriesList = (await invoke('search', {
+            filters: {
+              source_ids: sourceIds,
+              view_type: ViewMode.All,
+              media_types: [MediaType.serie],
+              query: sTitle,
+              use_keywords: false,
+              page: 1,
+              sort: SortType.alphabeticalAscending,
+            },
+          })) as Channel[];
+          if (seriesList && seriesList.length > 0) {
+            const found = seriesList.find((s) => s.url === String(seriesId) || s.id === seriesId) || seriesList[0];
+            if (found) {
+              seriesId = found.series_id || (found.url && /^\d+$/.test(found.url.trim()) ? parseInt(found.url.trim(), 10) : found.id);
+            }
+          }
+        }
+      }
+
+      if (!seriesId) return null;
+
+      // 1. Fetch seasons for this series ordered by season_number ASC
+      const seasonFilters = {
+        source_ids: sourceIds,
+        series_id: seriesId,
+        media_types: [MediaType.serie],
+        view_type: ViewMode.All,
+        use_keywords: false,
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+      };
+      const seasonChannels = (await invoke('search', { filters: seasonFilters })) as Channel[];
+      if (!seasonChannels || seasonChannels.length === 0) return null;
+
+      const seasons = seasonChannels.map((s, idx) => {
+        const sMatch = s.name?.match(/(\d+)/);
+        return {
+          id: s.id!,
+          seasonNum: sMatch ? parseInt(sMatch[1], 10) : idx + 1,
+          name: s.name || `Season ${idx + 1}`,
+          channel: s,
+        };
+      });
+      seasons.sort((a, b) => a.seasonNum - b.seasonNum);
+
+      // Determine current season
+      let currentSeasonId = channel.season_id;
+      let currentSeasonIdx = -1;
+      if (currentSeasonId != null) {
+        currentSeasonIdx = seasons.findIndex((s) => s.id === currentSeasonId);
+      }
+      if (currentSeasonIdx === -1) {
+        const sNum = this.extractSeasonNumber(channel);
+        currentSeasonIdx = seasons.findIndex((s) => s.seasonNum === sNum);
+        if (currentSeasonIdx === -1) currentSeasonIdx = 0;
+      }
+
+      const currentSeason = seasons[currentSeasonIdx];
+      const currentEpNum = channel.episode_num ?? this.extractEpisodeNumber(channel.name);
+
+      // 2. Fetch episodes for current season ordered by episode_num ASC
+      const epFilters = {
+        source_ids: sourceIds,
+        series_id: seriesId,
+        season: currentSeason.id,
+        media_types: [MediaType.movie],
+        view_type: ViewMode.All,
+        use_keywords: false,
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+      };
+      const curEpisodes = (await invoke('search', { filters: epFilters })) as Channel[];
+
+      if (curEpisodes && curEpisodes.length > 0) {
+        curEpisodes.sort((a, b) => {
+          const aNum = a.episode_num ?? this.extractEpisodeNumber(a.name, 0);
+          const bNum = b.episode_num ?? this.extractEpisodeNumber(b.name, 0);
+          return aNum - bNum;
+        });
+
+        // Find index of current episode
+        let curIdx = curEpisodes.findIndex((e) => e.id === channel.id);
+        if (curIdx === -1 && currentEpNum != null) {
+          curIdx = curEpisodes.findIndex((e) => (e.episode_num ?? this.extractEpisodeNumber(e.name, 0)) === currentEpNum);
+        }
+
+        if (curIdx !== -1 && curIdx + 1 < curEpisodes.length) {
+          return curEpisodes[curIdx + 1];
+        } else if (curIdx === -1) {
+          const nextInSeason = curEpisodes.find(
+            (e) => (e.episode_num ?? this.extractEpisodeNumber(e.name, 0)) > currentEpNum
+          );
+          if (nextInSeason) return nextInSeason;
+        }
+      }
+
+      // 3. Current episode is the last episode of the season: transition to next season!
+      let nextSeasonIdx = currentSeasonIdx + 1;
+      while (nextSeasonIdx < seasons.length) {
+        const nextSeason = seasons[nextSeasonIdx];
+        const nextSeasonEpFilters = {
+          source_ids: sourceIds,
+          series_id: seriesId,
+          season: nextSeason.id,
+          media_types: [MediaType.movie],
+          view_type: ViewMode.All,
+          use_keywords: false,
+          page: 1,
+          sort: SortType.alphabeticalAscending,
+        };
+        const nextSeasonEpisodes = (await invoke('search', { filters: nextSeasonEpFilters })) as Channel[];
+        if (nextSeasonEpisodes && nextSeasonEpisodes.length > 0) {
+          nextSeasonEpisodes.sort((a, b) => {
+            const aNum = a.episode_num ?? this.extractEpisodeNumber(a.name, 0);
+            const bNum = b.episode_num ?? this.extractEpisodeNumber(b.name, 0);
+            return aNum - bNum;
+          });
+          return nextSeasonEpisodes[0];
+        }
+        nextSeasonIdx++;
+      }
+
+      // No next episode available (end of series)
+      return null;
+    } catch (e) {
+      console.warn('findNextEpisode error:', e);
+      return null;
+    }
+  }
+
+  public async resolveAndPersistNextEpisode(channelId: number, channel?: Channel): Promise<Channel | null> {
+    try {
+      let targetChannel = channel || (this.currentChannel?.id === channelId ? this.currentChannel : undefined);
+      if (!targetChannel) {
+        const results = (await invoke('search', {
+          filters: {
+            source_ids: Array.from(this.memory.Sources.keys()),
+            view_type: ViewMode.All,
+            media_types: [MediaType.movie],
+            page: 1,
+            sort: SortType.alphabeticalAscending,
+            use_keywords: false,
+          },
+        })) as Channel[];
+        targetChannel = results?.find((c) => c.id === channelId);
+      }
+      if (!targetChannel) return null;
+
+      const nextEp = await this.findNextEpisode(targetChannel);
+      const seriesKey = this.getSeriesKey(targetChannel);
+      if (seriesKey) {
+        this.setPersistedNextEpisode(seriesKey, channelId, nextEp);
+      }
+      return nextEp;
+    } catch (err) {
+      console.warn('resolveAndPersistNextEpisode error:', err);
+      return null;
+    }
+  }
+
+  public saveWatchProgress(channelId: number, time: number, duration: number, forceCompleted?: boolean): void {
     if (!channelId || time <= 0) return;
     try {
       if (duration <= 0) {
         const prevDur = localStorage.getItem(`playback_dur_${channelId}`);
         if (prevDur) duration = parseFloat(prevDur) || 0;
       }
+      const isEpisode = this.currentMode === 'episode' || (
+        this.currentChannel?.id === channelId && (
+          this.currentChannel.season_id != null ||
+          this.currentChannel.series_id != null ||
+          this.currentChannel.episode_num != null ||
+          (this.currentChannel as any).media_type === MediaType.serie ||
+          this.extractSeasonNumber(this.currentChannel) > 0
+        )
+      );
+      const completionThreshold = isEpisode ? 90 : 95;
       const pct = duration > 0 ? Math.min(100, Math.max(0, Math.round((time / duration) * 100))) : 0;
-      localStorage.setItem(`playback_pos_${channelId}`, String(time));
+      const isCompleted = forceCompleted === true || (
+        duration > 0 && (pct >= completionThreshold || (duration > 30 && time >= duration - 30))
+      );
+
+      localStorage.setItem(`playback_pos_${channelId}`, isCompleted ? '0' : String(time));
       if (duration > 0) {
         localStorage.setItem(`playback_dur_${channelId}`, String(duration));
-        localStorage.setItem(`watch_progress_${channelId}`, String(pct));
+        localStorage.setItem(`watch_progress_${channelId}`, String(isCompleted ? 100 : pct));
       }
 
       let store: Record<string, any> = {};
@@ -1156,12 +1697,26 @@ export class EmbeddedPlayerService implements OnDestroy {
         }
       }
       store[channelId] = {
-        time,
+        time: isCompleted ? (duration || time) : time,
         duration: duration > 0 ? duration : (store[channelId]?.duration || 0),
-        percent: pct > 0 ? pct : (store[channelId]?.percent || 0),
+        percent: isCompleted ? 100 : (pct > 0 ? pct : (store[channelId]?.percent || 0)),
+        completed: isCompleted,
         updatedAt: Date.now(),
       };
       localStorage.setItem('fred_tv_watch_progress', JSON.stringify(store));
+
+      if (isCompleted) {
+        if (isEpisode) {
+          const epChannel = (this.currentChannel?.id === channelId) ? this.currentChannel : undefined;
+          this.resolveAndPersistNextEpisode(channelId, epChannel).catch(console.warn);
+        }
+        this.lastWatchedUpdated$.next(channelId);
+      } else if (isEpisode && this.currentChannel?.id === channelId) {
+        const seriesKey = this.getSeriesKey(this.currentChannel);
+        if (seriesKey) {
+          this.clearPersistedNextEpisode(seriesKey);
+        }
+      }
     } catch (e) {
       console.warn('Failed to save watch progress:', e);
     }
@@ -1530,5 +2085,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (this.unlistenRequestChannels) this.unlistenRequestChannels();
     if (this.unlistenSelectChannel) this.unlistenSelectChannel();
     if (this.unlistenSaveProgress) this.unlistenSaveProgress();
+    if (this.unlistenRequestRecommendations) this.unlistenRequestRecommendations();
+    if (this.unlistenPlayRecommendedMovie) this.unlistenPlayRecommendedMovie();
   }
 }

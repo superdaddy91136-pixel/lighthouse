@@ -141,6 +141,7 @@
             *ngFor="let item of row.items; trackBy: trackByChannelId" 
             class="media-card" 
             [class.cw-card]="row.id === 'row-continue-watching'"
+            [class.cw-next-episode-card]="row.id === 'row-continue-watching' && isNextEpisodeCard(item)"
             (click)="handleCardClick(item, row.id)" 
             (mouseenter)="onCardMouseEnter($event)"
             (mouseleave)="onCardMouseLeave($event)">
@@ -164,6 +165,14 @@
                   <path *ngIf="!isTvShow(item)" d="M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18Z" />
                 </svg>
                 <span class="fallback-title">{{ getCleanTitle(item) }}</span>
+              </div>
+
+              <!-- Special Label for Next TV Episode -->
+              <div *ngIf="row.id === 'row-continue-watching' && isNextEpisodeCard(item)" class="cw-next-episode-badge">
+                <svg class="cw-next-ep-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16,18H18V6H16M6,18L14.5,12L6,6V18Z" />
+                </svg>
+                <span>PLAY NEXT EPISODE</span>
               </div>
 
               <!-- Three-dot menu button for Continue Watching -->

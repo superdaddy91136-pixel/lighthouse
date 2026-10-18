@@ -934,17 +934,26 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     const candidate = targetEpisode || this.lastWatchedEpisode;
 
     if (candidate) {
-      const matched = this.enrichedEpisodes.find(
+      const isCandidateCompleted = this.embeddedPlayer.isEpisodeCompleted(candidate);
+      const matchedIdx = this.enrichedEpisodes.findIndex(
         (ep) =>
           ep.channel.id === candidate.id ||
           (candidate.episode_num != null &&
             ep.episodeNum === candidate.episode_num &&
             (candidate.season_id == null || candidate.season_id === this.selectedSeason?.id))
       );
-      if (matched) {
-        this.continueEpisode = matched;
-        this.highlightedEpisodeId = matched.channel.id;
-        return;
+      if (matchedIdx !== -1) {
+        if (!isCandidateCompleted) {
+          const matched = this.enrichedEpisodes[matchedIdx];
+          this.continueEpisode = matched;
+          this.highlightedEpisodeId = matched.channel.id;
+          return;
+        } else if (matchedIdx + 1 < this.enrichedEpisodes.length) {
+          const nextEp = this.enrichedEpisodes[matchedIdx + 1];
+          this.continueEpisode = nextEp;
+          this.highlightedEpisodeId = nextEp.channel.id;
+          return;
+        }
       }
       // If candidate belongs to another season and this.continueEpisode is already watched,
       // retain this.continueEpisode for hero play action, but clear highlightedEpisodeId for current season
@@ -958,6 +967,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     const watchedInSeason = this.enrichedEpisodes.filter((ep) => ep.isWatched);
     if (watchedInSeason.length > 0) {
       const lastWatchedInSeason = watchedInSeason[watchedInSeason.length - 1];
+      const lastIdx = this.enrichedEpisodes.indexOf(lastWatchedInSeason);
+      const isCompleted = this.embeddedPlayer.isEpisodeCompleted(lastWatchedInSeason.channel);
+      if (isCompleted && lastIdx !== -1 && lastIdx + 1 < this.enrichedEpisodes.length) {
+        const nextEp = this.enrichedEpisodes[lastIdx + 1];
+        this.continueEpisode = nextEp;
+        this.highlightedEpisodeId = nextEp.channel.id;
+        return;
+      }
       this.continueEpisode = lastWatchedInSeason;
       this.highlightedEpisodeId = lastWatchedInSeason.channel.id;
       return;

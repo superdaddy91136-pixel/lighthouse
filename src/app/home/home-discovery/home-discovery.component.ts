@@ -168,6 +168,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   seriesLookupMap: Map<string, Channel> = new Map();
   episodeStillMap: Map<number, string> = new Map();
   private inFlightStillFetches: Set<number> = new Set();
+  private nextEpisodeCardIds = new Set<number>();
 
   // High-performance template memoization maps (eliminate per-frame regex and array scans)
   private cleanTitleCache = new Map<number | string, string>();
@@ -561,7 +562,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.clearMemoCaches();
 
       // Deduplicate Continue Watching: one card per grouped movie/TV title, keeping most recent version
-      const deduplicatedHistory = this.deduplicateContinueWatching(historyRes);
+      const deduplicatedHistory = await this.deduplicateContinueWatching(historyRes);
       const rows: DiscoveryRow[] = [];
 
       // 1. Continue Watching (always updated fresh from watch history)
@@ -728,7 +729,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       });
 
       if (this.isDestroyed) return;
-      const deduplicatedHistory = this.deduplicateContinueWatching(historyRes);
+      const deduplicatedHistory = await this.deduplicateContinueWatching(historyRes);
 
       const cwRowIndex = this.masterDiscoveryRows.findIndex(
         (r) => r.id === "row-continue-watching"
@@ -2391,8 +2392,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
-  deduplicateContinueWatching(history: Channel[]): Channel[] {
+  async deduplicateContinueWatching(history: Channel[]): Promise<Channel[]> {
     this.groupedHistoryIds.clear();
+    this.nextEpisodeCardIds.clear();
     if (!history || history.length === 0) return [];
 
     interface GroupCandidate {
@@ -2480,14 +2482,69 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     }
 
-    // Store history IDs for complete removal
+    // Inspect TV groups: if the representative episode was genuinely completed,
+    // advance Continue Watching to the next available episode.
     for (const g of groups) {
+      if (g.isTv && g.representative?.id) {
+        const rep = g.representative;
+        const isCompleted = this.embeddedPlayer.isEpisodeCompleted(rep);
+
+        if (isCompleted && rep.id != null) {
+          const seriesKey = this.embeddedPlayer.getSeriesKey(rep);
+          let nextEp = this.embeddedPlayer.getPersistedNextEpisode(seriesKey, rep.id);
+
+          if (nextEp === undefined) {
+            nextEp = await this.embeddedPlayer.findNextEpisode(rep);
+            if (seriesKey) {
+              this.embeddedPlayer.setPersistedNextEpisode(seriesKey, rep.id, nextEp);
+            }
+          }
+
+          if (nextEp && nextEp.id != null) {
+            const isNextCompleted = this.embeddedPlayer.isEpisodeCompleted(nextEp);
+            if (!isNextCompleted) {
+              g.representative = nextEp;
+              const progress = this.getWatchProgress(nextEp);
+              if (progress === 0) {
+                this.nextEpisodeCardIds.add(nextEp.id);
+              }
+            }
+          }
+          // If nextEp is null, series has finished: keep current completed episode, do not point to nonexistent episode.
+        }
+      }
+    }
+
+    // Filter out completed movies from Continue Watching (95% completion threshold)
+    const activeGroups: GroupCandidate[] = [];
+    for (const g of groups) {
+      if (g.isTv) {
+        activeGroups.push(g);
+      } else {
+        const isCompleted = this.embeddedPlayer.isMovieCompleted(
+          g.representative,
+          undefined,
+          g.allHistoryIds
+        );
+        if (!isCompleted) {
+          activeGroups.push(g);
+        }
+      }
+    }
+
+    // Store history IDs for complete removal and watched check
+    for (const g of activeGroups) {
       if (g.representative.id) {
         this.groupedHistoryIds.set(g.representative.id, g.allHistoryIds);
       }
     }
 
-    return groups.map((g) => g.representative);
+    return activeGroups.map((g) => g.representative);
+  }
+
+  isNextEpisodeCard(channel: Channel): boolean {
+    if (!channel || channel.id == null || !this.isTvShow(channel)) return false;
+    return this.nextEpisodeCardIds.has(channel.id);
   }
 
   isTvShow(channel?: Channel): boolean {
@@ -3125,7 +3182,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const store = this.cachedWatchProgressStore;
       if (store) {
         const idsToCheck = [channel.id];
-        if (this.groupedHistoryIds.has(channel.id)) {
+        // Only check alternate grouped version IDs for movies, NOT TV shows,
+        // because TV shows have distinct episodes each with their own progress!
+        if (!this.isTvShow(channel) && this.groupedHistoryIds.has(channel.id)) {
           const grouped = this.groupedHistoryIds.get(channel.id) || [];
           for (const gId of grouped) {
             if (!idsToCheck.includes(gId)) idsToCheck.push(gId);
@@ -3394,6 +3453,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       );
 
       // Remove from Continue Watching row
+      const seriesKey = this.embeddedPlayer.getSeriesKey(channel);
+      if (seriesKey) {
+        this.embeddedPlayer.clearPersistedNextEpisode(seriesKey);
+      }
+
       const cwRow = this.masterDiscoveryRows.find(
         (r) => r.id === "row-continue-watching"
       );

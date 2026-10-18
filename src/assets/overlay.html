@@ -2000,8 +2000,314 @@
     .season-custom-dropdown,
     .season-dropdown-btn,
     .season-dropdown-menu,
-    .season-menu-item {
+    .season-menu-item,
+    .up-next-card,
+    .movie-recs-card,
+    .up-next-btn-play,
+    .up-next-btn-cancel,
+    .up-next-close-btn,
+    .movie-rec-item {
       pointer-events: auto !important;
+    }
+
+    /* UP NEXT (TV) & END-OF-PLAYBACK RECOMMENDATIONS (MOVIE) */
+    .up-next-card,
+    .movie-recs-card {
+      position: absolute;
+      right: 28px;
+      bottom: 28px;
+      background: rgba(14, 15, 20, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      z-index: 95;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: bottom 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, transform 0.22s ease;
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      pointer-events: auto !important;
+      user-select: none;
+    }
+
+    .overlay-container.active .up-next-card,
+    .overlay-container.active .movie-recs-card {
+      bottom: 108px;
+    }
+
+    .up-next-card {
+      width: 360px;
+      max-width: calc(100% - 48px);
+    }
+
+    .up-next-header,
+    .movie-recs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .up-next-header-left,
+    .movie-recs-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .up-next-pill,
+    .movie-recs-pill {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(229, 9, 20, 0.2);
+      border: 1px solid rgba(229, 9, 20, 0.5);
+      color: #ff5252;
+      flex-shrink: 0;
+    }
+
+    .up-next-timer,
+    .movie-recs-timer {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .up-next-close-btn {
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .up-next-close-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .up-next-body {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .up-next-thumb-wrap {
+      width: 120px;
+      height: 68px;
+      border-radius: 6px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .up-next-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .up-next-thumb-fallback {
+      color: rgba(255, 255, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    .up-next-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .up-next-ep-meta {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.55);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .up-next-ep-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .up-next-actions,
+    .movie-recs-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .up-next-btn-play {
+      background: #e50914;
+      border: 1px solid #ff3340;
+      color: #ffffff;
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .up-next-btn-play:hover {
+      background: #f40612;
+      transform: scale(1.02);
+    }
+
+    .up-next-btn-play:active {
+      transform: scale(0.98);
+    }
+
+    .up-next-btn-cancel {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: #e5e5e5;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .up-next-btn-cancel:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+    }
+
+    /* Movie Recommendations Card */
+    .movie-recs-card {
+      width: 480px;
+      max-width: calc(100% - 48px);
+    }
+
+    .movie-recs-selection-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .movie-recs-selection-title span {
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 400;
+      margin-right: 6px;
+    }
+
+    .movie-recs-grid {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: none;
+    }
+
+    .movie-recs-grid::-webkit-scrollbar {
+      display: none;
+    }
+
+    .movie-rec-item {
+      width: 86px;
+      flex-shrink: 0;
+      cursor: pointer;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      padding: 2px;
+      transition: border-color 0.18s, transform 0.18s, opacity 0.18s;
+      opacity: 0.65;
+      position: relative;
+    }
+
+    .movie-rec-item:hover {
+      opacity: 0.95;
+      transform: translateY(-2px);
+    }
+
+    .movie-rec-item.selected {
+      opacity: 1;
+      border-color: #e50914;
+      box-shadow: 0 0 12px rgba(229, 9, 20, 0.6);
+      transform: translateY(-2px);
+    }
+
+    .movie-rec-poster-wrap {
+      width: 100%;
+      height: 116px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .movie-rec-poster {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .movie-rec-fallback {
+      color: rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    .movie-rec-item-title {
+      font-size: 11px;
+      font-weight: 500;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 4px;
+      text-align: center;
     }
   </style>
 </head>
@@ -2392,6 +2698,68 @@
       </div>
     </div>
 
+    <!-- UP NEXT CARD (TV EPISODE) -->
+    <div class="up-next-card" id="upNextCard" style="display: none;">
+      <div class="up-next-header">
+        <div class="up-next-header-left">
+          <span class="up-next-pill">Up Next</span>
+          <span class="up-next-timer" id="upNextTimer">Playing in 10s</span>
+        </div>
+        <button type="button" class="up-next-close-btn" id="btnCancelUpNext" title="Dismiss">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="up-next-body">
+        <div class="up-next-thumb-wrap">
+          <img class="up-next-thumb" id="upNextThumb" src="" alt="" style="display: none;" />
+          <div class="up-next-thumb-fallback" id="upNextThumbFallback">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="up-next-info">
+          <div class="up-next-ep-meta" id="upNextEpMeta">S1:E1</div>
+          <div class="up-next-ep-title" id="upNextEpTitle">Episode Title</div>
+        </div>
+      </div>
+      <div class="up-next-actions">
+        <button type="button" class="up-next-btn-play" id="btnPlayNextEp">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <span>Play Next</span>
+        </button>
+        <button type="button" class="up-next-btn-cancel" id="btnDismissUpNext">Cancel</button>
+      </div>
+    </div>
+
+    <!-- MOVIE RECOMMENDATIONS CARD -->
+    <div class="movie-recs-card" id="movieRecsCard" style="display: none;">
+      <div class="movie-recs-header">
+        <div class="movie-recs-header-left">
+          <span class="movie-recs-pill">Recommended</span>
+          <span class="movie-recs-timer" id="movieRecsTimer">Playing in 10s</span>
+        </div>
+        <button type="button" class="up-next-close-btn" id="btnCancelMovieRecs" title="Dismiss">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="movie-recs-selection-title">
+        <span>Selected:</span><strong id="movieRecsSelectedTitle">Movie Title</strong>
+      </div>
+      <div class="movie-recs-grid" id="movieRecsGrid"></div>
+      <div class="movie-recs-actions">
+        <button type="button" class="up-next-btn-play" id="btnPlayMovieRec">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <span>Play Now</span>
+        </button>
+        <button type="button" class="up-next-btn-cancel" id="btnDismissMovieRecs">Cancel</button>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -2601,6 +2969,44 @@
       const nerdDropped = document.getElementById('nerdDropped');
       const nerdAvsync = document.getElementById('nerdAvsync');
       const nerdMode = document.getElementById('nerdMode');
+
+      // UP NEXT (TV) & MOVIE RECOMMENDATIONS
+      const upNextCard = document.getElementById('upNextCard');
+      const upNextTimer = document.getElementById('upNextTimer');
+      const btnCancelUpNext = document.getElementById('btnCancelUpNext');
+      const btnDismissUpNext = document.getElementById('btnDismissUpNext');
+      const btnPlayNextEp = document.getElementById('btnPlayNextEp');
+      const upNextThumb = document.getElementById('upNextThumb');
+      const upNextThumbFallback = document.getElementById('upNextThumbFallback');
+      const upNextEpMeta = document.getElementById('upNextEpMeta');
+      const upNextEpTitle = document.getElementById('upNextEpTitle');
+
+      const movieRecsCard = document.getElementById('movieRecsCard');
+      const movieRecsTimer = document.getElementById('movieRecsTimer');
+      const btnCancelMovieRecs = document.getElementById('btnCancelMovieRecs');
+      const btnDismissMovieRecs = document.getElementById('btnDismissMovieRecs');
+      const btnPlayMovieRec = document.getElementById('btnPlayMovieRec');
+      const movieRecsSelectedTitle = document.getElementById('movieRecsSelectedTitle');
+      const movieRecsGrid = document.getElementById('movieRecsGrid');
+
+      let detectedCreditStartTime = null;
+
+      let upNextState = {
+        isShowing: false,
+        countdown: 10,
+        timerId: null,
+        cancelledForMediaId: null,
+        nextEpisode: null,
+      };
+
+      let movieRecsState = {
+        isShowing: false,
+        countdown: 10,
+        timerId: null,
+        cancelledForMediaId: null,
+        items: [],
+        selectedIndex: 0,
+      };
 
       // CONTENT MODE SWITCHER
       function setContentMode(mode) {
@@ -2822,7 +3228,8 @@
               const entry = store[chId];
               const t = typeof entry === 'number' ? entry : (entry.time || 0);
               const dur = entry.duration || 0;
-              if (dur > 0 && (t >= dur - 30 || (t / dur) > 0.95)) return 0;
+              const threshold = currentContentMode === 'episode' ? 0.90 : 0.95;
+              if (dur > 0 && (t >= dur - 30 || (t / dur) >= threshold)) return 0;
               if (t > 5) return Math.round(t);
             }
           }
@@ -2831,7 +3238,8 @@
             const pos = parseFloat(posRaw);
             const durRaw = localStorage.getItem('playback_dur_' + chId);
             const dur = durRaw ? parseFloat(durRaw) : 0;
-            if (dur > 0 && (pos >= dur - 30 || (pos / dur) > 0.95)) return 0;
+            const threshold = currentContentMode === 'episode' ? 0.90 : 0.95;
+            if (dur > 0 && (pos >= dur - 30 || (pos / dur) >= threshold)) return 0;
             if (!isNaN(pos) && pos > 5) return Math.round(pos);
           }
         } catch (e) {
@@ -2870,10 +3278,16 @@
         const now = Date.now();
         if (now - lastProgressSaveTime < 3000) return;
         lastProgressSaveTime = now;
+        const threshold = currentContentMode === 'episode' ? 0.90 : 0.95;
+        const isCompleted = effDuration > 0 && (
+          (currentTime / effDuration) >= threshold ||
+          (effDuration > 30 && currentTime >= effDuration - 30)
+        );
         tauriEmit('save-playback-progress', {
           channelId: currentActiveChannelId,
-          time: Math.round(currentTime),
-          duration: Math.round(effDuration)
+          time: Math.round(isCompleted ? effDuration : currentTime),
+          duration: Math.round(effDuration),
+          completed: isCompleted
         });
       }
 
@@ -2882,11 +3296,17 @@
         if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) return;
         if (currentTime <= 5) return;
         const effDuration = duration > 0 ? duration : (cachedDuration > 0 ? cachedDuration : 0);
+        const threshold = currentContentMode === 'episode' ? 0.90 : 0.95;
+        const isCompleted = effDuration > 0 && (
+          (currentTime / effDuration) >= threshold ||
+          (effDuration > 30 && currentTime >= effDuration - 30)
+        );
         lastProgressSaveTime = Date.now();
         tauriEmit('save-playback-progress', {
           channelId: currentActiveChannelId,
-          time: Math.round(currentTime),
-          duration: Math.round(effDuration)
+          time: Math.round(isCompleted ? effDuration : currentTime),
+          duration: Math.round(effDuration),
+          completed: isCompleted
         });
       }
 
@@ -2902,6 +3322,7 @@
         }
         updateBufferedUI();
         maybeSaveProgress();
+        checkUpNextTrigger();
       }
 
       function updateVolumeIconElements(iconEls, volPct, isZeroOrMuted) {
@@ -3124,7 +3545,9 @@
           (btnInfo && btnInfo.contains(target)) ||
           (speedMenu && speedMenu.contains(target)) ||
           (btnSpeed && btnSpeed.contains(target)) ||
-          (volumeControlWrap && volumeControlWrap.contains(target))
+          (volumeControlWrap && volumeControlWrap.contains(target)) ||
+          (upNextCard && upNextCard.contains(target)) ||
+          (movieRecsCard && movieRecsCard.contains(target))
         ) {
           return;
         }
@@ -4085,6 +4508,315 @@
           e.stopPropagation();
           playNextEpisode();
         });
+      }
+
+      // UP NEXT (TV) & END-OF-PLAYBACK RECOMMENDATIONS (MOVIE) LOGIC
+      function clearUpNextTimer() {
+        if (upNextState.timerId) {
+          clearInterval(upNextState.timerId);
+          upNextState.timerId = null;
+        }
+      }
+
+      function hideUpNextCard(cancelled = false) {
+        clearUpNextTimer();
+        upNextState.isShowing = false;
+        if (upNextCard) upNextCard.style.display = 'none';
+        if (cancelled && currentActiveChannelId) {
+          upNextState.cancelledForMediaId = currentActiveChannelId;
+        }
+      }
+
+      function executePlayNextEpisode() {
+        clearUpNextTimer();
+        hideUpNextCard(false);
+        const nextEp = upNextState.nextEpisode || getFallbackNextEpisode();
+        if (nextEp && nextEp.id) {
+          flushSaveProgress();
+          currentActiveChannelId = nextEp.id;
+          episodesData.currentEpisodeId = nextEp.id;
+          renderEpisodes();
+          tauriEmit('select-player-episode', {
+            episodeId: nextEp.id,
+            channel: nextEp.channel,
+          });
+          closeAllPanels();
+          showControls();
+        } else {
+          playNextEpisode();
+        }
+      }
+
+      function getFallbackNextEpisode() {
+        if (!episodesData.episodes || episodesData.episodes.length === 0) return null;
+        const curIdx = episodesData.episodes.findIndex(
+          (ep) => ep.id === episodesData.currentEpisodeId || ep.isCurrent
+        );
+        if (curIdx !== -1 && curIdx + 1 < episodesData.episodes.length) {
+          const next = episodesData.episodes[curIdx + 1];
+          return {
+            id: next.id,
+            title: next.title,
+            episodeNum: next.episodeNum,
+            seasonNum: next.seasonNum,
+            stillUrl: next.stillUrl,
+            channel: next.channel,
+          };
+        }
+        return null;
+      }
+
+      function showUpNextCard(nextEp) {
+        if (!nextEp || !upNextCard) return;
+        if (upNextState.cancelledForMediaId === currentActiveChannelId) return;
+        if (upNextState.isShowing) return;
+
+        upNextState.isShowing = true;
+        upNextState.countdown = 10;
+        upNextState.nextEpisode = nextEp;
+
+        const sNum = nextEp.seasonNum != null ? String(nextEp.seasonNum).padStart(2, '0') : '';
+        const eNum = nextEp.episodeNum != null ? String(nextEp.episodeNum).padStart(2, '0') : '';
+        if (upNextEpMeta) {
+          upNextEpMeta.textContent = (sNum && eNum) ? `S${sNum}E${eNum}` : 'Next Episode';
+        }
+        if (upNextEpTitle) {
+          upNextEpTitle.textContent = nextEp.title || 'Next Episode';
+        }
+        if (upNextTimer) {
+          upNextTimer.textContent = `Playing in 10s`;
+        }
+
+        if (nextEp.stillUrl && upNextThumb) {
+          upNextThumb.src = nextEp.stillUrl;
+          upNextThumb.style.display = 'block';
+          if (upNextThumbFallback) upNextThumbFallback.style.display = 'none';
+          upNextThumb.onerror = () => {
+            upNextThumb.style.display = 'none';
+            if (upNextThumbFallback) upNextThumbFallback.style.display = 'flex';
+          };
+        } else {
+          if (upNextThumb) upNextThumb.style.display = 'none';
+          if (upNextThumbFallback) upNextThumbFallback.style.display = 'flex';
+        }
+
+        upNextCard.style.display = 'flex';
+        clearUpNextTimer();
+
+        upNextState.timerId = setInterval(() => {
+          upNextState.countdown -= 1;
+          if (upNextTimer) {
+            upNextTimer.textContent = `Playing in ${Math.max(0, upNextState.countdown)}s`;
+          }
+          if (upNextState.countdown <= 0) {
+            clearUpNextTimer();
+            executePlayNextEpisode();
+          }
+        }, 1000);
+      }
+
+      function clearMovieRecsTimer() {
+        if (movieRecsState.timerId) {
+          clearInterval(movieRecsState.timerId);
+          movieRecsState.timerId = null;
+        }
+      }
+
+      function hideMovieRecsCard(cancelled = false) {
+        clearMovieRecsTimer();
+        movieRecsState.isShowing = false;
+        if (movieRecsCard) movieRecsCard.style.display = 'none';
+        if (cancelled && currentActiveChannelId) {
+          movieRecsState.cancelledForMediaId = currentActiveChannelId;
+        }
+      }
+
+      function executePlayMovieRec(rec) {
+        if (!rec) return;
+        clearMovieRecsTimer();
+        flushSaveProgress();
+        hideMovieRecsCard(false);
+        tauriEmit('play-recommended-movie', {
+          channelId: rec.id,
+          channel: rec.channel,
+        });
+      }
+
+      function renderMovieRecsGrid() {
+        if (!movieRecsGrid) return;
+        movieRecsGrid.innerHTML = '';
+        movieRecsState.items.forEach((rec, idx) => {
+          const itemEl = document.createElement('div');
+          itemEl.className = 'movie-rec-item' + (idx === movieRecsState.selectedIndex ? ' selected' : '');
+          itemEl.innerHTML = `
+            <div class="movie-rec-poster-wrap">
+              ${rec.poster ? `<img class="movie-rec-poster" src="${rec.poster}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+              <div class="movie-rec-fallback" style="${rec.poster ? 'display: none;' : ''}">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+                </svg>
+              </div>
+            </div>
+            <div class="movie-rec-item-title">${escapeHtml(rec.title)}</div>
+          `;
+          itemEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectMovieRec(idx);
+          });
+          movieRecsGrid.appendChild(itemEl);
+        });
+
+        const selectedRec = movieRecsState.items[movieRecsState.selectedIndex];
+        if (movieRecsSelectedTitle && selectedRec) {
+          movieRecsSelectedTitle.textContent = selectedRec.title;
+        }
+      }
+
+      function selectMovieRec(idx) {
+        if (idx < 0 || idx >= movieRecsState.items.length) return;
+        movieRecsState.selectedIndex = idx;
+        const allItems = movieRecsGrid.querySelectorAll('.movie-rec-item');
+        allItems.forEach((el, i) => {
+          el.classList.toggle('selected', i === idx);
+        });
+        const selectedRec = movieRecsState.items[idx];
+        if (movieRecsSelectedTitle && selectedRec) {
+          movieRecsSelectedTitle.textContent = selectedRec.title;
+        }
+        movieRecsState.countdown = 10;
+        if (movieRecsTimer) {
+          movieRecsTimer.textContent = `Playing in 10s`;
+        }
+      }
+
+      function showMovieRecsCard() {
+        if (!movieRecsState.items || movieRecsState.items.length === 0 || !movieRecsCard) return;
+        if (movieRecsState.cancelledForMediaId === currentActiveChannelId) return;
+        if (movieRecsState.isShowing) return;
+
+        movieRecsState.isShowing = true;
+        movieRecsState.selectedIndex = 0;
+        movieRecsState.countdown = 10;
+
+        renderMovieRecsGrid();
+        if (movieRecsTimer) {
+          movieRecsTimer.textContent = `Playing in 10s`;
+        }
+
+        movieRecsCard.style.display = 'flex';
+        clearMovieRecsTimer();
+
+        movieRecsState.timerId = setInterval(() => {
+          movieRecsState.countdown -= 1;
+          if (movieRecsTimer) {
+            movieRecsTimer.textContent = `Playing in ${Math.max(0, movieRecsState.countdown)}s`;
+          }
+          if (movieRecsState.countdown <= 0) {
+            clearMovieRecsTimer();
+            executePlayMovieRec(movieRecsState.items[movieRecsState.selectedIndex]);
+          }
+        }, 1000);
+      }
+
+      function checkUpNextTrigger() {
+        const effDuration = duration > 0 ? duration : (cachedDuration > 0 ? cachedDuration : 0);
+        if (effDuration < 60 || currentTime <= 5) return;
+
+        const creditStart = (detectedCreditStartTime != null && detectedCreditStartTime > 0 &&
+                             detectedCreditStartTime >= effDuration * 0.70 &&
+                             detectedCreditStartTime <= effDuration - 10)
+          ? detectedCreditStartTime
+          : (effDuration * 0.95);
+
+        if (currentContentMode === 'episode') {
+          let nextEp = upNextState.nextEpisode;
+          if (nextEp === undefined) {
+            nextEp = getFallbackNextEpisode();
+          }
+          if (!nextEp) {
+            if (upNextState.isShowing) hideUpNextCard(false);
+            return;
+          }
+          if (upNextState.cancelledForMediaId === currentActiveChannelId) return;
+
+          if (currentTime >= creditStart) {
+            if (!upNextState.isShowing) {
+              showUpNextCard(nextEp);
+            }
+          } else if (upNextState.isShowing && currentTime < creditStart - 3) {
+            hideUpNextCard(false);
+          }
+        } else if (currentContentMode === 'movie') {
+          if (!movieRecsState.items || movieRecsState.items.length === 0) {
+            if (movieRecsState.isShowing) hideMovieRecsCard(false);
+            return;
+          }
+          if (movieRecsState.cancelledForMediaId === currentActiveChannelId) return;
+
+          if (currentTime >= creditStart) {
+            if (!movieRecsState.isShowing) {
+              showMovieRecsCard();
+            }
+          } else if (movieRecsState.isShowing && currentTime < creditStart - 3) {
+            hideMovieRecsCard(false);
+          }
+        }
+      }
+
+      if (btnPlayNextEp) {
+        btnPlayNextEp.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearUpNextTimer();
+          hideUpNextCard(false);
+          executePlayNextEpisode();
+        });
+      }
+
+      if (btnCancelUpNext) {
+        btnCancelUpNext.addEventListener('click', (e) => {
+          e.stopPropagation();
+          hideUpNextCard(true);
+        });
+      }
+
+      if (btnDismissUpNext) {
+        btnDismissUpNext.addEventListener('click', (e) => {
+          e.stopPropagation();
+          hideUpNextCard(true);
+        });
+      }
+
+      if (btnPlayMovieRec) {
+        btnPlayMovieRec.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearMovieRecsTimer();
+          hideMovieRecsCard(false);
+          executePlayMovieRec(movieRecsState.items[movieRecsState.selectedIndex]);
+        });
+      }
+
+      if (btnCancelMovieRecs) {
+        btnCancelMovieRecs.addEventListener('click', (e) => {
+          e.stopPropagation();
+          hideMovieRecsCard(true);
+        });
+      }
+
+      if (btnDismissMovieRecs) {
+        btnDismissMovieRecs.addEventListener('click', (e) => {
+          e.stopPropagation();
+          hideMovieRecsCard(true);
+        });
+      }
+
+      if (upNextCard) {
+        upNextCard.addEventListener('mousemove', showControls);
+        upNextCard.addEventListener('mouseenter', showControls);
+      }
+
+      if (movieRecsCard) {
+        movieRecsCard.addEventListener('mousemove', showControls);
+        movieRecsCard.addEventListener('mouseenter', showControls);
       }
 
       // PLAYBACK SPEED LOGIC
@@ -5178,6 +5910,22 @@
             return;
           }
           if (parsed.request_id >= 301 && parsed.request_id <= 313) {
+            if (parsed.request_id === 310 || (parsed.event === 'property-change' && parsed.name === 'chapter-list')) {
+              if (Array.isArray(parsed.data)) {
+                detectedCreditStartTime = null;
+                for (const ch of parsed.data) {
+                  if (ch && typeof ch.time === 'number' && typeof ch.title === 'string') {
+                    if (/(?:credit|end\s*credit|ending|end\s*title|closing)/i.test(ch.title)) {
+                      if (ch.time > 0) {
+                        detectedCreditStartTime = ch.time;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              return;
+            }
             handleNerdStatsResponse(parsed.request_id, parsed.data);
             return;
           }
@@ -5223,6 +5971,7 @@
             pollNerdStats();
             sendMpv(['get_property', 'demuxer-cache-duration'], 307);
             sendMpv(['get_property', 'demuxer-cache-state'], 308);
+            sendMpv(['get_property', 'chapter-list'], 310);
             if (pendingResumeTime > 5 && !hasResumedForCurrentMedia) {
               applyResumeSeek();
             }
@@ -5239,6 +5988,28 @@
 
           if (parsed.event === 'tracks-changed') {
             requestTrackInfo();
+            return;
+          }
+
+          if (parsed.event === 'end-file') {
+            if (currentActiveChannelId && currentContentMode !== 'live' && parsed.reason === 'eof') {
+              const effDuration = duration > 0 ? duration : (cachedDuration > 0 ? cachedDuration : 0);
+              tauriEmit('save-playback-progress', {
+                channelId: currentActiveChannelId,
+                time: Math.round(effDuration),
+                duration: Math.round(effDuration),
+                completed: true
+              });
+              if (currentContentMode === 'episode' && upNextState.isShowing && upNextState.cancelledForMediaId !== currentActiveChannelId) {
+                clearUpNextTimer();
+                hideUpNextCard(false);
+                executePlayNextEpisode();
+              } else if (currentContentMode === 'movie' && movieRecsState.isShowing && movieRecsState.cancelledForMediaId !== currentActiveChannelId) {
+                clearMovieRecsTimer();
+                hideMovieRecsCard(false);
+                executePlayMovieRec(movieRecsState.items[movieRecsState.selectedIndex]);
+              }
+            }
             return;
           }
 
@@ -5346,6 +6117,21 @@
                   updateSpeedUI(parsed.data);
                 }
                 break;
+              case 'chapter-list':
+                if (Array.isArray(parsed.data)) {
+                  detectedCreditStartTime = null;
+                  for (const ch of parsed.data) {
+                    if (ch && typeof ch.time === 'number' && typeof ch.title === 'string') {
+                      if (/(?:credit|end\s*credit|ending|end\s*title|closing)/i.test(ch.title)) {
+                        if (ch.time > 0) {
+                          detectedCreditStartTime = ch.time;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                }
+                break;
             }
           }
         } catch (err) {
@@ -5429,6 +6215,11 @@
       tauriListen('embedded-player-mode', (event) => {
         if (event?.payload?.mode) {
           setContentMode(event.payload.mode);
+          if (event.payload.mode === 'movie') {
+            tauriEmit('request-movie-recommendations');
+          } else if (event.payload.mode === 'episode') {
+            tauriEmit('request-player-episodes');
+          }
         }
         if (event?.payload?.channelId != null) {
           currentActiveChannelId = event.payload.channelId;
@@ -5458,7 +6249,16 @@
             currentEpisodeId: event.payload.currentEpisodeId ?? episodesData.currentEpisodeId,
             episodes: keepExisting ? episodesData.episodes : (event.payload.episodes || [])
           };
+          if (event.payload.nextEpisode !== undefined) {
+            upNextState.nextEpisode = event.payload.nextEpisode;
+          }
           renderEpisodes();
+        }
+      });
+
+      tauriListen('embedded-player-movie-recommendations', (event) => {
+        if (event?.payload && Array.isArray(event.payload.recommendations)) {
+          movieRecsState.items = event.payload.recommendations;
         }
       });
 
@@ -5493,6 +6293,12 @@
       });
 
       tauriListen('embedded-player-started', (event) => {
+        hideUpNextCard(false);
+        hideMovieRecsCard(false);
+        upNextState.cancelledForMediaId = null;
+        movieRecsState.cancelledForMediaId = null;
+        detectedCreditStartTime = null;
+
         const chId = event?.payload?.channel_id ?? event?.payload?.channelId;
         if (chId != null) {
           currentActiveChannelId = chId;
@@ -5521,8 +6327,10 @@
         sendMpv(['observe_property', 14, 'speed']);
         sendMpv(['observe_property', 15, 'demuxer-cache-duration']);
         sendMpv(['observe_property', 16, 'demuxer-cache-state']);
+        sendMpv(['observe_property', 18, 'chapter-list']);
         sendMpv(['get_property', 'demuxer-cache-duration'], 307);
         sendMpv(['get_property', 'demuxer-cache-state'], 308);
+        sendMpv(['get_property', 'chapter-list'], 310);
         applySubtitlePreferences();
         updateSpeedUI(1.0);
         if (event.payload?.name) {
@@ -5534,10 +6342,18 @@
           tauriEmit('request-player-episodes');
         } else if (currentContentMode === 'live') {
           tauriEmit('request-player-channels');
+        } else if (currentContentMode === 'movie') {
+          tauriEmit('request-movie-recommendations');
         }
       });
 
       tauriListen('embedded-poc-stopped', () => {
+        hideUpNextCard(false);
+        hideMovieRecsCard(false);
+        upNextState.cancelledForMediaId = null;
+        movieRecsState.cancelledForMediaId = null;
+        detectedCreditStartTime = null;
+        movieRecsState.items = [];
         clearTimeout(resumeSeekTimeout);
         flushSaveProgress();
         pendingResumeTime = 0;
@@ -5615,6 +6431,7 @@
       tauriEmit('request-overlay-top-crop');
       tauriEmit('request-player-episodes');
       tauriEmit('request-player-channels');
+      tauriEmit('request-movie-recommendations');
 
       tauriInvoke('get_overlay_top_crop').then((crop) => {
         if (typeof crop === 'number') {

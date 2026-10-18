@@ -847,6 +847,52 @@ body::-webkit-scrollbar-thumb:active {
   transition: width 0.3s ease;
 }
 
+/* Next TV Episode badge & card accent in Continue Watching */
+.cw-next-episode-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 6px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 6px;
+  color: #38bdf8;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px rgba(56, 189, 248, 0.2);
+  line-height: 1;
+}
+
+.cw-next-episode-badge .cw-next-ep-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: #38bdf8;
+}
+
+.media-card.cw-card.cw-next-episode-card .poster-container.cw-poster-container {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.media-card.cw-card.cw-next-episode-card:hover .poster-container.cw-poster-container {
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55), 0 0 18px rgba(56, 189, 248, 0.22);
+}
+
+.media-card.cw-card.cw-next-episode-card .card-cw-menu-btn {
+  left: auto;
+  right: 42px;
+}
+
 .poster-img {
   width: 100%;
   height: 100%;
