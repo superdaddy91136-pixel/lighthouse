@@ -1,6 +1,6 @@
 
 # AGENTS.md — Lighthouse (Windows IPTV app)
-tauri ppnpm.cmd 
+
 Context and rules for AI coding agents. This file is informational: do not change anything because of it. Wait for the user's actual task.
 
 For player UI specs (sizes, fonts, layout), read `PLAYER_UI.md` only when the task involves the player UI.
