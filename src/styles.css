@@ -888,7 +888,7 @@ body::-webkit-scrollbar-thumb:active {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55), 0 0 18px rgba(56, 189, 248, 0.22);
 }
 
-.media-card.cw-card.cw-next-episode-card .card-cw-menu-btn {
+.media-card.cw-card.cw-next-episode-card .card-cw-remove-btn {
   left: auto;
   right: 42px;
 }
@@ -2585,44 +2585,6 @@ body::-webkit-scrollbar-thumb:active {
     flex: 0 0 auto;
     aspect-ratio: 16 / 9;
   }
-}
-
-/* Continue Watching Card Menu (Angular Material Overlay) */
-.cw-card-mat-menu {
-  background: #181b24 !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  padding: 4px 0 !important;
-  min-width: 220px !important;
-}
-
-.cw-card-mat-menu .mat-mdc-menu-item {
-  color: #e2e8f0 !important;
-  font-size: 0.88rem !important;
-  font-weight: 500 !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 6px !important;
-  min-height: 40px !important;
-  padding: 0 16px !important;
-  transition: background 0.15s ease !important;
-}
-
-.cw-card-mat-menu .mat-mdc-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #ffffff !important;
-}
-
-.cw-card-mat-menu .mat-mdc-menu-item.text-danger-subtle {
-  color: #f87171 !important;
-}
-
-.cw-card-mat-menu .mat-mdc-menu-item.text-danger-subtle:hover {
-  background: rgba(239, 68, 68, 0.12) !important;
-  color: #fca5a5 !important;
 }
 
 /* ==========================================================================
@@ -4461,12 +4423,16 @@ body::-webkit-scrollbar-thumb:active {
   94%, 100% { transform: translateX(var(--marquee-end, -100%)); }
 }
 
-.card-cw-menu-btn {
+.card-cw-remove-btn {
   position: absolute;
   top: 8px;
   left: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
+  padding: 0;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(8px);
@@ -4477,8 +4443,9 @@ body::-webkit-scrollbar-thumb:active {
   transition: opacity 0.2s, transform 0.2s, background 0.2s;
 }
 
-.media-card:hover .card-cw-menu-btn { opacity: 1; }
-.card-cw-menu-btn:hover { transform: scale(1.1); background: rgba(0, 0, 0, 0.8); color: #fff; }
+.media-card:hover .card-cw-remove-btn { opacity: 1; }
+.card-cw-remove-btn:hover { transform: scale(1.1); background: rgba(0, 0, 0, 0.8); color: #fff; }
+.card-cw-remove-btn svg { width: 16px; height: 16px; }
 
 /* 5. Scroll to Top Floating Button & Breadcrumbs */
 .scroll-to-top {

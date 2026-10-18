@@ -172,20 +172,19 @@
                 <svg class="cw-next-ep-icon" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M16,18H18V6H16M6,18L14.5,12L6,6V18Z" />
                 </svg>
-                <span>PLAY NEXT EPISODE</span>
+                <span>NEXT EPISODE</span>
               </div>
 
-              <!-- Three-dot menu button for Continue Watching -->
+              <!-- Remove button for Continue Watching -->
               <button 
                 *ngIf="row.id === 'row-continue-watching'" 
                 type="button" 
-                class="card-cw-menu-btn" 
-                [matMenuTriggerFor]="cwMenu" 
-                [matMenuTriggerData]="{ channel: item }" 
-                (click)="$event.stopPropagation()" 
-                title="More options">
-                <svg viewBox="0 0 24 24" fill="currentColor" class="cw-dots-icon">
-                  <path d="M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z" />
+                class="card-cw-remove-btn"
+                (click)="removeFromContinueWatching(item, $event)"
+                title="Remove from Continue Watching"
+                aria-label="Remove from Continue Watching">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
                 </svg>
               </button>
 
@@ -256,24 +255,4 @@
     </div>
   </div>
 
-  <!-- CONTINUE WATCHING CARD CONTEXT MENU -->
-  <mat-menu #cwMenu="matMenu" class="cw-card-mat-menu">
-    <ng-template matMenuContent let-channel="channel">
-      <button mat-menu-item (click)="goToDetail(channel, $event)" class="cw-menu-item">
-        <svg *ngIf="isTvShow(channel)" class="cw-menu-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19H8V21H16V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3M21,17H3V5H21V17Z" />
-        </svg>
-        <svg *ngIf="!isTvShow(channel)" class="cw-menu-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18Z" />
-        </svg>
-        <span>{{ isTvShow(channel) ? 'Go to TV Show' : 'Go to Movie' }}</span>
-      </button>
-      <button mat-menu-item (click)="removeFromContinueWatching(channel, $event)" class="cw-menu-item text-danger-subtle">
-        <svg class="cw-menu-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-        </svg>
-        <span>Remove from Continue Watching</span>
-      </button>
-    </ng-template>
-  </mat-menu>
 </div>
