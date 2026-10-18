@@ -350,6 +350,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   setHeroIndex(index: number) {
     if (index >= 0 && index < this.heroItems.length) {
       this.currentHeroIndex = index;
+      this.recordHeroShown(this.currentHero?.channel?.id);
     }
   }
 
@@ -379,6 +380,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.currentHeroIndex = nextIndex;
       }
 
+      this.recordHeroShown(this.currentHero?.channel?.id);
+
       // Prioritize background TMDB enrichment for the newly active hero
       const active = this.currentHero;
       if (active?.channel && this.tmdbConfig.isEnabled()) {
@@ -395,6 +398,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (this.heroItems.length > 0) {
       this.currentHeroIndex =
         (this.currentHeroIndex - 1 + this.heroItems.length) % this.heroItems.length;
+      this.recordHeroShown(this.currentHero?.channel?.id);
     }
   }
 
@@ -461,7 +465,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   async loadDiscovery(isManualRefresh: boolean = false) {
-    this.loading = true;
+    if (!this.hasAnyContent) {
+      this.loading = true;
+    }
     try {
       let sources = Array.from(this.memory.Sources.values());
       if (sources.length === 0) {
@@ -615,6 +621,30 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
           (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
         );
         this.applyContentPreferences();
+
+        // Select an active hero title avoiding recently displayed titles
+        if (isManualRefresh && this.heroItems.length > 1) {
+          const recent = this.getRecentHeroIds();
+          const currentId = this.currentHero?.channel?.id;
+          const candidates = this.heroItems
+            .map((h, i) => ({ h, i }))
+            .filter((entry) => entry.h.channel?.id !== currentId && (!recent.length || entry.h.channel?.id !== recent[0]));
+          const chosen = candidates.length > 0
+            ? candidates[Math.floor(Math.random() * candidates.length)]
+            : { i: (this.currentHeroIndex + 1) % this.heroItems.length };
+          this.currentHeroIndex = chosen.i;
+        } else if (this.heroItems.length > 1) {
+          const recent = this.getRecentHeroIds();
+          if (recent.length > 0) {
+            const lastShownId = recent[0];
+            const unshownIdx = this.heroItems.findIndex((h) => h.channel?.id !== lastShownId);
+            if (unshownIdx !== -1) {
+              this.currentHeroIndex = unshownIdx;
+            }
+          }
+        }
+        this.recordHeroShown(this.currentHero?.channel?.id);
+
         this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
         this.loading = false;
 
@@ -656,6 +686,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.allRecommended,
       );
       this.heroItems = [...this.masterHeroItems];
+      this.currentHeroIndex = 0;
+      this.recordHeroShown(this.currentHero?.channel?.id);
 
       if (recommendedList.length >= 2) {
         rows.push({
@@ -1130,6 +1162,32 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
+  private getRecentHeroIds(): number[] {
+    try {
+      const stored = localStorage.getItem("lighthouse_recent_hero_ids");
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) {
+          return arr.map((id) => Number(id)).filter((id) => !isNaN(id));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  }
+
+  private recordHeroShown(channelId?: number): void {
+    if (!channelId) return;
+    try {
+      const recent = this.getRecentHeroIds().filter((id) => id !== channelId);
+      recent.unshift(channelId);
+      localStorage.setItem("lighthouse_recent_hero_ids", JSON.stringify(recent.slice(0, 24)));
+    } catch {
+      // ignore
+    }
+  }
+
   private getFranchiseKey(title?: string): string {
     const clean = cleanMediaTitle(title || "").toLowerCase();
     const franchises = [
@@ -1224,7 +1282,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
 
       // 3. Assemble dynamic hero banner pool from highest quality TMDB candidates
-      this.refreshHeroPoolFromTmdbDiscovery();
+      await this.refreshHeroPoolFromTmdbDiscovery(sourceIds);
 
       // 4. Save completed snapshot to HomeDiscoveryStateService so it survives navigation
       const tmdbRows = this.masterDiscoveryRows.filter(
@@ -1598,26 +1656,74 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
-  private refreshHeroPoolFromTmdbDiscovery(): void {
+  private async refreshHeroPoolFromTmdbDiscovery(sourceIds?: number[]): Promise<void> {
     const trendingMoviesRow = this.masterDiscoveryRows.find((r) => r.id === "row-trending-movies");
     const trendingTvRow = this.masterDiscoveryRows.find((r) => r.id === "row-trending-series");
     const popularMoviesRow = this.masterDiscoveryRows.find((r) => r.id === "row-popular-movies");
     const popularTvRow = this.masterDiscoveryRows.find((r) => r.id === "row-popular-series");
     const recommendedRow = this.masterDiscoveryRows.find((r) => r.id === "row-recommended");
 
+    // Collect all genre and Korean content rows to expand candidate universe
+    const extraRows = this.masterDiscoveryRows.filter(
+      (r) => r.id.startsWith("row-genre-") || r.id.startsWith("row-mixed-genre") || r.id.startsWith("row-korean")
+    );
+
+    const extraMovies: Channel[] = [];
+    const extraSeries: Channel[] = [];
+    for (const r of extraRows) {
+      for (const item of r.items) {
+        if (this.isTvShow(item)) {
+          extraSeries.push(item);
+        } else {
+          extraMovies.push(item);
+        }
+      }
+    }
+
     const heroCandidateMovies: Channel[] = [
-      ...(trendingMoviesRow?.items || []).slice(0, 8),
-      ...(popularMoviesRow?.items || []).slice(0, 8),
-      ...(recommendedRow?.items || []).filter((i) => !this.isTvShow(i)).slice(0, 6),
-      ...this.allLoadedMovies.slice(0, 10),
+      ...(trendingMoviesRow?.items || []),
+      ...(popularMoviesRow?.items || []),
+      ...(recommendedRow?.items || []).filter((i) => !this.isTvShow(i)),
+      ...extraMovies,
+      ...this.allLoadedMovies,
     ];
 
     const heroCandidateSeries: Channel[] = [
-      ...(trendingTvRow?.items || []).slice(0, 8),
-      ...(popularTvRow?.items || []).slice(0, 8),
-      ...(recommendedRow?.items || []).filter((i) => this.isTvShow(i)).slice(0, 6),
-      ...this.allLoadedSeries.slice(0, 10),
+      ...(trendingTvRow?.items || []),
+      ...(popularTvRow?.items || []),
+      ...(recommendedRow?.items || []).filter((i) => this.isTvShow(i)),
+      ...extraSeries,
+      ...this.allLoadedSeries,
     ];
+
+    // Enrich candidate pools with top rated items from TMDB cache if available
+    if (this.tmdbConfig.isEnabled()) {
+      try {
+        const [topMovies, topTv] = await Promise.allSettled([
+          this.tmdbEnrichment.getTopRatedMovies(1),
+          this.tmdbEnrichment.getTopRatedTv(1),
+        ]);
+        const sIds = sourceIds && sourceIds.length > 0 ? sourceIds : Array.from(this.memory.Sources.keys());
+        if (topMovies.status === "fulfilled" && Array.isArray(topMovies.value)) {
+          for (const item of topMovies.value.slice(0, 10)) {
+            const matched = await this.matchTmdbItemToCatalog(item, false, this.allLoadedMovies, sIds);
+            if (matched && matched.id) {
+              heroCandidateMovies.push(matched);
+            }
+          }
+        }
+        if (topTv.status === "fulfilled" && Array.isArray(topTv.value)) {
+          for (const item of topTv.value.slice(0, 10)) {
+            const matched = await this.matchTmdbItemToCatalog(item, true, this.allLoadedSeries, sIds);
+            if (matched && matched.id) {
+              heroCandidateSeries.push(matched);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     const newHeroPool = this.buildHeroPool(
       heroCandidateMovies,
@@ -1635,11 +1741,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.allRecommended
       );
 
-      // Session seed rotation for initial hero index
-      const seed = this.getSessionSeed();
-      this.currentHeroIndex = seed % Math.min(this.heroItems.length, 6);
+      // Start on a fresh title at index 0 (buildHeroPool ensures index 0 was not just shown)
+      this.currentHeroIndex = 0;
+      this.recordHeroShown(this.currentHero?.channel?.id);
 
-      // Save current top featured IDs to track cross-session exposure
+      // Save top featured IDs
       const featuredIds: number[] = [];
       const currentHeroId = this.heroItems[this.currentHeroIndex]?.channel?.id;
       if (currentHeroId) featuredIds.push(currentHeroId);
@@ -2792,6 +2898,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   ): HeroItem[] {
     const targetPoolSize = 24; // ~20 to 30 titles
     const halfTarget = Math.floor(targetPoolSize / 2); // 12
+    const recentHeroIds = this.getRecentHeroIds();
+    const recentSet = new Set(recentHeroIds);
 
     // 1. Separate recommendations into movies & series
     const recMovies: Channel[] = [];
@@ -2804,13 +2912,14 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     }
 
-    // 2. Score candidate function: prioritize items with valid backdrop / TMDB enrichment
+    // 2. Score candidate function: prioritize items with valid backdrop / TMDB enrichment + rating
     const getHeroScore = (c: Channel): number => {
       let score = 0;
       const cached = this.tmdbEnrichment.getEnrichmentSync(c);
       if (cached?.backdropPath) score += 60;
       else if (cached?.posterPath) score += 25;
       if (cached?.logoPath) score += 20;
+      if (cached?.rating && cached.rating >= 7.0) score += 10;
       if (c.favorite) score += 15;
       const q = extractQuality(c.name);
       if (q === "4K UHD") score += 10;
@@ -2843,60 +2952,89 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       return false;
     };
 
+    // Sort helper that adds randomized variety jitter so similarly scored top items rotate
+    const sortWithVariety = (items: Channel[]): Channel[] => {
+      return [...items].sort((a, b) => {
+        const scoreDiff = getHeroScore(b) - getHeroScore(a);
+        const jitter = (Math.random() - 0.5) * 30;
+        return scoreDiff + jitter;
+      });
+    };
+
     // 4. Collect and deduplicate movie candidates
     const rawMovies = [...recMovies, ...movies].filter(
       (m) => m.image && m.image.startsWith("http"),
     );
-    rawMovies.sort((a, b) => getHeroScore(b) - getHeroScore(a));
 
-    const selectedMovies: Channel[] = [];
+    const uniqueMovies: Channel[] = [];
     for (const m of rawMovies) {
-      if (!isDuplicateVersion(m, selectedMovies)) {
-        selectedMovies.push(m);
+      if (!isDuplicateVersion(m, uniqueMovies)) {
+        uniqueMovies.push(m);
       }
-      if (selectedMovies.length >= 25) break;
+    }
+
+    const freshMovies = uniqueMovies.filter((m) => m.id && !recentSet.has(m.id));
+    const recentMovies = uniqueMovies.filter((m) => m.id && recentSet.has(m.id));
+
+    let poolMovies: Channel[] = [];
+    const sortedFreshMovies = sortWithVariety(freshMovies);
+
+    if (sortedFreshMovies.length >= halfTarget) {
+      poolMovies = sortedFreshMovies.slice(0, halfTarget);
+    } else {
+      poolMovies = [...sortedFreshMovies];
+      // Backfill with least recently shown movies
+      const sortedRecentMovies = [...recentMovies].sort((a, b) => {
+        const idxA = a.id ? recentHeroIds.indexOf(a.id) : -1;
+        const idxB = b.id ? recentHeroIds.indexOf(b.id) : -1;
+        return idxB - idxA;
+      });
+      const needed = halfTarget - poolMovies.length;
+      poolMovies.push(...sortedRecentMovies.slice(0, needed));
     }
 
     // 5. Collect and deduplicate series candidates
     const rawSeries = [...recSeries, ...series].filter(
       (s) => s.image && s.image.startsWith("http"),
     );
-    rawSeries.sort((a, b) => getHeroScore(b) - getHeroScore(a));
 
-    const selectedSeries: Channel[] = [];
+    const uniqueSeries: Channel[] = [];
     for (const s of rawSeries) {
-      if (!isDuplicateVersion(s, selectedSeries)) {
-        selectedSeries.push(s);
+      if (!isDuplicateVersion(s, uniqueSeries)) {
+        uniqueSeries.push(s);
       }
-      if (selectedSeries.length >= 25) break;
+    }
+
+    const freshSeries = uniqueSeries.filter((s) => s.id && !recentSet.has(s.id));
+    const recentSeries = uniqueSeries.filter((s) => s.id && recentSet.has(s.id));
+
+    let poolSeries: Channel[] = [];
+    const sortedFreshSeries = sortWithVariety(freshSeries);
+
+    if (sortedFreshSeries.length >= halfTarget) {
+      poolSeries = sortedFreshSeries.slice(0, halfTarget);
+    } else {
+      poolSeries = [...sortedFreshSeries];
+      // Backfill with least recently shown series
+      const sortedRecentSeries = [...recentSeries].sort((a, b) => {
+        const idxA = a.id ? recentHeroIds.indexOf(a.id) : -1;
+        const idxB = b.id ? recentHeroIds.indexOf(b.id) : -1;
+        return idxB - idxA;
+      });
+      const needed = halfTarget - poolSeries.length;
+      poolSeries.push(...sortedRecentSeries.slice(0, needed));
     }
 
     // 6. Balance Movies and Series
-    let poolMovies: Channel[] = [];
-    let poolSeries: Channel[] = [];
-
-    if (selectedMovies.length > 0 && selectedSeries.length > 0) {
-      const countM = Math.min(selectedMovies.length, halfTarget);
-      const countS = Math.min(selectedSeries.length, halfTarget);
-      poolMovies = selectedMovies.slice(0, countM);
-      poolSeries = selectedSeries.slice(0, countS);
-
+    if (poolMovies.length + poolSeries.length < targetPoolSize) {
       const remaining = targetPoolSize - (poolMovies.length + poolSeries.length);
-      if (remaining > 0) {
-        if (selectedMovies.length > poolMovies.length) {
-          poolMovies.push(
-            ...selectedMovies.slice(poolMovies.length, poolMovies.length + remaining)
-          );
-        } else if (selectedSeries.length > poolSeries.length) {
-          poolSeries.push(
-            ...selectedSeries.slice(poolSeries.length, poolSeries.length + remaining)
-          );
-        }
+      if (poolMovies.length > poolSeries.length) {
+        const extraMovies = sortWithVariety(uniqueMovies.filter((m) => !poolMovies.some((pm) => pm.id === m.id)));
+        poolMovies.push(...extraMovies.slice(0, remaining));
+      } else if (poolSeries.length > poolMovies.length) {
+        const extraSeries = sortWithVariety(uniqueSeries.filter((s) => !poolSeries.some((ps) => ps.id === s.id)));
+        poolSeries.push(...extraSeries.slice(0, remaining));
       }
-    } else if (selectedMovies.length > 0) {
-      poolMovies = selectedMovies.slice(0, targetPoolSize);
-    } else if (selectedSeries.length > 0) {
-      poolSeries = selectedSeries.slice(0, targetPoolSize);
     }
 
     // 7. Interleave to avoid long streaks of one type
@@ -2907,10 +3045,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (i < poolSeries.length) combinedPool.push(poolSeries[i]);
     }
 
-    // 8. Controlled shuffle: shuffle the initial pool so sessions don't always start with the same title
+    // 8. Controlled shuffle
     const shuffled = this.shufflePool(combinedPool);
 
-    // 9. Map to HeroItem, enqueuing high priority for first 4 items and normal for remaining
+    // 9. Avoid opening with the immediately previous hero title if alternative exists
+    if (shuffled.length > 1 && recentHeroIds.length > 0 && shuffled[0].id === recentHeroIds[0]) {
+      const swapIdx = Math.floor(Math.random() * (shuffled.length - 1)) + 1;
+      [shuffled[0], shuffled[swapIdx]] = [shuffled[swapIdx], shuffled[0]];
+    }
+
+    // 10. Map to HeroItem, enqueuing high priority for first 4 items and normal for remaining
     return shuffled.map((ch, idx) => this.toHeroItem(ch, idx < 4 ? "high" : "normal"));
   }
 

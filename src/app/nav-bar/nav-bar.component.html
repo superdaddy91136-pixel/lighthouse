@@ -5,7 +5,8 @@
       type="button"
       class="nav-tab-btn"
       [class.active]="activeTab === navTabEnum.Home"
-      (click)="selectTab(navTabEnum.Home)"
+      (click)="onHomeClick($event)"
+      (dblclick)="onHomeDoubleClick($event)"
       aria-label="Home"
       id="nav-tab-home"
     >

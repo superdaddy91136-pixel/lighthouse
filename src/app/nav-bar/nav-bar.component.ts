@@ -14,6 +14,10 @@ export class NavBarComponent implements OnInit, OnDestroy {
   activeTab: NavTab = NavTab.Home;
   private sub?: Subscription;
 
+  private lastHomeClickTime: number = 0;
+  private tabOnFirstClick: NavTab | null = null;
+  private lastHomeRefreshTime: number = 0;
+
   constructor(
     public memory: MemoryService,
     private router: Router,
@@ -22,6 +26,10 @@ export class NavBarComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.sub = this.memory.activeNavTab.subscribe((tab) => {
       this.activeTab = tab;
+      if (tab !== NavTab.Home) {
+        this.tabOnFirstClick = null;
+        this.lastHomeClickTime = 0;
+      }
     });
   }
 
@@ -29,7 +37,75 @@ export class NavBarComponent implements OnInit, OnDestroy {
     this.sub?.unsubscribe();
   }
 
+  onHomeClick(event?: MouseEvent): void {
+    const isAlreadyOnHome =
+      this.activeTab === NavTab.Home &&
+      (this.router.url === "/" || this.router.url === "");
+    const now = Date.now();
+    const timeSinceLastClick = now - this.lastHomeClickTime;
+
+    // Check if this click completes a double-click on Home
+    if (
+      isAlreadyOnHome &&
+      this.tabOnFirstClick === NavTab.Home &&
+      timeSinceLastClick > 0 &&
+      timeSinceLastClick <= 500
+    ) {
+      this.lastHomeClickTime = 0;
+      this.tabOnFirstClick = null;
+      this.triggerHomeRefresh();
+      return;
+    }
+
+    // First click or click outside double-click window
+    if (isAlreadyOnHome) {
+      this.tabOnFirstClick = NavTab.Home;
+      this.lastHomeClickTime = now;
+    } else {
+      this.tabOnFirstClick = null;
+      this.lastHomeClickTime = 0;
+    }
+
+    this.selectTab(NavTab.Home);
+  }
+
+  onHomeDoubleClick(event?: MouseEvent): void {
+    if (event) {
+      event.preventDefault();
+    }
+
+    // Only refresh if double-click started while already on Home
+    if (this.tabOnFirstClick !== NavTab.Home) {
+      return;
+    }
+
+    const isAlreadyOnHome =
+      this.activeTab === NavTab.Home &&
+      (this.router.url === "/" || this.router.url === "");
+
+    if (isAlreadyOnHome) {
+      this.tabOnFirstClick = null;
+      this.lastHomeClickTime = 0;
+      this.triggerHomeRefresh();
+    }
+  }
+
+  private triggerHomeRefresh(): void {
+    const now = Date.now();
+    // Throttle to prevent overlapping / duplicate refreshes within 1 second
+    if (now - this.lastHomeRefreshTime < 1000) {
+      return;
+    }
+    this.lastHomeRefreshTime = now;
+    this.memory.Refresh.next(true);
+  }
+
   selectTab(tab: NavTab): void {
+    if (tab !== NavTab.Home) {
+      this.tabOnFirstClick = null;
+      this.lastHomeClickTime = 0;
+    }
+
     if (tab === NavTab.Profile) {
       this.memory.activeNavTab.next(NavTab.Profile);
       this.router.navigateByUrl("profile");
