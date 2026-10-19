@@ -166,8 +166,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   loadedSeries: Channel[] = [];
   seriesNameMap: Map<string, string> = new Map();
   seriesLookupMap: Map<string, Channel> = new Map();
-  episodeStillMap: Map<number, string> = new Map();
-  private inFlightStillFetches: Set<number> = new Set();
+  episodeStillMap: Map<number | string, string> = new Map();
+  private inFlightStillFetches: Set<number | string> = new Set();
+  private failedStillFetches = new Set<number | string>();
   private nextEpisodeCardIds = new Set<number>();
   private seasonNumCache = new Map<number, number>();
 
@@ -450,6 +451,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.cwArtworkCache.clear();
     this.cachedWatchProgressStore = null;
     this.seasonNumCache.clear();
+    this.failedStillFetches.clear();
   }
 
   scrollRow(rowId: string, direction: "left" | "right") {
@@ -3208,85 +3210,200 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (cached !== undefined) return cached;
     }
 
-    let art: string | undefined;
     if (this.isTvShow(channel)) {
-      if (channel.series_id != null) {
-        const sMatch =
-          this.seriesLookupMap.get(`${channel.source_id}_${channel.series_id}`) ||
-          this.seriesLookupMap.get(String(channel.series_id));
-        if (sMatch) {
-          const sArt = this.getCardArtwork(sMatch) || sMatch.image;
-          if (sArt) art = sArt;
-        } else if (this.loadedSeries && this.loadedSeries.length > 0) {
-          const sMatchLinear = this.loadedSeries.find(
-            (s) =>
-              (channel.source_id == null || s.source_id === channel.source_id) &&
-              (s.url === String(channel.series_id) || s.id === channel.series_id)
+      // 1. Check if episode still is already resolved in episodeStillMap
+      if (key != null && this.episodeStillMap.has(key)) {
+        const still = this.episodeStillMap.get(key);
+        if (still) {
+          this.cwArtworkCache.set(key, still);
+          return still;
+        }
+      }
+
+      // 2. Check synchronous hot memory cache
+      const coords = this.getEpisodeCoordinates(channel);
+      if (coords.seasonNum >= 0 && coords.episodeNum > 0) {
+        const syncTmdbId = this.getTmdbIdSync(channel);
+        if (syncTmdbId) {
+          const syncStill = this.tmdbEnrichment.getEpisodeStillSync(
+            syncTmdbId,
+            coords.seasonNum,
+            coords.episodeNum
           );
-          if (sMatchLinear) {
-            const sArt = this.getCardArtwork(sMatchLinear) || sMatchLinear.image;
-            if (sArt) art = sArt;
+          if (syncStill) {
+            if (key != null) {
+              this.episodeStillMap.set(key, syncStill);
+              this.cwArtworkCache.set(key, syncStill);
+            }
+            return syncStill;
           }
         }
       }
-      if (!art) {
-        const cachedTmdb = this.tmdbEnrichment.getEnrichmentSync(channel);
-        if (cachedTmdb?.backdropPath) {
-          const bd = getTmdbBackdropUrl(cachedTmdb.backdropPath, 'w780');
-          if (bd) art = bd;
-        } else if (cachedTmdb?.posterPath) {
-          const poster = getTmdbPosterUrl(cachedTmdb.posterPath, 'w500');
-          if (poster) art = poster;
-        }
+
+      // 3. Fallback series artwork while waiting or if still unavailable
+      const fallbackArt = this.getContinueWatchingTvFallbackArtwork(channel);
+
+      // If already failed or no still available on TMDB, cache fallback and return
+      if (key != null && (this.failedStillFetches.has(key) || this.episodeStillMap.get(key) === '')) {
+        this.cwArtworkCache.set(key, fallbackArt);
+        return fallbackArt;
       }
-      if (!art && channel.id && this.episodeStillMap.has(channel.id)) {
-        art = this.episodeStillMap.get(channel.id);
-      }
-      if (!art && channel.id && !this.inFlightStillFetches.has(channel.id)) {
+
+      // 4. Trigger background resolution if not already in-flight
+      if (key != null && !this.inFlightStillFetches.has(key)) {
         this.resolveEpisodeStill(channel);
       }
+
+      // Return fallback while in-flight without setting cwArtworkCache
+      return fallbackArt;
     } else {
       // For movies in landscape, prefer high-res TMDB backdrop if available
+      let art: string | undefined;
       const cachedTmdb = this.tmdbEnrichment.getEnrichmentSync(channel);
       if (cachedTmdb?.backdropPath) {
-        const bd = getTmdbBackdropUrl(cachedTmdb.backdropPath, 'w780');
-        if (bd) art = bd;
+        art = getTmdbBackdropUrl(cachedTmdb.backdropPath, 'w780');
+      }
+      if (!art) {
+        art = this.getCardArtwork(channel) || channel.image;
+      }
+      if (key != null) {
+        this.cwArtworkCache.set(key, art);
+      }
+      return art;
+    }
+  }
+
+  private getContinueWatchingTvFallbackArtwork(channel: Channel): string | undefined {
+    let art: string | undefined;
+    if (channel.series_id != null) {
+      const sMatch =
+        this.seriesLookupMap.get(`${channel.source_id}_${channel.series_id}`) ||
+        this.seriesLookupMap.get(String(channel.series_id));
+      if (sMatch) {
+        const sArt = this.getCardArtwork(sMatch) || sMatch.image;
+        if (sArt) art = sArt;
+      } else if (this.loadedSeries && this.loadedSeries.length > 0) {
+        const sMatchLinear = this.loadedSeries.find(
+          (s) =>
+            (channel.source_id == null || s.source_id === channel.source_id) &&
+            (s.url === String(channel.series_id) || s.id === channel.series_id)
+        );
+        if (sMatchLinear) {
+          const sArt = this.getCardArtwork(sMatchLinear) || sMatchLinear.image;
+          if (sArt) art = sArt;
+        }
       }
     }
-    // Fall back to standard card artwork or provider thumbnail
+    if (!art) {
+      const cachedTmdb = this.tmdbEnrichment.getEnrichmentSync(channel);
+      if (cachedTmdb?.backdropPath) {
+        art = getTmdbBackdropUrl(cachedTmdb.backdropPath, 'w780');
+      } else if (cachedTmdb?.posterPath) {
+        art = getTmdbPosterUrl(cachedTmdb.posterPath, 'w500');
+      }
+    }
     if (!art) {
       art = this.getCardArtwork(channel) || channel.image;
-    }
-
-    if (key != null) {
-      this.cwArtworkCache.set(key, art);
     }
     return art;
   }
 
+  private getTmdbIdSync(channel: Channel): number | undefined {
+    const channelCached = this.tmdbEnrichment.getEnrichmentSync(channel);
+    if (channelCached?.tmdbId) return channelCached.tmdbId;
+
+    if (channel.series_id != null) {
+      const sMatch =
+        this.seriesLookupMap.get(`${channel.source_id}_${channel.series_id}`) ||
+        this.seriesLookupMap.get(String(channel.series_id));
+      if (sMatch) {
+        const sCached = this.tmdbEnrichment.getEnrichmentSync(sMatch);
+        if (sCached?.tmdbId) return sCached.tmdbId;
+      }
+    }
+    return undefined;
+  }
+
+  getEpisodeCoordinates(channel: Channel): { seasonNum: number; episodeNum: number } {
+    let seasonNum: number | undefined;
+    const chAny = channel as any;
+    if (chAny?.seasonNum != null && Number(chAny.seasonNum) >= 0) {
+      seasonNum = Number(chAny.seasonNum);
+    } else if (chAny?.season_number != null && Number(chAny.season_number) >= 0) {
+      seasonNum = Number(chAny.season_number);
+    } else if (chAny?.season != null && !isNaN(Number(chAny.season)) && Number(chAny.season) >= 0) {
+      seasonNum = Number(chAny.season);
+    } else if (channel.season_id != null && this.seasonNumCache.has(channel.season_id)) {
+      seasonNum = this.seasonNumCache.get(channel.season_id)!;
+    } else if (channel.season_id != null && channel.season_id > 0 && channel.season_id <= 50) {
+      seasonNum = channel.season_id;
+    }
+
+    const rawName = channel.name || "";
+    if (seasonNum === undefined) {
+      const extracted = this.extractSeasonNumber(rawName, -1);
+      if (extracted >= 0) {
+        seasonNum = extracted;
+      }
+    }
+
+    let episodeNum = 0;
+    if (channel.episode_num != null && channel.episode_num > 0) {
+      episodeNum = channel.episode_num;
+    } else if (chAny?.episodeNum != null && chAny.episodeNum > 0) {
+      episodeNum = Number(chAny.episodeNum);
+    } else if (chAny?.episode_number != null && chAny.episode_number > 0) {
+      episodeNum = Number(chAny.episode_number);
+    } else {
+      episodeNum = this.extractEpisodeNumber(rawName, 0);
+    }
+
+    if ((seasonNum === undefined || seasonNum === 0) && episodeNum > 0) {
+      if (seasonNum === undefined) {
+        seasonNum = 1;
+      }
+    }
+
+    return { seasonNum: seasonNum !== undefined ? seasonNum : 1, episodeNum };
+  }
+
   async resolveEpisodeStill(channel: Channel): Promise<void> {
-    if (!channel || !channel.id || !this.isTvShow(channel)) return;
-    if (this.episodeStillMap.has(channel.id) || this.inFlightStillFetches.has(channel.id)) return;
-    if (!this.tmdbConfig.isEnabled()) return;
+    if (!channel || !this.isTvShow(channel)) return;
+    const key = channel.id != null ? channel.id : (channel.url || channel.name);
+    if (key == null) return;
 
-    this.inFlightStillFetches.add(channel.id);
+    if (
+      this.episodeStillMap.has(key) ||
+      this.inFlightStillFetches.has(key) ||
+      this.failedStillFetches.has(key)
+    ) {
+      return;
+    }
+
+    if (!this.tmdbConfig.isEnabled()) {
+      const fallbackArt = this.getContinueWatchingTvFallbackArtwork(channel);
+      this.cwArtworkCache.set(key, fallbackArt);
+      return;
+    }
+
+    this.inFlightStillFetches.add(key);
     try {
-      const seasonNum =
-        channel.season_id != null && channel.season_id <= 30
-          ? channel.season_id
-          : this.extractSeasonNumber(channel.name);
-      const epNum =
-        channel.episode_num != null && channel.episode_num > 0
-          ? channel.episode_num
-          : this.extractEpisodeNumber(channel.name);
+      const coords = this.getEpisodeCoordinates(channel);
+      const seasonNum = coords.seasonNum;
+      const epNum = coords.episodeNum;
 
-      // 1. Get TMDB ID: first check channel cached enrichment, or parent series
-      let tmdbId: number | undefined;
-      const channelCached = this.tmdbEnrichment.getEnrichmentSync(channel);
-      if (channelCached?.tmdbId) {
-        tmdbId = channelCached.tmdbId;
-      } else {
-        // Look up parent series
+      if (epNum <= 0) {
+        this.failedStillFetches.add(key);
+        this.episodeStillMap.set(key, '');
+        const fallbackArt = this.getContinueWatchingTvFallbackArtwork(channel);
+        this.cwArtworkCache.set(key, fallbackArt);
+        return;
+      }
+
+      // 1. Resolve TMDB ID: first synchronous check, then parent series, then channel
+      let tmdbId = this.getTmdbIdSync(channel);
+
+      if (!tmdbId) {
         const seriesChannel = await this.resolveSeriesChannel(channel);
         if (seriesChannel) {
           const seriesCached = this.tmdbEnrichment.getEnrichmentSync(seriesChannel);
@@ -3305,49 +3422,76 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         }
       }
 
-      if (tmdbId) {
-        const seasonDetail = await this.tmdbEnrichment.getSeasonDetails(
-          tmdbId,
-          seasonNum
+      if (!tmdbId) {
+        const enrichedChannel = await this.tmdbEnrichment.getEnrichment(
+          channel,
+          true,
+          'high'
         );
-        if (seasonDetail?.episodes && seasonDetail.episodes.length > 0) {
-          const matchedEp = seasonDetail.episodes.find(
-            (e) => e.episodeNumber === epNum
-          );
-          if (matchedEp?.stillPath) {
-            // Use highest-quality available TMDB episode still ('original')
-            const stillUrl = getTmdbStillUrl(matchedEp.stillPath, 'original');
-            if (stillUrl) {
-              this.episodeStillMap.set(channel.id, stillUrl);
-              this.cwArtworkCache.delete(channel.id);
-            }
-          }
+        if (enrichedChannel?.tmdbId) {
+          tmdbId = enrichedChannel.tmdbId;
         }
       }
+
+      if (tmdbId && seasonNum >= 0 && epNum > 0) {
+        const stillUrl = await this.tmdbEnrichment.getEpisodeStill(
+          tmdbId,
+          seasonNum,
+          epNum
+        );
+        if (stillUrl) {
+          this.episodeStillMap.set(key, stillUrl);
+          if (channel.id != null) {
+            this.episodeStillMap.set(channel.id, stillUrl);
+          }
+          this.cwArtworkCache.set(key, stillUrl);
+          if (channel.id != null) {
+            this.cwArtworkCache.set(channel.id, stillUrl);
+          }
+          this.cdr.markForCheck();
+          return;
+        }
+      }
+
+      // No still found on TMDB: cache fallback to prevent repeated API calls
+      this.failedStillFetches.add(key);
+      this.episodeStillMap.set(key, '');
+      const fallbackArt = this.getContinueWatchingTvFallbackArtwork(channel);
+      this.cwArtworkCache.set(key, fallbackArt);
+      this.cdr.markForCheck();
     } catch (e) {
       console.warn("Failed to resolve episode still for CW card:", e);
+      this.failedStillFetches.add(key);
+      this.episodeStillMap.set(key, '');
+      const fallbackArt = this.getContinueWatchingTvFallbackArtwork(channel);
+      this.cwArtworkCache.set(key, fallbackArt);
     } finally {
-      this.inFlightStillFetches.delete(channel.id);
+      this.inFlightStillFetches.delete(key);
     }
   }
 
   extractSeasonNumber(rawName?: string, fallback: number = 1): number {
     if (!rawName) return fallback;
     const match =
-      rawName.match(/\b(?:s|season)[\s._-]*(\d+)\b/i) ||
+      rawName.match(/\b(?:s|season\s*)(\d{1,2})[\s._-]*(?:e|ep|episode|\b)/i) ||
       rawName.match(/\b(\d{1,2})x\d{1,2}\b/i);
     if (match) {
       const parsed = parseInt(match[1], 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
     }
     return fallback;
   }
 
   extractEpisodeNumber(rawName?: string, fallback: number = 1): number {
     if (!rawName) return fallback;
+    const combined = rawName.match(/\b(?:s|season\s*)\d{1,2}[\s._-]*(?:e|ep|episode)[\s._-]*(\d{1,3})\b/i);
+    if (combined) {
+      const parsed = parseInt(combined[1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
     const match =
-      rawName.match(/\b(?:e|ep|episode)[\s._-]*(\d+)\b/i) ||
-      rawName.match(/\b\d{1,2}x(\d{1,2})\b/i);
+      rawName.match(/(?:^|[^a-zA-Z0-9])(?:e|ep|episode)[\s._-]*(\d{1,3})\b/i) ||
+      rawName.match(/\b\d{1,2}x(\d{1,3})\b/i);
     if (match) {
       const parsed = parseInt(match[1], 10);
       if (!isNaN(parsed) && parsed > 0) return parsed;
@@ -3590,7 +3734,15 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     const seriesIdStr =
       channel.series_id != null ? String(channel.series_id) : undefined;
 
-    // 1. Check cached loaded series
+    // 1. Check fast seriesLookupMap
+    if (channel.series_id != null) {
+      const mapMatch =
+        this.seriesLookupMap.get(`${channel.source_id}_${channel.series_id}`) ||
+        this.seriesLookupMap.get(String(channel.series_id));
+      if (mapMatch) return mapMatch;
+    }
+
+    // 2. Check cached loaded series
     if (this.loadedSeries && this.loadedSeries.length > 0) {
       const match = this.loadedSeries.find(
         (s) =>

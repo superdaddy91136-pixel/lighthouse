@@ -22,6 +22,7 @@ export class TmdbCacheService {
   /** In-memory hot cache for instant zero-latency UI rendering */
   private memoryCache: Map<number, TmdbMediaEnrichment> = new Map();
   private tmdbIdMemoryCache: Map<number, TmdbMediaEnrichment> = new Map();
+  private seasonMemoryCache: Map<string, TmdbSeasonDetail> = new Map();
   private failedMemoryCache: Map<string, number> = new Map(); // searchKey -> retryAfter
 
   constructor() {
@@ -268,17 +269,35 @@ export class TmdbCacheService {
   }
 
   /**
-   * Retrieves TV season details from persistent cache.
+   * Synchronous check for TV season details in hot memory cache.
+   */
+  getSeasonDetailSync(tmdbId: number, seasonNumber: number): TmdbSeasonDetail | undefined {
+    const seasonKey = `${tmdbId}_s${seasonNumber}`;
+    return this.seasonMemoryCache.get(seasonKey);
+  }
+
+  /**
+   * Retrieves TV season details from persistent cache (memory first, then IndexedDB).
    */
   async getSeasonDetail(tmdbId: number, seasonNumber: number): Promise<TmdbSeasonDetail | undefined> {
     const seasonKey = `${tmdbId}_s${seasonNumber}`;
+    if (this.seasonMemoryCache.has(seasonKey)) {
+      return this.seasonMemoryCache.get(seasonKey);
+    }
+
     try {
       const db = await this.initDb();
       return new Promise<TmdbSeasonDetail | undefined>((resolve) => {
         const tx = db.transaction(STORE_SEASONS, 'readonly');
         const store = tx.objectStore(STORE_SEASONS);
         const req = store.get(seasonKey);
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {
+          const res = req.result as TmdbSeasonDetail | undefined;
+          if (res) {
+            this.seasonMemoryCache.set(seasonKey, res);
+          }
+          resolve(res);
+        };
         req.onerror = () => resolve(undefined);
       });
     } catch {
@@ -287,10 +306,11 @@ export class TmdbCacheService {
   }
 
   /**
-   * Saves TV season details to persistent cache.
+   * Saves TV season details to persistent cache and hot memory cache.
    */
   async saveSeasonDetail(detail: TmdbSeasonDetail): Promise<void> {
     const seasonKey = `${detail.tmdbId}_s${detail.seasonNumber}`;
+    this.seasonMemoryCache.set(seasonKey, detail);
     const payload = { ...detail, seasonKey };
 
     try {
@@ -312,6 +332,8 @@ export class TmdbCacheService {
    */
   async clearCache(): Promise<void> {
     this.memoryCache.clear();
+    this.tmdbIdMemoryCache.clear();
+    this.seasonMemoryCache.clear();
     this.failedMemoryCache.clear();
 
     try {

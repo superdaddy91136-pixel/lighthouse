@@ -10,6 +10,7 @@ import {
   scoreMatch,
   TMDB_MINIMUM_CONFIDENCE_THRESHOLD,
 } from '../utils/tmdb-matcher';
+import { getTmdbStillUrl } from '../utils/tmdb-image';
 import { TmdbCacheService } from './tmdb-cache.service';
 import { TmdbConfigService } from './tmdb-config.service';
 import { TmdbService } from './tmdb.service';
@@ -292,6 +293,34 @@ export class TmdbEnrichmentService {
     const parsed = this.tmdbService.parseSeasonDetails(raw, tmdbId);
     await this.cacheService.saveSeasonDetail(parsed);
     return parsed;
+  }
+
+  /**
+   * Fast synchronous lookup of an episode still from hot memory cache.
+   */
+  getEpisodeStillSync(
+    tmdbId: number,
+    seasonNumber: number,
+    episodeNumber: number,
+  ): string | undefined {
+    const season = this.cacheService.getSeasonDetailSync(tmdbId, seasonNumber);
+    if (!season?.episodes) return undefined;
+    const ep = season.episodes.find((e) => e.episodeNumber === episodeNumber);
+    return ep?.stillPath ? getTmdbStillUrl(ep.stillPath, 'w300') : undefined;
+  }
+
+  /**
+   * Fetches an episode still with cache-first strategy (memory -> IndexedDB -> TMDB API).
+   */
+  async getEpisodeStill(
+    tmdbId: number,
+    seasonNumber: number,
+    episodeNumber: number,
+  ): Promise<string | undefined> {
+    const season = await this.getSeasonDetails(tmdbId, seasonNumber);
+    if (!season?.episodes) return undefined;
+    const ep = season.episodes.find((e) => e.episodeNumber === episodeNumber);
+    return ep?.stillPath ? getTmdbStillUrl(ep.stillPath, 'w300') : undefined;
   }
 
   private trendingMoviesCache?: { data: any[]; timestamp: number };
