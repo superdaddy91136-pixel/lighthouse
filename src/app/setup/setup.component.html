@@ -1,7 +1,8 @@
-<svg *ngIf="memory.AddingAdditionalSource" (click)="goBack()" class="arrow" fill="currentColor" viewBox="0 0 24 24">
-    <path
-        d="M2,12A10,10 0 0,1 12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12M18,11H10L13.5,7.5L12.08,6.08L6.16,12L12.08,17.92L13.5,16.5L10,13H18V11Z" />
-</svg>
+<button *ngIf="memory.AddingAdditionalSource" type="button" class="lh-back-btn setup-back-btn" (click)="goBack()" title="Go back" aria-label="Go back">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6" />
+    </svg>
+</button>
 <div class="container mt-5">
     <ng-container *ngIf="!loading">
         <h2 class="text-center" *ngIf="!memory.AddingAdditionalSource">Let's add your first source</h2>

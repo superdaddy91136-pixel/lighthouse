@@ -1189,36 +1189,70 @@ body::-webkit-scrollbar-thumb:active {
   background: #0f1117;
 }
 
-/* ── Floating Back Button ── */
+/* ── Standardized Circular Back Button ── */
+.lh-back-btn,
+.detail-back-btn,
+.btn-back-glass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.lh-back-btn:hover,
+.detail-back-btn:hover,
+.btn-back-glass:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.lh-back-btn:active,
+.detail-back-btn:active,
+.btn-back-glass:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lh-back-btn svg,
+.detail-back-btn svg,
+.btn-back-glass svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Floating placement for Movie & TV Detail back button */
 .detail-back-btn {
   position: fixed;
   top: 1.2rem;
   left: 6.2rem;
   z-index: 60;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(15, 17, 23, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 9999px;
-  padding: 7px 16px;
-  color: #ffffff;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  background: rgba(15, 17, 23, 0.72);
 }
-.detail-back-btn svg {
-  width: 1.1rem;
-  height: 1.1rem;
-}
+
 .detail-back-btn:hover {
   background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: translateX(-2px);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 /* ── Cinematic Hero Banner ── */
@@ -2792,34 +2826,7 @@ body::-webkit-scrollbar-thumb:active {
 }
 
 .btn-back-glass {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 9999px;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.88rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   margin-top: 4px;
-}
-
-.btn-back-glass:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  transform: translateX(-2px);
-}
-
-.nav-icon {
-  width: 1.1rem;
-  height: 1.1rem;
 }
 
 .settings-header-text {

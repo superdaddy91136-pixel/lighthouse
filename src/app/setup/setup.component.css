@@ -1,15 +1,8 @@
-.arrow {
+.setup-back-btn {
     position: absolute;
-    top: 2%;
-    left: 2%;
-    width: 2.5em;
-    height: 2.5rem;
-    cursor: pointer;
-    transition: transform 0.3s ease;
-}
-
-.arrow:hover {
-    transform: scale(125%);
+    top: 1.25rem;
+    left: 1.25rem;
+    z-index: 10;
 }
 
 button .anim-svg {

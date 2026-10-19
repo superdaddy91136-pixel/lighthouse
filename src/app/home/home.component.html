@@ -12,8 +12,6 @@
   <div [class.container-lg]="!isHomeDiscoveryMode && !isLiveTvTab" 
        [class.container-fluid]="isLiveTvTab" 
        [class.live-tv-fluid-wrap]="isLiveTvTab" 
-       [class.px-md-4]="isLiveTvTab" 
-       [class.px-3]="isLiveTvTab" 
        [class.reserve-settings-space]="!isHomeDiscoveryMode && !isLiveTvTab" 
        [class.home-discovery-layout]="isHomeDiscoveryMode">
     <!-- EXPANDABLE FROSTED GLASS SEARCH CONTROL -->
@@ -572,19 +570,8 @@
           </div>
         </div>
 
-        <!-- Top Nav Items: All Channels & Favorites (Fixed Above Categories) -->
+        <!-- Top Nav Items: Favorites (Fixed Above Categories) -->
         <div class="live-sidebar-nav-group">
-          <button 
-            type="button" 
-            class="live-sidebar-nav-item" 
-            [class.active]="liveSidebarSelection?.type === 'all'"
-            (click)="selectLiveSidebarAll()">
-            <svg viewBox="0 0 24 24" fill="currentColor" class="sidebar-item-icon">
-              <path d="M3,5H21V7H3V5M3,11H21V13H3V11M3,17H21V19H3V17Z"/>
-            </svg>
-            <span class="sidebar-item-label">All Channels</span>
-          </button>
-
           <button 
             type="button" 
             class="live-sidebar-nav-item" 

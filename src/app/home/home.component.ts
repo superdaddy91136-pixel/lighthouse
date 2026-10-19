@@ -163,7 +163,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   isFolderFilterMenuOpen = false;
   liveSearchSubject = new Subject<string>();
   liveSidebarSelection: {
-    type: 'all' | 'favorites' | 'category';
+    type: 'favorites' | 'category';
     id?: number;
     name?: string;
     sourceId?: number;
@@ -367,7 +367,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (this.liveSidebarSelection.type === 'category') {
       return cleanMediaTitle(this.liveSidebarSelection.name || 'Category');
     }
-    return 'All Channels';
+    return '';
   }
 
   get liveEmptyStateMessage(): string {
@@ -522,23 +522,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.updatePinnedItems();
     this.updateDisplayedLiveCategories();
     this.cdr.markForCheck();
-  }
-
-  selectLiveSidebarAll(): void {
-    this.liveSidebarSelection = { type: 'all' };
-    this.selectedCategoryId = undefined;
-    if (this.filters) {
-      this.filters.group_id = undefined;
-      this.filters.view_type = ViewMode.All;
-      this.filters.page = 1;
-    }
-    this.nodeStack.clear();
-    this.saveTabFilterState();
-    this.updatePinnedItems();
-    this.load();
-    if (this.liveTvContent?.nativeElement) {
-      this.liveTvContent.nativeElement.scrollTop = 0;
-    }
   }
 
   selectLiveSidebarFavorites(): void {
@@ -1208,6 +1191,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (savedFolderSort && ['default', 'name-asc', 'name-desc', 'count-desc', 'count-asc'].includes(savedFolderSort)) {
       this.liveFolderSort = savedFolderSort;
     }
+    if (this.memory.activeNavTab.value === NavTab.LiveTV) {
+      this.liveSidebarSelection = { type: 'favorites' };
+    }
     this.getSources();
     this.updatePinnedItems();
   }
@@ -1262,7 +1248,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             this.chkLiveStream = true;
             this.chkMovie = false;
             this.chkSerie = false;
-            initialViewType = ViewMode.All;
+            initialViewType = ViewMode.Favorites;
+            this.liveSidebarSelection = { type: 'favorites' };
             this.memory.activeNavTab.next(NavTab.LiveTV);
           } else if (currentTab === NavTab.Movies) {
             initialMediaTypes = [MediaType.movie];
@@ -1895,7 +1882,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       const savedState = this.tabFilterStates.get(tab);
       if (savedState) {
         this.selectedSourceId = savedState.sourceId;
-        this.selectedCategoryId = savedState.categoryId;
+        this.selectedCategoryId = tab === NavTab.LiveTV ? undefined : savedState.categoryId;
         this.selectedSort = savedState.sort;
       } else {
         this.selectedSourceId = 'all';
@@ -1928,23 +1915,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         this.chkMovie = false;
         this.chkSerie = false;
         this.filters.media_types = [MediaType.livestream];
-        if (this.liveSidebarSelection?.type === 'category' && this.liveSidebarSelection.id != null) {
-          this.filters.view_type = ViewMode.All;
-          this.filters.group_id = this.liveSidebarSelection.id;
-          this.selectedCategoryId = this.liveSidebarSelection.id;
-        } else if (this.liveSidebarSelection?.type === 'favorites') {
-          this.filters.view_type = ViewMode.Favorites;
-          this.filters.group_id = undefined;
-          this.selectedCategoryId = undefined;
-        } else if (this.liveSidebarSelection?.type === 'all') {
-          this.filters.view_type = ViewMode.All;
-          this.filters.group_id = undefined;
-          this.selectedCategoryId = undefined;
-        } else {
-          this.liveSidebarSelection = null;
-          this.filters.view_type = ViewMode.All;
-          this.filters.group_id = undefined;
-          this.selectedCategoryId = undefined;
+        this.liveSidebarSelection = { type: 'favorites' };
+        this.filters.view_type = ViewMode.Favorites;
+        this.filters.group_id = undefined;
+        this.selectedCategoryId = undefined;
+        if (this.liveTvContent?.nativeElement) {
+          this.liveTvContent.nativeElement.scrollTop = 0;
         }
         break;
       case NavTab.Movies:
