@@ -19,6 +19,7 @@ export interface TabSearchState {
   searchSortOrder: 'asc' | 'desc';
   isSearchExpanded: boolean;
   scrollPosition?: number;
+  horizontalScrollPositions?: Record<string, number>;
 }
 
 @Injectable({

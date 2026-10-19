@@ -422,51 +422,51 @@
           </div>
         </div>
 
-        <!-- Channels Section -->
-        <div class="search-group-section mb-4" *ngIf="searchResults.channels.length > 0">
-          <div class="search-group-header mb-3">
-            <h4 class="search-group-title mb-0">Channels</h4>
-            <span class="search-group-badge">{{ searchResults.channels.length }}</span>
-          </div>
-          <div class="row g-2 g-md-3">
-            <app-channel-tile *ngFor="let channel of searchResults.channels; let i = index"
-              class="col-compact-card" [id]="i" [channel]="channel" [viewMode]="viewModeEnum.All" [isLiveTvCard]="true"></app-channel-tile>
-          </div>
-        </div>
-
-        <!-- Movies Section -->
+        <!-- 1. Movies Section -->
         <div class="search-group-section mb-4" *ngIf="searchResults.movies.length > 0">
           <div class="search-group-header mb-3">
             <h4 class="search-group-title mb-0">Movies</h4>
             <span class="search-group-badge">{{ searchResults.movies.length }}</span>
           </div>
-          <div class="row g-2 g-md-3">
+          <div #searchRowMovies class="search-row-track" appDragScroll (scroll)="onSearchRowScroll('movies', $event)">
             <app-channel-tile *ngFor="let movie of searchResults.movies; let i = index"
-              class="col-compact-card" [id]="i + 1000" [channel]="movie" [viewMode]="viewModeEnum.All"></app-channel-tile>
+              class="search-card-item" [id]="i + 1000" [channel]="movie" [viewMode]="viewModeEnum.All"></app-channel-tile>
           </div>
         </div>
 
-        <!-- TV Shows Section -->
+        <!-- 2. TV Shows Section -->
         <div class="search-group-section mb-4" *ngIf="searchResults.tvShows.length > 0">
           <div class="search-group-header mb-3">
             <h4 class="search-group-title mb-0">TV Shows</h4>
             <span class="search-group-badge">{{ searchResults.tvShows.length }}</span>
           </div>
-          <div class="row g-2 g-md-3">
+          <div #searchRowTvShows class="search-row-track" appDragScroll (scroll)="onSearchRowScroll('tvShows', $event)">
             <app-channel-tile *ngFor="let show of searchResults.tvShows; let i = index"
-              class="col-compact-card" [id]="i + 2000" [channel]="show" [viewMode]="viewModeEnum.All"></app-channel-tile>
+              class="search-card-item" [id]="i + 2000" [channel]="show" [viewMode]="viewModeEnum.All"></app-channel-tile>
           </div>
         </div>
 
-        <!-- Categories / Folders Section -->
+        <!-- 3. Live Channels Section -->
+        <div class="search-group-section mb-4" *ngIf="searchResults.channels.length > 0">
+          <div class="search-group-header mb-3">
+            <h4 class="search-group-title mb-0">Live Channels</h4>
+            <span class="search-group-badge">{{ searchResults.channels.length }}</span>
+          </div>
+          <div #searchRowChannels class="search-row-track" appDragScroll (scroll)="onSearchRowScroll('channels', $event)">
+            <app-channel-tile *ngFor="let channel of searchResults.channels; let i = index"
+              class="search-card-item" [id]="i" [channel]="channel" [viewMode]="viewModeEnum.All" [isLiveTvCard]="true"></app-channel-tile>
+          </div>
+        </div>
+
+        <!-- 4. Folders Section -->
         <div class="search-group-section mb-4" *ngIf="searchResults.categories.length > 0">
           <div class="search-group-header mb-3">
-            <h4 class="search-group-title mb-0">Categories / Folders</h4>
+            <h4 class="search-group-title mb-0">Folders</h4>
             <span class="search-group-badge">{{ searchResults.categories.length }}</span>
           </div>
-          <div class="row g-2 g-md-3">
+          <div #searchRowCategories class="search-row-track" appDragScroll (scroll)="onSearchRowScroll('categories', $event)">
             <app-channel-tile *ngFor="let group of searchResults.categories; let i = index"
-              class="col-compact-card" [id]="i + 3000" [channel]="group" [viewMode]="viewModeEnum.Categories" [isLiveTvCard]="isLiveTvSearch"></app-channel-tile>
+              class="search-card-item" [id]="i + 3000" [channel]="group" [viewMode]="viewModeEnum.Categories" [isLiveTvCard]="isLiveTvSearch"></app-channel-tile>
           </div>
         </div>
 

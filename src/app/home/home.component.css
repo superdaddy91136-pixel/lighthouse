@@ -39,3 +39,46 @@
 .search-group-title { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; letter-spacing: .3px; }
 .search-group-badge,
 .live-content-badge { font-size: .78rem; font-weight: 600; padding: .2em .7em; border-radius: 9999px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.85); border: 1px solid rgba(255,255,255,.14); }
+
+/* Universal Search Horizontal Scrolling Rows */
+.search-row-track {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 4px;
+  margin: -8px -4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto;
+  contain: layout;
+}
+
+.search-row-track::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.search-card-item {
+  flex: 0 0 185px !important;
+  width: 185px !important;
+  max-width: 185px !important;
+  min-width: 185px !important;
+  box-sizing: border-box;
+  content-visibility: auto;
+  contain-intrinsic-size: 185px 280px;
+}
+
+@media (max-width: 768px) {
+  .search-card-item {
+    flex: 0 0 155px !important;
+    width: 155px !important;
+    max-width: 155px !important;
+    min-width: 155px !important;
+  }
+}

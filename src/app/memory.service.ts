@@ -41,6 +41,7 @@ export class MemoryService {
   public allScrollPositions: Map<NavTab, number> = new Map();
   public folderScrollPositions: Map<string, number> = new Map();
   public searchScrollPositions: Map<NavTab, number> = new Map();
+  public searchHorizontalScrollPositions: Map<NavTab, Record<string, number>> = new Map();
   public homeDiscoveryScrollPosition: number = 0;
   public SetNode: Subject<SetNodeDTO> = new Subject();
   public SetFocus: Subject<number> = new Subject();

@@ -153,6 +153,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   private searchRequestId = 0;
   private pendingTabClick?: NavTab;
   private currentScrollPosition: number = 0;
+  @ViewChild('searchRowMovies') searchRowMovies?: ElementRef<HTMLElement>;
+  @ViewChild('searchRowTvShows') searchRowTvShows?: ElementRef<HTMLElement>;
+  @ViewChild('searchRowChannels') searchRowChannels?: ElementRef<HTMLElement>;
+  @ViewChild('searchRowCategories') searchRowCategories?: ElementRef<HTMLElement>;
+  searchHorizontalScrollPositions: Record<string, number> = {};
 
   @ViewChild('filterSortWrapper') filterSortWrapper?: ElementRef;
   @ViewChild('liveFolderFilterWrapper') liveFolderFilterWrapper?: ElementRef;
@@ -231,6 +236,56 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.saveCurrentTabSearchState();
   }
 
+  onSearchRowScroll(category: string, event: Event): void {
+    const el = event.target as HTMLElement;
+    if (el) {
+      this.searchHorizontalScrollPositions[category] = el.scrollLeft;
+    }
+  }
+
+  private captureHorizontalScrollPositions(): void {
+    if (this.searchRowMovies?.nativeElement) {
+      this.searchHorizontalScrollPositions['movies'] = this.searchRowMovies.nativeElement.scrollLeft;
+    }
+    if (this.searchRowTvShows?.nativeElement) {
+      this.searchHorizontalScrollPositions['tvShows'] = this.searchRowTvShows.nativeElement.scrollLeft;
+    }
+    if (this.searchRowChannels?.nativeElement) {
+      this.searchHorizontalScrollPositions['channels'] = this.searchRowChannels.nativeElement.scrollLeft;
+    }
+    if (this.searchRowCategories?.nativeElement) {
+      this.searchHorizontalScrollPositions['categories'] = this.searchRowCategories.nativeElement.scrollLeft;
+    }
+  }
+
+  private restoreHorizontalScrollPositions(positions: Record<string, number>): void {
+    if (!positions) return;
+    this.cdr.detectChanges();
+    const applyScrolls = () => {
+      if (this.searchRowMovies?.nativeElement && positions['movies'] != null) {
+        this.searchRowMovies.nativeElement.scrollLeft = positions['movies'];
+      }
+      if (this.searchRowTvShows?.nativeElement && positions['tvShows'] != null) {
+        this.searchRowTvShows.nativeElement.scrollLeft = positions['tvShows'];
+      }
+      if (this.searchRowChannels?.nativeElement && positions['channels'] != null) {
+        this.searchRowChannels.nativeElement.scrollLeft = positions['channels'];
+      }
+      if (this.searchRowCategories?.nativeElement && positions['categories'] != null) {
+        this.searchRowCategories.nativeElement.scrollLeft = positions['categories'];
+      }
+    };
+
+    requestAnimationFrame(() => {
+      applyScrolls();
+      requestAnimationFrame(() => {
+        applyScrolls();
+        setTimeout(applyScrolls, 60);
+        setTimeout(applyScrolls, 150);
+      });
+    });
+  }
+
   private saveCurrentTabSearchState(): void {
     const tab = this.memory.activeNavTab.value;
     if (this.isSearching) {
@@ -238,6 +293,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         (window.scrollY || document.documentElement.scrollTop || window.pageYOffset || 0) ||
         this.currentScrollPosition ||
         0;
+      this.captureHorizontalScrollPositions();
       this.searchStateService.setSearchState(tab, {
         query: this.filters?.query || "",
         searchKeyword: this.searchKeyword,
@@ -248,11 +304,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
         searchSortOrder: this.searchSortOrder,
         isSearchExpanded: this.isSearchExpanded,
         scrollPosition: scrollPos,
+        horizontalScrollPositions: { ...this.searchHorizontalScrollPositions },
       });
       this.memory.searchScrollPositions.set(tab, scrollPos);
+      this.memory.searchHorizontalScrollPositions.set(tab, { ...this.searchHorizontalScrollPositions });
     } else {
       this.searchStateService.clearSearchState(tab);
       this.memory.searchScrollPositions.delete(tab);
+      this.memory.searchHorizontalScrollPositions.delete(tab);
+      this.searchHorizontalScrollPositions = {};
     }
   }
 
@@ -265,9 +325,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
 
     if (this.isSearching) {
       this.memory.searchScrollPositions.set(tab, currentScroll);
+      this.captureHorizontalScrollPositions();
+      this.memory.searchHorizontalScrollPositions.set(tab, { ...this.searchHorizontalScrollPositions });
       const searchState = this.searchStateService.getSearchState(tab);
       if (searchState) {
         searchState.scrollPosition = currentScroll;
+        searchState.horizontalScrollPositions = { ...this.searchHorizontalScrollPositions };
       }
     } else if (this.filters?.group_id) {
       const key = `${tab}_${this.filters.group_id}`;
@@ -1330,6 +1393,13 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             if (targetSearchScroll && targetSearchScroll > 0) {
               this.restoreScrollPosition(targetSearchScroll);
             }
+            const targetHorizontalScrolls =
+              this.memory.searchHorizontalScrollPositions.get(currentTab) ??
+              savedSearch.horizontalScrollPositions;
+            if (targetHorizontalScrolls) {
+              this.searchHorizontalScrollPositions = { ...targetHorizontalScrolls };
+              this.restoreHorizontalScrollPositions(targetHorizontalScrolls);
+            }
             return;
           }
 
@@ -1506,6 +1576,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.searchKeyword = "";
     this.searchStateService.clearSearchState(this.memory.activeNavTab.value);
     this.memory.searchScrollPositions.delete(this.memory.activeNavTab.value);
+    this.memory.searchHorizontalScrollPositions.delete(this.memory.activeNavTab.value);
+    this.searchHorizontalScrollPositions = {};
   }
 
   async loadMore() {
@@ -1536,12 +1608,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (!query) {
       this.rawSearchResults = { channels: [], movies: [], tvShows: [], categories: [] };
       this.searchResults = { channels: [], movies: [], tvShows: [], categories: [] };
+      this.searchHorizontalScrollPositions = {};
+      this.memory.searchHorizontalScrollPositions.delete(this.memory.activeNavTab.value);
       this.searchStateService.clearSearchState(this.memory.activeNavTab.value);
       return;
     }
 
     const currentTab = this.memory.activeNavTab.value;
     const searchId = ++this.searchRequestId;
+    this.searchHorizontalScrollPositions = {};
 
     const sourceIds = this.filters?.source_ids?.length
       ? this.filters.source_ids
@@ -1869,6 +1944,8 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     this.memory.categoryScrollPositions.delete(tab);
     this.memory.allScrollPositions.delete(tab);
     this.memory.searchScrollPositions.delete(tab);
+    this.memory.searchHorizontalScrollPositions.delete(tab);
+    this.searchHorizontalScrollPositions = {};
     this.clearSearch();
     this.isSearchExpanded = false;
     if (this.search?.nativeElement) {
