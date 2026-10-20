@@ -697,15 +697,129 @@
       text-overflow: ellipsis;
     }
 
-    /* NEXT EPISODE BUTTON (TV ONLY) */
-    .btn-next-ep {
+    /* NEXT EPISODE BUTTON & HOVER PREVIEW (TV ONLY) */
+    .next-ep-wrap {
+      position: relative;
       display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    body.mode-episode .next-ep-wrap {
+      display: flex !important;
+    }
+
+    .btn-next-ep {
       width: 48px;
       height: 48px;
     }
 
-    body.mode-episode .btn-next-ep {
+    .next-ep-preview-card {
+      position: absolute;
+      bottom: calc(100% + 14px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 250px;
+      z-index: 125;
+      background: rgba(14, 15, 20, 0.94);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 12px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      user-select: none;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+
+    .next-ep-preview-card.visible {
       display: flex !important;
+      animation: nextEpPreviewFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes nextEpPreviewFadeIn {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(6px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+      }
+    }
+
+    .next-ep-preview-thumb-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .next-ep-preview-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .next-ep-preview-fallback {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .next-ep-preview-badge {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(229, 9, 20, 0.88);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    }
+
+    .next-ep-preview-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 0 2px 2px 2px;
+    }
+
+    .next-ep-preview-meta {
+      font-size: 11px;
+      font-weight: 700;
+      color: #a0a0a8;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .next-ep-preview-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* PLAYBACK SPEED */
@@ -2455,11 +2569,28 @@
           </button>
 
           <!-- Next Episode (TV only - immediately before Episodes Switcher) -->
-          <button class="ctrl-btn btn-next-ep" id="btnNextEpisode" title="Next Episode">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-            </svg>
-          </button>
+          <div class="next-ep-wrap" id="nextEpWrap">
+            <div class="next-ep-preview-card" id="nextEpPreviewCard" style="display: none;" aria-hidden="true">
+              <div class="next-ep-preview-thumb-box">
+                <img class="next-ep-preview-thumb" id="nextEpPreviewThumb" src="" alt="" style="display: none;" />
+                <div class="next-ep-preview-fallback" id="nextEpPreviewFallback">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
+                  </svg>
+                </div>
+                <div class="next-ep-preview-badge" id="nextEpPreviewBadge">NEXT EPISODE</div>
+              </div>
+              <div class="next-ep-preview-info">
+                <div class="next-ep-preview-meta" id="nextEpPreviewMeta">NEXT EPISODE</div>
+                <div class="next-ep-preview-title" id="nextEpPreviewTitle"></div>
+              </div>
+            </div>
+            <button class="ctrl-btn btn-next-ep" id="btnNextEpisode" aria-label="Next Episode">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
+          </div>
 
           <!-- In-Player Episode Switcher (TV Shows mode) -->
           <button class="ctrl-btn" id="btnEpisodes" title="Episodes">
@@ -3017,6 +3148,9 @@
         } else if (currentContentMode === 'episode') {
           document.body.classList.add('mode-episode');
         }
+        if (currentContentMode !== 'episode' && typeof hideNextEpisodePreview === 'function') {
+          hideNextEpisodePreview(true);
+        }
         if (typeof renderFormattedTitles === 'function') {
           renderFormattedTitles();
         }
@@ -3483,6 +3617,7 @@
         cancelHoverCloseTimer();
         activeHoverMenu = null;
         closeSeasonDropdown();
+        if (typeof hideNextEpisodePreview === 'function') hideNextEpisodePreview(true);
         modalAudioSubs.classList.remove('open');
         drawerEpisodes.classList.remove('open');
         drawerChannels.classList.remove('open');
@@ -4312,7 +4447,7 @@
       });
 
       function renderEpisodes() {
-        episodesSeriesTitle.textContent = episodesData.seriesTitle || 'Episodes';
+        episodesSeriesTitle.textContent = sanitizeShowTitle(episodesData.seriesTitle) || 'Episodes';
 
         const curSeasonNum = Number(episodesData.currentSeasonNum || 1);
 
@@ -4391,8 +4526,18 @@
           const card = document.createElement('div');
           card.className = `episode-card ${isCurrent ? 'current' : ''}`;
 
-          const thumbContent = ep.stillUrl
-            ? `<img class="ep-thumb-img" src="${ep.stillUrl}" alt="${ep.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="ep-thumb-fallback" style="display:none;"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></div>`
+          const cleanShow = sanitizeShowTitle(episodesData.seriesTitle || '');
+          const cleanEp = sanitizeEpisodeTitle(ep.title || ep.channel?.name || '', cleanShow, ep.episodeNum, ep.seasonNum);
+          const displayTitle = (ep.episodeNum != null && ep.episodeNum > 0)
+            ? (cleanEp && cleanEp.toLowerCase() !== `episode ${ep.episodeNum}`.toLowerCase()
+                ? `${ep.episodeNum}. ${cleanEp}`
+                : `Episode ${ep.episodeNum}`)
+            : (cleanEp || ep.title || 'Episode');
+
+          const artUrl = ep.stillUrl || (ep.channel && ep.channel.image) || episodesData.seriesPoster;
+
+          const thumbContent = artUrl
+            ? `<img class="ep-thumb-img" src="${artUrl}" alt="${escapeHtml(displayTitle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="ep-thumb-fallback" style="display:none;"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></div>`
             : `<div class="ep-thumb-fallback"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></div>`;
 
           card.innerHTML = `
@@ -4405,7 +4550,7 @@
               </div>
             </div>
             <div class="ep-info-box">
-              <span class="ep-title">${ep.title}</span>
+              <span class="ep-title">${escapeHtml(displayTitle)}</span>
               <div class="ep-badges">
                 ${isCurrent ? '<span class="ep-playing-badge">PLAYING</span>' : ''}
                 ${ep.isWatched ? '<span class="ep-watched-label">✓ Watched</span>' : ''}
@@ -4443,12 +4588,22 @@
       }
 
       // NEXT EPISODE LOGIC (TV SHOWS)
+      let nextEpPreviewTimer = null;
+
+      function resolveNextEpisodeData() {
+        if (upNextState.nextEpisode && upNextState.nextEpisode.id) {
+          return upNextState.nextEpisode;
+        }
+        return getFallbackNextEpisode();
+      }
+
       function updateNextEpisodeBtnState() {
         if (!btnNextEpisode) return;
         if (!episodesData.episodes || episodesData.episodes.length === 0) {
           btnNextEpisode.disabled = true;
           btnNextEpisode.style.opacity = '0.35';
           btnNextEpisode.style.cursor = 'not-allowed';
+          hideNextEpisodePreview(true);
           return;
         }
         const currentIndex = episodesData.episodes.findIndex(
@@ -4459,7 +4614,7 @@
           (s) => s.seasonNum === episodesData.currentSeasonNum
         ) + 1 < episodesData.seasons.length;
 
-        if (hasNextEp || hasNextSeason) {
+        if (hasNextEp || hasNextSeason || (upNextState.nextEpisode && upNextState.nextEpisode.id)) {
           btnNextEpisode.disabled = false;
           btnNextEpisode.style.opacity = '1';
           btnNextEpisode.style.cursor = 'pointer';
@@ -4467,10 +4622,110 @@
           btnNextEpisode.disabled = true;
           btnNextEpisode.style.opacity = '0.35';
           btnNextEpisode.style.cursor = 'not-allowed';
+          hideNextEpisodePreview(true);
+        }
+      }
+
+      function showNextEpisodePreview() {
+        if (currentContentMode !== 'episode') return;
+        if (btnNextEpisode && btnNextEpisode.disabled) return;
+
+        const nextEp = resolveNextEpisodeData();
+        if (!nextEp || !nextEp.id) {
+          hideNextEpisodePreview(true);
+          return;
+        }
+
+        if (nextEpPreviewTimer) {
+          clearTimeout(nextEpPreviewTimer);
+          nextEpPreviewTimer = null;
+        }
+
+        const previewCard = document.getElementById('nextEpPreviewCard');
+        const previewThumb = document.getElementById('nextEpPreviewThumb');
+        const previewFallback = document.getElementById('nextEpPreviewFallback');
+        const previewMeta = document.getElementById('nextEpPreviewMeta');
+        const previewTitle = document.getElementById('nextEpPreviewTitle');
+        if (!previewCard) return;
+
+        // Season & episode metadata
+        const sNum = nextEp.seasonNum != null && nextEp.seasonNum > 0 ? String(nextEp.seasonNum).padStart(2, '0') : '';
+        const eNum = nextEp.episodeNum != null && nextEp.episodeNum > 0 ? String(nextEp.episodeNum).padStart(2, '0') : '';
+        let metaText = 'NEXT EPISODE';
+        if (sNum && eNum) {
+          metaText = `S${sNum}E${eNum}`;
+        } else if (eNum) {
+          metaText = `EPISODE ${nextEp.episodeNum}`;
+        }
+        if (previewMeta) previewMeta.textContent = metaText;
+
+        // Cleaned-up episode title
+        const cleanShow = sanitizeShowTitle(nextEp.seriesTitle || episodesData.seriesTitle || '');
+        const cleanTitle = sanitizeEpisodeTitle(
+          nextEp.title || nextEp.channel?.name || '',
+          cleanShow,
+          nextEp.episodeNum,
+          nextEp.seasonNum
+        );
+        if (previewTitle) {
+          previewTitle.textContent = cleanTitle || (nextEp.episodeNum ? `Episode ${nextEp.episodeNum}` : 'Next Episode');
+        }
+
+        // Thumbnail resolution: episode still first, series poster fallback
+        const thumbUrl = nextEp.stillUrl || (nextEp.channel && nextEp.channel.image);
+        const posterUrl = nextEp.posterUrl || episodesData.seriesPoster;
+        const artUrl = thumbUrl || posterUrl;
+
+        if (previewThumb && previewFallback) {
+          if (artUrl) {
+            previewThumb.src = artUrl;
+            previewThumb.style.display = 'block';
+            previewFallback.style.display = 'none';
+
+            previewThumb.onerror = () => {
+              if (thumbUrl && posterUrl && previewThumb.src !== posterUrl) {
+                previewThumb.src = posterUrl;
+              } else {
+                previewThumb.style.display = 'none';
+                previewFallback.style.display = 'flex';
+              }
+            };
+          } else {
+            previewThumb.style.display = 'none';
+            previewFallback.style.display = 'flex';
+          }
+        }
+
+        previewCard.style.display = 'flex';
+        void previewCard.offsetWidth;
+        previewCard.classList.add('visible');
+        previewCard.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideNextEpisodePreview(immediate = false) {
+        if (nextEpPreviewTimer) {
+          clearTimeout(nextEpPreviewTimer);
+          nextEpPreviewTimer = null;
+        }
+
+        const previewCard = document.getElementById('nextEpPreviewCard');
+        if (!previewCard) return;
+
+        const doHide = () => {
+          previewCard.classList.remove('visible');
+          previewCard.style.display = 'none';
+          previewCard.setAttribute('aria-hidden', 'true');
+        };
+
+        if (immediate) {
+          doHide();
+        } else {
+          nextEpPreviewTimer = setTimeout(doHide, 150);
         }
       }
 
       function playNextEpisode() {
+        hideNextEpisodePreview(true);
         if (!episodesData.episodes || episodesData.episodes.length === 0) return;
         const currentIndex = episodesData.episodes.findIndex(
           (ep) => ep.id === episodesData.currentEpisodeId || ep.isCurrent
@@ -4504,8 +4759,33 @@
       }
 
       if (btnNextEpisode) {
+        btnNextEpisode.addEventListener('mouseenter', () => {
+          showNextEpisodePreview();
+        });
+        btnNextEpisode.addEventListener('mouseleave', () => {
+          hideNextEpisodePreview(false);
+        });
         btnNextEpisode.addEventListener('click', (e) => {
           e.stopPropagation();
+          hideNextEpisodePreview(true);
+          playNextEpisode();
+        });
+      }
+
+      const nextEpPreviewCardEl = document.getElementById('nextEpPreviewCard');
+      if (nextEpPreviewCardEl) {
+        nextEpPreviewCardEl.addEventListener('mouseenter', () => {
+          if (nextEpPreviewTimer) {
+            clearTimeout(nextEpPreviewTimer);
+            nextEpPreviewTimer = null;
+          }
+        });
+        nextEpPreviewCardEl.addEventListener('mouseleave', () => {
+          hideNextEpisodePreview(false);
+        });
+        nextEpPreviewCardEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          hideNextEpisodePreview(true);
           playNextEpisode();
         });
       }
@@ -4530,6 +4810,7 @@
       function executePlayNextEpisode() {
         clearUpNextTimer();
         hideUpNextCard(false);
+        hideNextEpisodePreview(true);
         const nextEp = upNextState.nextEpisode || getFallbackNextEpisode();
         if (nextEp && nextEp.id) {
           flushSaveProgress();
@@ -4560,6 +4841,7 @@
             episodeNum: next.episodeNum,
             seasonNum: next.seasonNum,
             stillUrl: next.stillUrl,
+            posterUrl: episodesData.seriesPoster,
             channel: next.channel,
           };
         }
@@ -4575,29 +4857,48 @@
         upNextState.countdown = 10;
         upNextState.nextEpisode = nextEp;
 
-        const sNum = nextEp.seasonNum != null ? String(nextEp.seasonNum).padStart(2, '0') : '';
-        const eNum = nextEp.episodeNum != null ? String(nextEp.episodeNum).padStart(2, '0') : '';
+        const sNum = nextEp.seasonNum != null && nextEp.seasonNum > 0 ? String(nextEp.seasonNum).padStart(2, '0') : '';
+        const eNum = nextEp.episodeNum != null && nextEp.episodeNum > 0 ? String(nextEp.episodeNum).padStart(2, '0') : '';
         if (upNextEpMeta) {
           upNextEpMeta.textContent = (sNum && eNum) ? `S${sNum}E${eNum}` : 'Next Episode';
         }
+
+        const cleanShow = sanitizeShowTitle(nextEp.seriesTitle || episodesData.seriesTitle || '');
+        const cleanTitle = sanitizeEpisodeTitle(
+          nextEp.title || nextEp.channel?.name || '',
+          cleanShow,
+          nextEp.episodeNum,
+          nextEp.seasonNum
+        );
         if (upNextEpTitle) {
-          upNextEpTitle.textContent = nextEp.title || 'Next Episode';
+          upNextEpTitle.textContent = cleanTitle || (nextEp.episodeNum ? `Episode ${nextEp.episodeNum}` : 'Next Episode');
         }
         if (upNextTimer) {
           upNextTimer.textContent = `Playing in 10s`;
         }
 
-        if (nextEp.stillUrl && upNextThumb) {
-          upNextThumb.src = nextEp.stillUrl;
-          upNextThumb.style.display = 'block';
-          if (upNextThumbFallback) upNextThumbFallback.style.display = 'none';
-          upNextThumb.onerror = () => {
+        const thumbUrl = nextEp.stillUrl || (nextEp.channel && nextEp.channel.image);
+        const posterUrl = nextEp.posterUrl || episodesData.seriesPoster;
+        const artUrl = thumbUrl || posterUrl;
+
+        if (upNextThumb && upNextThumbFallback) {
+          if (artUrl) {
+            upNextThumb.src = artUrl;
+            upNextThumb.style.display = 'block';
+            upNextThumbFallback.style.display = 'none';
+
+            upNextThumb.onerror = () => {
+              if (thumbUrl && posterUrl && upNextThumb.src !== posterUrl) {
+                upNextThumb.src = posterUrl;
+              } else {
+                upNextThumb.style.display = 'none';
+                upNextThumbFallback.style.display = 'flex';
+              }
+            };
+          } else {
             upNextThumb.style.display = 'none';
-            if (upNextThumbFallback) upNextThumbFallback.style.display = 'flex';
-          };
-        } else {
-          if (upNextThumb) upNextThumb.style.display = 'none';
-          if (upNextThumbFallback) upNextThumbFallback.style.display = 'flex';
+            upNextThumbFallback.style.display = 'flex';
+          }
         }
 
         upNextCard.style.display = 'flex';
@@ -6153,32 +6454,187 @@
         }[tag] || tag));
       }
 
+      const BRAND_PREFIX_REGEX = /^[\[\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(\s*VIDEO)?|DSNP|HMAX|MAX|HBO(\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i;
+      const CATEGORY_PREFIX_REGEX = /^(?:[\[\(|]\s*(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA)\s*[\]\)|]\s*[-:|–—\/]?|(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA)\s*[-:|–—\/])\s*/i;
+      const LEADING_TAG_REGEX = /^(?:\|[A-Za-z0-9\s_-]+\||\([A-Za-z0-9\s_-]+\)|\[[A-Za-z0-9\s_-]+\])\s*[-:|–—\/]?\s*/;
+      const RESOLUTION_PREFIX_REGEX = /^(?:\[?(?:4K|UHD|1080p|FHD|720p|HD)\]?)\s*[-:|–—\/]\s*/i;
+
+      function toTitleCase(str) {
+        if (!str) return '';
+        const minorWords = new Set([
+          'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'so', 'the', 'to', 'up', 'yet'
+        ]);
+        const romanNumerals = /^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$/i;
+
+        const words = str.trim().split(/\s+/);
+        return words.map((word, index) => {
+          const match = word.match(/^([("']*)(.*?)([)"']*)$/);
+          if (!match) return word;
+          const prefix = match[1];
+          const core = match[2];
+          const suffix = match[3];
+
+          if (!core) return word;
+
+          if (core.length > 1 && romanNumerals.test(core)) {
+            return prefix + core.toUpperCase() + suffix;
+          }
+
+          const lower = core.toLowerCase();
+          const prevWord = index > 0 ? words[index - 1] : '';
+          const isAfterSeparator = prevWord.endsWith(':') || prevWord.endsWith('-') || prevWord.endsWith('—');
+
+          if (index > 0 && index < words.length - 1 && minorWords.has(lower) && !isAfterSeparator) {
+            return prefix + lower + suffix;
+          }
+
+          if (/^[A-Z]{2,4}$/.test(core)) {
+            return prefix + core + suffix;
+          }
+
+          return prefix + core.charAt(0).toUpperCase() + core.slice(1).toLowerCase() + suffix;
+        }).join(' ');
+      }
+
+      function stripProviderPrefixes(str) {
+        if (!str) return '';
+        let s = str.trim();
+        for (let pass = 0; pass < 4; pass++) {
+          const prev = s;
+          s = s.replace(BRAND_PREFIX_REGEX, '');
+          s = s.replace(CATEGORY_PREFIX_REGEX, '');
+          s = s.replace(LEADING_TAG_REGEX, '');
+          s = s.replace(RESOLUTION_PREFIX_REGEX, '');
+          s = s.replace(/^[-*#~_+=|:–—\s/]+/, '');
+          if (s === prev) break;
+        }
+        return s.trim();
+      }
+
+      function sanitizeShowTitle(rawTitle) {
+        if (!rawTitle) return '';
+        let title = stripProviderPrefixes(rawTitle);
+
+        title = title.replace(/\s*[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]/g, '');
+        title = title.replace(/\s*[\(\[]\s*([A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR)\s*[\)\]]\s*$/gi, '');
+        title = title.replace(/\s*\[\s*(?:4K|UHD|1080p|FHD|720p|HD|HEVC|HDR|HDR10|DV|Dolby)[^\]]*\]/gi, '');
+        title = title.replace(/\s*[-–—:|/]?\s*\b(?:Season|Series)\s*\d+\b/gi, '');
+        title = title.replace(/\s*[-–—:|/]?\s*\bS\d{1,2}\b/gi, '');
+        title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '').trim();
+
+        return toTitleCase(title) || rawTitle.trim();
+      }
+
+      function sanitizeEpisodeTitle(rawTitle, showTitle, episodeNum, seasonNum) {
+        if (!rawTitle) return '';
+        let title = rawTitle.trim();
+
+        for (let pass = 0; pass < 3; pass++) {
+          const prev = title;
+          title = stripProviderPrefixes(title);
+
+          const cleanShow = sanitizeShowTitle(showTitle);
+          if (cleanShow) {
+            const escapedShow = cleanShow.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const showRegex = new RegExp(`^\\s*${escapedShow}\\s*[-:|–—/]?\\s*`, 'i');
+            title = title.replace(showRegex, '');
+          }
+          if (showTitle) {
+            const escapedRawShow = showTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const rawShowRegex = new RegExp(`^\\s*${escapedRawShow}\\s*[-:|–—/]?\\s*`, 'i');
+            title = title.replace(rawShowRegex, '');
+          }
+
+          const redundantNotationRegex = /^\s*[-:|–—/]?\s*(?:(?:Season\s*\d+\s*[,–-]?\s*)?(?:Episode\s*\d+|Ep\s*\d+|E\d{1,3}|S\d{1,2}\s*E\d{1,3}|\d{1,2}x\d{1,3}))\s*[-:|–—/.]?\s*/i;
+          title = title.replace(redundantNotationRegex, '');
+          title = title.replace(/^\s*(?:s\d{1,2}\s*e\d{1,3}|ep(?:isode)?\s*\d+|\d{1,2}x\d{1,3})\s*[-:|–—/.]?\s*/i, '');
+
+          if (episodeNum != null) {
+            const epNumPattern = new RegExp(`^\\s*0*${episodeNum}\\s*[-–—:|/.]\\s*`, 'i');
+            title = title.replace(epNumPattern, '');
+          }
+
+          if (title === prev) break;
+        }
+
+        title = title.replace(/\s*\[\s*(?:4K|UHD|1080p|FHD|720p|HD|HEVC|HDR)[^\]]*\]/gi, '');
+        title = title.replace(/^[-*#~_+=|:–—/·.\s]+/, '');
+        title = title.replace(/[-*#~_+=|:–—/·.\s]+$/, '');
+        title = title.trim();
+
+        if (title.length > 0) {
+          return toTitleCase(title);
+        }
+        return '';
+      }
+
+      function formatPlayerEpisodeLabel(rawShowTitle, rawEpisodeTitle, episodeNum, seasonNum) {
+        let showTitle = sanitizeShowTitle(rawShowTitle);
+        let epRaw = (rawEpisodeTitle || '').trim();
+
+        if (!showTitle && epRaw) {
+          const stripped = stripProviderPrefixes(epRaw);
+          const splitIdx = stripped.indexOf(' - ');
+          if (splitIdx !== -1) {
+            showTitle = sanitizeShowTitle(stripped.substring(0, splitIdx));
+            epRaw = stripped.substring(splitIdx + 3).trim();
+          } else {
+            epRaw = stripped;
+          }
+        }
+
+        let resolvedEpNum = episodeNum;
+        if ((resolvedEpNum == null || resolvedEpNum <= 0) && epRaw) {
+          const m = epRaw.match(/\b(?:e|ep|episode)[\s._-]*(\d{1,3})\b/i) ||
+                    epRaw.match(/\b\d{1,2}x(\d{1,3})\b/i) ||
+                    epRaw.match(/\bS\d{1,2}\s*E(\d{1,3})\b/i);
+          if (m) {
+            resolvedEpNum = parseInt(m[1], 10);
+          }
+        }
+
+        const epTitle = sanitizeEpisodeTitle(epRaw, showTitle, resolvedEpNum, seasonNum);
+
+        let secondary = '';
+        if (resolvedEpNum != null && resolvedEpNum > 0) {
+          if (epTitle && epTitle.toLowerCase() !== `episode ${resolvedEpNum}`.toLowerCase()) {
+            secondary = `- ${resolvedEpNum}. ${epTitle}`;
+          } else {
+            secondary = `- Episode ${resolvedEpNum}`;
+          }
+        } else if (epTitle) {
+          secondary = `- ${epTitle}`;
+        }
+
+        const full = showTitle ? (secondary ? `${showTitle} ${secondary}` : showTitle) : (secondary.replace(/^-\s*/, '') || epRaw);
+        return { primary: showTitle, secondary, full, epTitle };
+      }
+
       function renderFormattedTitles() {
         let primary = '';
         let secondary = '';
 
         if (currentContentMode === 'episode') {
           const curEp = episodesData.episodes?.find((e) => e.id === episodesData.currentEpisodeId || e.isCurrent);
-          if (episodesData.seriesTitle) {
-            primary = episodesData.seriesTitle;
-            if (curEp) {
-              const sNum = curEp.seasonNum != null ? String(curEp.seasonNum).padStart(2, '0') : '';
-              const eNum = curEp.episodeNum != null ? String(curEp.episodeNum).padStart(2, '0') : '';
-              const epCode = sNum && eNum ? `S${sNum}E${eNum}: ` : '';
-              secondary = `${epCode}${curEp.title || ''}`.trim();
-            }
-          }
+          const rawShow = episodesData.seriesTitle || '';
+          const epName = curEp ? (curEp.title || curEp.channel?.name || '') : '';
+          const epNum = curEp ? curEp.episodeNum : undefined;
+          const seasonNum = curEp ? curEp.seasonNum : episodesData.currentSeasonNum;
+
+          const formatted = formatPlayerEpisodeLabel(
+            rawShow,
+            epName || currentRawTitle,
+            epNum,
+            seasonNum
+          );
+          primary = formatted.primary;
+          secondary = formatted.secondary;
         }
 
         if (!primary && currentRawTitle) {
-          const splitIdx = currentRawTitle.indexOf(' - ');
-          if (splitIdx !== -1) {
-            primary = currentRawTitle.substring(0, splitIdx).trim();
-            secondary = currentRawTitle.substring(splitIdx + 3).trim();
-          } else {
-            primary = currentRawTitle.trim();
-            secondary = '';
-          }
+          const formatted = formatPlayerEpisodeLabel('', currentRawTitle);
+          primary = formatted.primary;
+          secondary = formatted.secondary;
         }
 
         const titleHtml = secondary
@@ -6242,6 +6698,7 @@
 
           episodesData = {
             seriesTitle: event.payload.seriesTitle || episodesData.seriesTitle || '',
+            seriesPoster: event.payload.seriesPoster || episodesData.seriesPoster || '',
             seasons: (Array.isArray(event.payload.seasons) && event.payload.seasons.length > 0)
               ? event.payload.seasons
               : (episodesData.seasons || []),

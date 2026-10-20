@@ -29,9 +29,9 @@ export function cleanMediaTitle(raw?: string): string {
       "",
     );
 
-    // Platform prefixes: 4K-NF, NF, ATVP, AMZN, DSNP, HMAX, MAX, HBO, HULU, BBC, etc.
+    // Platform prefixes: 4K-NF, 4K-D+, D+, NF, ATVP, AMZN, DSNP, HMAX, MAX, HBO, HULU, BBC, etc.
     title = title.replace(
-      /^[-*#~_+=|\s]*\b(4K-)?(NF|ATVP|AMZN|DSNP|HMAX|MAX|HBO|HULU|DISNEY\+?|APPLE|PARAMOUNT\+?|PEACOCK|BBC)\b[-*#~_+=|\s:]*/i,
+      /^[-*#~_+=|\s]*\b(4K-)?(D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(\s*VIDEO)?|DSNP|HMAX|MAX|HBO(\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\b[-*#~_+=|\s:]*/i,
       "",
     );
 
@@ -152,4 +152,218 @@ export function selectSynopsis(channel: Channel): string | undefined {
     return anyChannel.plot.trim();
   }
   return undefined;
+}
+
+const BRAND_PREFIX_REGEX = /^[\[\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(\s*VIDEO)?|DSNP|HMAX|MAX|HBO(\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i;
+
+// Generic category words MUST be followed by a separator or be bracketed to avoid stripping legitimate title words like "Top Gun", "New Girl", "Show Me A Hero"
+const CATEGORY_PREFIX_REGEX = /^(?:[\[\(|]\s*(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA)\s*[\]\)|]\s*[-:|–—\/]?|(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA)\s*[-:|–—\/])\s*/i;
+
+const LEADING_TAG_REGEX = /^(?:\|[A-Za-z0-9\s_-]+\||\([A-Za-z0-9\s_-]+\)|\[[A-Za-z0-9\s_-]+\])\s*[-:|–—\/]?\s*/;
+
+const RESOLUTION_PREFIX_REGEX = /^(?:\[?(?:4K|UHD|1080p|FHD|720p|HD)\]?)\s*[-:|–—\/]\s*/i;
+
+/**
+ * Normalizes title casing while preserving uppercase roman numerals and acronyms,
+ * and keeping minor grammatical words lowercase.
+ */
+export function toTitleCase(str?: string): string {
+  if (!str) return '';
+  const minorWords = new Set([
+    'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'so', 'the', 'to', 'up', 'yet'
+  ]);
+  const romanNumerals = /^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$/i;
+
+  const words = str.trim().split(/\s+/);
+  return words.map((word, index) => {
+    const match = word.match(/^([("']*)(.*?)([)"']*)$/);
+    if (!match) return word;
+    const prefix = match[1];
+    const core = match[2];
+    const suffix = match[3];
+
+    if (!core) return word;
+
+    if (core.length > 1 && romanNumerals.test(core)) {
+      return prefix + core.toUpperCase() + suffix;
+    }
+
+    const lower = core.toLowerCase();
+    const prevWord = index > 0 ? words[index - 1] : '';
+    const isAfterSeparator = prevWord.endsWith(':') || prevWord.endsWith('-') || prevWord.endsWith('—');
+
+    if (index > 0 && index < words.length - 1 && minorWords.has(lower) && !isAfterSeparator) {
+      return prefix + lower + suffix;
+    }
+
+    if (/^[A-Z]{2,4}$/.test(core)) {
+      return prefix + core + suffix;
+    }
+
+    return prefix + core.charAt(0).toUpperCase() + core.slice(1).toLowerCase() + suffix;
+  }).join(' ');
+}
+
+/**
+ * Strips provider branding, streaming platform identifiers, and category noise.
+ */
+export function stripProviderPrefixes(str?: string): string {
+  if (!str) return '';
+  let s = str.trim();
+  for (let pass = 0; pass < 4; pass++) {
+    const prev = s;
+    s = s.replace(BRAND_PREFIX_REGEX, '');
+    s = s.replace(CATEGORY_PREFIX_REGEX, '');
+    s = s.replace(LEADING_TAG_REGEX, '');
+    s = s.replace(RESOLUTION_PREFIX_REGEX, '');
+    s = s.replace(/^[-*#~_+=|:–—\s/]+/, '');
+    if (s === prev) break;
+  }
+  return s.trim();
+}
+
+/**
+ * Sanitizes a TV show title by stripping provider prefixes, trailing year markers,
+ * technical tags, and redundant season suffixes.
+ */
+export function sanitizeShowTitle(rawTitle?: string): string {
+  if (!rawTitle) return '';
+  let title = stripProviderPrefixes(rawTitle);
+
+  // Remove trailing year if present: (2023) or [2023]
+  title = title.replace(/\s*[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]/g, '');
+  // Remove trailing country tags: (US), (KR), [UK]
+  title = title.replace(/\s*[\(\[]\s*([A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR)\s*[\)\]]\s*$/gi, '');
+  // Remove technical brackets: [4K], [1080p], etc.
+  title = title.replace(/\s*\[\s*(?:4K|UHD|1080p|FHD|720p|HD|HEVC|HDR|HDR10|DV|Dolby)[^\]]*\]/gi, '');
+  // Strip trailing season markers like "Season 1", "S1", "Series 1"
+  title = title.replace(/\s*[-–—:|/]?\s*\b(?:Season|Series)\s*\d+\b/gi, '');
+  title = title.replace(/\s*[-–—:|/]?\s*\bS\d{1,2}\b/gi, '');
+  title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '').trim();
+
+  return toTitleCase(title) || rawTitle.trim();
+}
+
+/**
+ * Cleans up raw TV episode titles by stripping provider prefixes, duplicate show names,
+ * redundant season/episode notation, and leading episode numbers.
+ */
+export function sanitizeEpisodeTitle(
+  rawTitle?: string,
+  showTitle?: string,
+  episodeNum?: number,
+  seasonNum?: number
+): string {
+  if (!rawTitle) return '';
+  let title = rawTitle.trim();
+
+  // Run cleanup passes to handle provider prefixes appearing before or after show/season/episode tags
+  for (let pass = 0; pass < 3; pass++) {
+    const prev = title;
+    title = stripProviderPrefixes(title);
+
+    // 1. Remove duplicated series name if at beginning of episode title
+    const cleanShow = sanitizeShowTitle(showTitle);
+    if (cleanShow) {
+      const escapedShow = cleanShow.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const showRegex = new RegExp(`^\\s*${escapedShow}\\s*[-:|–—/]?\\s*`, 'i');
+      title = title.replace(showRegex, '');
+    }
+    if (showTitle) {
+      const escapedRawShow = showTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rawShowRegex = new RegExp(`^\\s*${escapedRawShow}\\s*[-:|–—/]?\\s*`, 'i');
+      title = title.replace(rawShowRegex, '');
+    }
+
+    // 2. Remove redundant season & episode notation
+    // Matches: S01E11, S1 E11, s1 e11, Season 1 Episode 11, Episode 11, Ep 11, 1x11, 01x11
+    const redundantNotationRegex = /^\s*[-:|–—/]?\s*(?:(?:Season\s*\d+\s*[,–-]?\s*)?(?:Episode\s*\d+|Ep\s*\d+|E\d{1,3}|S\d{1,2}\s*E\d{1,3}|\d{1,2}x\d{1,3}))\s*[-:|–—/.]?\s*/i;
+    title = title.replace(redundantNotationRegex, '');
+    title = title.replace(/^\s*(?:s\d{1,2}\s*e\d{1,3}|ep(?:isode)?\s*\d+|\d{1,2}x\d{1,3})\s*[-:|–—/.]?\s*/i, '');
+
+    // 3. Remove leading episode number prefix if matching episodeNum: e.g. "11 - The Romanticist" or "11. The Romanticist"
+    if (episodeNum != null) {
+      const epNumPattern = new RegExp(`^\\s*0*${episodeNum}\\s*[-–—:|/.]\\s*`, 'i');
+      title = title.replace(epNumPattern, '');
+    }
+
+    if (title === prev) break;
+  }
+
+  // 4. Strip technical tags at end of episode title: [1080p], [4K], etc.
+  title = title.replace(/\s*\[\s*(?:4K|UHD|1080p|FHD|720p|HD|HEVC|HDR)[^\]]*\]/gi, '');
+  title = title.replace(/^[-*#~_+=|:–—/·.\s]+/, '');
+  title = title.replace(/[-*#~_+=|:–—/·.\s]+$/, '');
+  title = title.trim();
+
+  // If after removing redundant metadata there is a real title left, normalize capitalization
+  if (title.length > 0) {
+    return toTitleCase(title);
+  }
+
+  return '';
+}
+
+/**
+ * Formats a clean player episode label with primary (show) and secondary (episode) titles.
+ * Example:
+ *   Show: "D+ - Moving"
+ *   Episode: "D+ - s1 e11 the romanticist"
+ *   Result:
+ *     primary: "Moving"
+ *     secondary: "- 11. The Romanticist"
+ *     full: "Moving - 11. The Romanticist"
+ *     epTitle: "The Romanticist"
+ */
+export function formatPlayerEpisodeLabel(
+  rawShowTitle?: string,
+  rawEpisodeTitle?: string,
+  episodeNum?: number,
+  seasonNum?: number
+): {
+  primary: string;
+  secondary: string;
+  full: string;
+  epTitle: string;
+} {
+  let showTitle = sanitizeShowTitle(rawShowTitle);
+  let epRaw = (rawEpisodeTitle || '').trim();
+
+  // If showTitle is not provided, strip provider prefixes first so "D+ - Moving - ..." doesn't split on "D+ - "
+  if (!showTitle && epRaw) {
+    const stripped = stripProviderPrefixes(epRaw);
+    const splitIdx = stripped.indexOf(' - ');
+    if (splitIdx !== -1) {
+      showTitle = sanitizeShowTitle(stripped.substring(0, splitIdx));
+      epRaw = stripped.substring(splitIdx + 3).trim();
+    } else {
+      epRaw = stripped;
+    }
+  }
+
+  let resolvedEpNum = episodeNum;
+  if ((resolvedEpNum == null || resolvedEpNum <= 0) && epRaw) {
+    const m = epRaw.match(/\b(?:e|ep|episode)[\s._-]*(\d{1,3})\b/i) ||
+              epRaw.match(/\b\d{1,2}x(\d{1,3})\b/i) ||
+              epRaw.match(/\bS\d{1,2}\s*E(\d{1,3})\b/i);
+    if (m) {
+      resolvedEpNum = parseInt(m[1], 10);
+    }
+  }
+
+  const epTitle = sanitizeEpisodeTitle(epRaw, showTitle, resolvedEpNum, seasonNum);
+
+  let secondary = '';
+  if (resolvedEpNum != null && resolvedEpNum > 0) {
+    if (epTitle && epTitle.toLowerCase() !== `episode ${resolvedEpNum}`.toLowerCase()) {
+      secondary = `- ${resolvedEpNum}. ${epTitle}`;
+    } else {
+      secondary = `- Episode ${resolvedEpNum}`;
+    }
+  } else if (epTitle) {
+    secondary = `- ${epTitle}`;
+  }
+
+  const full = showTitle ? (secondary ? `${showTitle} ${secondary}` : showTitle) : (secondary.replace(/^-\s*/, '') || epRaw);
+  return { primary: showTitle, secondary, full, epTitle };
 }

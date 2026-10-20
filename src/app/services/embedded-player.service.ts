@@ -12,12 +12,18 @@ import { SortType } from '../models/sortType';
 import { Filters } from '../models/filters';
 import { fromMediaType } from '../models/nodeType';
 import { MemoryService } from '../memory.service';
-import { cleanMediaTitle } from '../utils/media-presentation';
+import {
+  cleanMediaTitle,
+  sanitizeShowTitle,
+  sanitizeEpisodeTitle,
+  formatPlayerEpisodeLabel,
+} from '../utils/media-presentation';
 import { isInputFocused } from '../utils';
 import { VersionMatchingService } from './version-matching.service';
 import { MovieDetailService } from './movie-detail.service';
 import { TvDetailService } from './tv-detail.service';
 import { HomeDiscoveryStateService } from './home-discovery-state.service';
+import { TmdbEnrichmentService } from './tmdb-enrichment.service';
 
 export type ContentMode = 'movie' | 'episode' | 'live';
 
@@ -144,6 +150,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     private movieDetailService: MovieDetailService,
     private tvDetailService: TvDetailService,
     private homeDiscoveryState: HomeDiscoveryStateService,
+    private tmdbEnrichment: TmdbEnrichmentService,
   ) {
     this.initGlobalListeners();
     this.routerSubscription = this.router.events
@@ -730,7 +737,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     // TV episode switcher options
     if (options?.seriesChannel) this.seriesChannel = options.seriesChannel;
     if (options?.seriesTitle) {
-      this.seriesTitle = options.seriesTitle;
+      this.seriesTitle = sanitizeShowTitle(options.seriesTitle);
     } else if (this.currentMode === 'episode' && !this.seriesTitle) {
       this.seriesTitle = this.extractSeriesTitle(channel);
     }
@@ -896,14 +903,49 @@ export class EmbeddedPlayerService implements OnDestroy {
           const sNum = found.season_id != null
             ? (this.seasons.find((s) => s.id === found.season_id)?.seasonNum || this.extractSeasonNumber(found))
             : this.extractSeasonNumber(found);
+          const cleanShow = sanitizeShowTitle(this.seriesTitle || this.extractSeriesTitle(found));
+          const cleanEpTitle = sanitizeEpisodeTitle(found.name, cleanShow, epNum, sNum);
+          const refSeries = this.seriesChannel || this.currentChannel;
+          let stillUrl = found.image;
+          const cachedEnrichment = refSeries ? this.tmdbEnrichment.getEnrichmentSync(refSeries) : undefined;
+          const tmdbId = cachedEnrichment?.tmdbId;
+          if (!stillUrl && tmdbId && sNum > 0 && epNum > 0) {
+            stillUrl = this.tmdbEnrichment.getEpisodeStillSync(tmdbId, sNum, epNum);
+          }
+          const posterUrl = this.seriesChannel?.image || this.currentChannel?.image;
+
           nextEp = {
             id: found.id!,
-            title: cleanMediaTitle(found.name || `Episode ${epNum}`),
+            title: cleanEpTitle || `Episode ${epNum}`,
+            rawTitle: found.name,
             episodeNum: epNum,
             seasonNum: sNum,
-            stillUrl: found.image,
+            seriesTitle: cleanShow,
+            stillUrl: stillUrl || found.image,
+            posterUrl: posterUrl,
             channel: found,
           };
+
+          // If stillUrl is missing, try async fetch from TMDB without blocking
+          if (!nextEp.stillUrl && tmdbId && sNum > 0 && epNum > 0) {
+            this.tmdbEnrichment.getEpisodeStill(tmdbId, sNum, epNum).then((asyncStill) => {
+              if (asyncStill && nextEp && nextEp.id === found!.id) {
+                nextEp.stillUrl = asyncStill;
+                emit('embedded-player-episodes-data', {
+                  seriesTitle: sanitizeShowTitle(this.seriesTitle),
+                  seriesPoster: this.seriesChannel?.image || this.currentChannel?.image,
+                  seasons: this.seasons,
+                  currentSeasonNum: this.currentSeasonNum,
+                  currentEpisodeId: this.currentChannel?.id,
+                  episodes: this.episodes.map((e) => ({
+                    ...e,
+                    isCurrent: e.id === this.currentChannel?.id,
+                  })),
+                  nextEpisode: nextEp,
+                }).catch(console.warn);
+              }
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         console.warn('Failed to resolve next episode in emitEpisodesData:', err);
@@ -911,7 +953,8 @@ export class EmbeddedPlayerService implements OnDestroy {
     }
 
     emit('embedded-player-episodes-data', {
-      seriesTitle: this.seriesTitle,
+      seriesTitle: sanitizeShowTitle(this.seriesTitle),
+      seriesPoster: this.seriesChannel?.image || this.currentChannel?.image,
       seasons: this.seasons,
       currentSeasonNum: this.currentSeasonNum,
       currentEpisodeId: this.currentChannel?.id,
@@ -1107,7 +1150,7 @@ export class EmbeddedPlayerService implements OnDestroy {
             channel: ch,
             episodeNum: epNum,
             seasonNum: seasonNum,
-            title: cleanMediaTitle(ch.name || `Episode ${epNum}`),
+            title: sanitizeEpisodeTitle(ch.name, this.seriesTitle, epNum, seasonNum) || `Episode ${epNum}`,
             stillUrl: ch.image,
             isWatched: (ch as any).last_watched != null,
             isCurrent: ch.id === this.currentChannel?.id,
@@ -1152,14 +1195,14 @@ export class EmbeddedPlayerService implements OnDestroy {
 
   public extractSeriesTitle(channel?: Channel): string {
     if (!channel || !channel.name) return '';
-    if (this.seriesTitle) return this.seriesTitle;
-    if (this.seriesChannel?.name) return cleanMediaTitle(this.seriesChannel.name);
+    if (this.seriesTitle) return sanitizeShowTitle(this.seriesTitle);
+    if (this.seriesChannel?.name) return sanitizeShowTitle(this.seriesChannel.name);
     const name = channel.name;
     const match = name.match(/^(.*?)(?:[\s._-]+(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}x\d{1,3}|season\s*\d+|ep(?:isode)?\s*\d+))/i);
     if (match && match[1].trim()) {
-      return cleanMediaTitle(match[1].trim());
+      return sanitizeShowTitle(match[1].trim());
     }
-    return cleanMediaTitle(name);
+    return sanitizeShowTitle(name);
   }
 
   public async loadSeriesAndSeasons(channel: Channel, targetSeasonNum: number): Promise<void> {
@@ -1190,7 +1233,7 @@ export class EmbeddedPlayerService implements OnDestroy {
           const matchedSeries = seriesList.find((s) => s.url === String(seriesId) || s.id === seriesId);
           if (matchedSeries) {
             this.seriesChannel = matchedSeries;
-            this.seriesTitle = cleanMediaTitle(matchedSeries.name || '') || this.seriesTitle;
+            this.seriesTitle = sanitizeShowTitle(matchedSeries.name || '') || this.seriesTitle;
           }
         } catch {}
       }
@@ -1985,12 +2028,10 @@ export class EmbeddedPlayerService implements OnDestroy {
       targetEpisode = episodeChannels[0];
     }
 
-    const seriesTitle = cleanMediaTitle(seriesChannel.name);
+    const seriesTitle = sanitizeShowTitle(seriesChannel.name);
     const epNum = targetEpisode.episode_num ?? this.extractEpisodeNumber(targetEpisode.name);
-    const epTitle = cleanMediaTitle(targetEpisode.name || `Episode ${epNum}`);
-    const sNumPadded = String(targetSeasonNum).padStart(2, '0');
-    const eNumPadded = String(epNum).padStart(2, '0');
-    const overlayTitle = `${seriesTitle} - S${sNumPadded}E${eNumPadded}: ${epTitle}`;
+    const label = formatPlayerEpisodeLabel(seriesTitle, targetEpisode.name, epNum, targetSeasonNum);
+    const overlayTitle = label.full;
 
     const switcherSeasons: SwitcherSeasonData[] = seasonChannels.map((s, idx) => {
       const numMatch = s.name?.match(/(\d+)/);
@@ -2008,7 +2049,7 @@ export class EmbeddedPlayerService implements OnDestroy {
         channel: ch,
         episodeNum: eNumber,
         seasonNum: targetSeasonNum,
-        title: cleanMediaTitle(ch.name || `Episode ${eNumber}`),
+        title: sanitizeEpisodeTitle(ch.name, seriesTitle, eNumber, targetSeasonNum) || `Episode ${eNumber}`,
         stillUrl: ch.image,
         isWatched: (ch as any).last_watched != null,
         isCurrent: ch.id === targetEpisode!.id,
@@ -2055,12 +2096,8 @@ export class EmbeddedPlayerService implements OnDestroy {
     const seriesTitle = this.extractSeriesTitle(playChannel);
     const seasonNum = this.extractSeasonNumber(playChannel);
     const epNum = this.extractEpisodeNumber(playChannel.name);
-    const epTitle = cleanMediaTitle(playChannel.name || `Episode ${epNum}`);
-    const sNumPadded = String(seasonNum).padStart(2, '0');
-    const eNumPadded = String(epNum).padStart(2, '0');
-    const overlayTitle = seriesTitle
-      ? `${seriesTitle} - S${sNumPadded}E${eNumPadded}: ${epTitle}`
-      : epTitle;
+    const label = formatPlayerEpisodeLabel(seriesTitle, playChannel.name, epNum, seasonNum);
+    const overlayTitle = label.full;
 
     await this.startPlayer(playChannel, canvas, {
       title: overlayTitle,

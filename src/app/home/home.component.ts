@@ -43,7 +43,12 @@ import { Stack } from "../models/stack";
 
 import { BulkActionType } from '../models/bulkActionType';
 import { NavTab } from '../models/navTab';
-import { cleanMediaTitle, extractYear } from '../utils/media-presentation';
+import {
+  cleanMediaTitle,
+  extractYear,
+  sanitizeShowTitle,
+  formatPlayerEpisodeLabel,
+} from '../utils/media-presentation';
 import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.component';
 import { PinService } from '../services/pin.service';
 import { EmbeddedPlayerService } from '../services/embedded-player.service';
@@ -1186,13 +1191,17 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       favorite: !!channel.favorite,
     };
 
-    const title = cleanMediaTitle(channel.name || (isTv ? 'Episode' : 'Movie'));
+    const seriesTitle = isTv ? (this.embeddedPlayer.extractSeriesTitle(channel) || sanitizeShowTitle(channel.name)) : undefined;
+    const seasonNum = isTv ? this.embeddedPlayer.extractSeasonNumber(channel) : undefined;
+    const epNum = isTv ? this.embeddedPlayer.extractEpisodeNumber(channel.name) : undefined;
+    const title = isTv
+      ? formatPlayerEpisodeLabel(seriesTitle, channel.name, epNum, seasonNum).full
+      : cleanMediaTitle(channel.name || 'Movie');
+
     this.toast.info(`Resuming "${title}"...`);
     invoke("add_last_watched", { id: channel.id }).catch(console.error);
 
     const savedPos = this.embeddedPlayer.getSavedPosition(channel.id, channel);
-    const seasonNum = isTv ? this.embeddedPlayer.extractSeasonNumber(channel) : undefined;
-    const seriesTitle = isTv ? this.embeddedPlayer.extractSeriesTitle(channel) : undefined;
 
     try {
       await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {

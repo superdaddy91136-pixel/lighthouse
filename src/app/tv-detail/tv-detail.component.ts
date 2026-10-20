@@ -41,6 +41,9 @@ import {
   extractQuality,
   extractYear,
   selectSynopsis,
+  sanitizeShowTitle,
+  sanitizeEpisodeTitle,
+  formatPlayerEpisodeLabel,
 } from '../utils/media-presentation';
 import {
   getTmdbBackdropUrl,
@@ -1078,11 +1081,9 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       // Format overlay title: "<Series> - S<season>E<episode>: <Episode title>"
-      const seriesName = cleanMediaTitle(this.show?.name || this.cleanTitle);
-      const sNum = String(enrichedEp.seasonNum).padStart(2, '0');
-      const eNum = String(enrichedEp.episodeNum).padStart(2, '0');
-      const epTitle = cleanMediaTitle(enrichedEp.title || `Episode ${enrichedEp.episodeNum}`);
-      const overlayTitle = `${seriesName} - S${sNum}E${eNum}: ${epTitle}`;
+      const seriesName = sanitizeShowTitle(this.show?.name || this.cleanTitle);
+      const label = formatPlayerEpisodeLabel(seriesName, enrichedEp.title, enrichedEp.episodeNum, enrichedEp.seasonNum);
+      const overlayTitle = label.full;
 
       // Ensure the season containing this episode is loaded so this.enrichedEpisodes matches enrichedEp.seasonNum
       if (this.selectedSeasonNumber !== enrichedEp.seasonNum && this.seasons.length > 0) {
@@ -1117,7 +1118,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           channel: e.channel,
           episodeNum: e.episodeNum,
           seasonNum: e.seasonNum,
-          title: cleanMediaTitle(e.title || `Episode ${e.episodeNum}`),
+          title: sanitizeEpisodeTitle(e.title, seriesName, e.episodeNum, e.seasonNum) || `Episode ${e.episodeNum}`,
           stillUrl: e.stillUrl,
           isWatched: e.isWatched,
           isCurrent: e.channel.id === playChannel.id,

@@ -16,7 +16,7 @@ import { ViewMode } from '../models/viewMode';
 import { TmdbEnrichmentService } from '../services/tmdb-enrichment.service';
 import { TmdbMediaEnrichment, TmdbSeasonDetail } from '../models/tmdb';
 import { getTmdbStillUrl } from '../utils/tmdb-image';
-import { cleanMediaTitle } from '../utils/media-presentation';
+import { cleanMediaTitle, sanitizeShowTitle, sanitizeEpisodeTitle } from '../utils/media-presentation';
 
 export interface SwitcherEpisode {
   channel: Channel;
@@ -76,7 +76,7 @@ export class EpisodeSwitcherComponent implements OnInit, OnDestroy {
   ): Promise<void> {
     this.isOpen = true;
     this.seriesChannel = seriesChannel;
-    this.seriesTitle = cleanMediaTitle(seriesChannel.name);
+    this.seriesTitle = sanitizeShowTitle(seriesChannel.name);
     this.currentEpisodeId = currentEpisode?.id;
     this.enrichment = enrichment;
     this.seasons = [];
@@ -187,9 +187,10 @@ export class EpisodeSwitcherComponent implements OnInit, OnDestroy {
           (te) => te.episodeNumber === epNum,
         );
 
+        const cleanEpTitle = epChannel.name ? sanitizeEpisodeTitle(epChannel.name, this.seriesTitle, epNum, this.selectedSeasonNumber) : '';
         const title = tmdbEp?.name
           ? `${epNum}. ${tmdbEp.name}`
-          : `Episode ${epNum}`;
+          : (cleanEpTitle ? `${epNum}. ${cleanEpTitle}` : `Episode ${epNum}`);
         const stillUrl = tmdbEp?.stillPath
           ? getTmdbStillUrl(tmdbEp.stillPath, 'w300')
           : epChannel.image;
