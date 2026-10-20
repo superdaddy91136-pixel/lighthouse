@@ -51,7 +51,9 @@ export class HomeDiscoveryStateService {
         r.id === 'row-popular-movies' ||
         r.id === 'row-popular-series' ||
         r.id === 'row-trending-movies' ||
-        r.id === 'row-trending-series'
+        r.id === 'row-trending-series' ||
+        r.id === 'row-anime-animation' ||
+        r.id === 'row-korean-series'
       );
     return hasRows;
   }

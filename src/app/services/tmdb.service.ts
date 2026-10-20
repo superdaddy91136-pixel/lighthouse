@@ -130,11 +130,91 @@ export class TmdbService {
   /**
    * Fetch Korean TV shows from TMDB discover.
    */
-  async getKoreanTv(page: number = 1): Promise<any[]> {
+  async getKoreanTv(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams: Record<string, string | number | undefined> = {}
+  ): Promise<any[]> {
     const data = await this.safeGet<any>('/discover/tv', {
       with_original_language: 'ko',
-      sort_by: 'popularity.desc',
+      sort_by: sortBy,
       page,
+      include_adult: 'false',
+      ...extraParams,
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch Anime TV shows from TMDB discover (genre 16, Japanese original language).
+   */
+  async getAnimeTv(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams: Record<string, string | number | undefined> = {}
+  ): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/tv', {
+      with_genres: 16,
+      with_original_language: 'ja',
+      sort_by: sortBy,
+      page,
+      include_adult: 'false',
+      ...extraParams,
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch Anime movies from TMDB discover (genre 16, Japanese original language).
+   */
+  async getAnimeMovies(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams: Record<string, string | number | undefined> = {}
+  ): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/movie', {
+      with_genres: 16,
+      with_original_language: 'ja',
+      sort_by: sortBy,
+      page,
+      include_adult: 'false',
+      ...extraParams,
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch animated TV shows from TMDB discover (genre 16).
+   */
+  async getAnimationTv(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams: Record<string, string | number | undefined> = {}
+  ): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/tv', {
+      with_genres: 16,
+      sort_by: sortBy,
+      page,
+      include_adult: 'false',
+      ...extraParams,
+    });
+    return data?.results || [];
+  }
+
+  /**
+   * Fetch animated movies from TMDB discover (genre 16).
+   */
+  async getAnimationMovies(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams: Record<string, string | number | undefined> = {}
+  ): Promise<any[]> {
+    const data = await this.safeGet<any>('/discover/movie', {
+      with_genres: 16,
+      sort_by: sortBy,
+      page,
+      include_adult: 'false',
+      ...extraParams,
     });
     return data?.results || [];
   }

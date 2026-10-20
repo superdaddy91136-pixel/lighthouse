@@ -555,9 +555,61 @@ export class TmdbEnrichmentService {
   /**
    * Fetches Korean TV shows from TMDB with config enabled check.
    */
-  async getKoreanTv(page: number = 1): Promise<any[]> {
+  async getKoreanTv(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams?: Record<string, string | number | undefined>
+  ): Promise<any[]> {
     if (!this.configService.isEnabled()) return [];
-    return await this.tmdbService.getKoreanTv(page);
+    return await this.tmdbService.getKoreanTv(page, sortBy, extraParams);
+  }
+
+  /**
+   * Fetches Anime TV shows from TMDB with config enabled check.
+   */
+  async getAnimeTv(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams?: Record<string, string | number | undefined>
+  ): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.getAnimeTv(page, sortBy, extraParams);
+  }
+
+  /**
+   * Fetches Anime movies from TMDB with config enabled check.
+   */
+  async getAnimeMovies(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams?: Record<string, string | number | undefined>
+  ): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.getAnimeMovies(page, sortBy, extraParams);
+  }
+
+  /**
+   * Fetches animated TV shows from TMDB with config enabled check.
+   */
+  async getAnimationTv(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams?: Record<string, string | number | undefined>
+  ): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.getAnimationTv(page, sortBy, extraParams);
+  }
+
+  /**
+   * Fetches animated movies from TMDB with config enabled check.
+   */
+  async getAnimationMovies(
+    page: number = 1,
+    sortBy: string = 'popularity.desc',
+    extraParams?: Record<string, string | number | undefined>
+  ): Promise<any[]> {
+    if (!this.configService.isEnabled()) return [];
+    return await this.tmdbService.getAnimationMovies(page, sortBy, extraParams);
   }
 }
 

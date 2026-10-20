@@ -101,13 +101,6 @@ export const MIXED_GENRES: MixedGenreDef[] = [
     tmdbGenres: ["horror", "thriller"],
   },
   {
-    id: "animation-family",
-    title: "Animation & Family",
-    icon: "bookmark",
-    patterns: [/\b(animation|anime|cartoon|family|kids|children)\b/i],
-    tmdbGenres: ["animation", "family", "kids"],
-  },
-  {
     id: "mystery-suspense",
     title: "Mystery & Suspense",
     icon: "bookmark",
@@ -170,6 +163,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   private inFlightStillFetches: Set<number | string> = new Set();
   private failedStillFetches = new Set<number | string>();
   private nextEpisodeCardIds = new Set<number>();
+
+  // Deduplication & cross-row tracking for dynamic recommendations
+  private koreanRowNorms = new Set<string>();
+  private animeRowNorms = new Set<string>();
   private seasonNumCache = new Map<number, number>();
 
   // High-performance template memoization maps (eliminate per-frame regex and array scans)
@@ -997,6 +994,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (rowId === "row-popular-movies") return 50;
     if (rowId === "row-popular-series") return 60;
     if (rowId === "row-favorites") return 65;
+    if (rowId === "row-anime-animation") return 70;
     if (rowId === "row-korean-series") return 75;
     if (rowId.startsWith("row-genre-")) {
       const idx = parseInt(rowId.replace("row-genre-", ""), 10);
@@ -1232,7 +1230,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.loadTrendingMoviesRow(sourceIds, initialMovies),
         this.loadTrendingTvRow(sourceIds, initialSeries),
         this.loadCuratedMixedGenreRows(sourceIds, categoriesRes, initialMovies, initialSeries),
-        this.loadKoreanContentRows(sourceIds),
+        this.loadKoreanContentRows(sourceIds, initialSeries),
+        this.loadAnimeContentRows(sourceIds, categoriesRes, initialMovies, initialSeries),
       ]);
       return;
     }
@@ -1276,7 +1275,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.loadTrendingMoviesRow(sourceIds, moviesPool),
         this.loadTrendingTvRow(sourceIds, seriesPool),
         this.loadCuratedMixedGenreRows(sourceIds, categoriesRes, moviesPool, seriesPool),
-        this.loadKoreanContentRows(sourceIds),
+        this.loadKoreanContentRows(sourceIds, seriesPool),
+        this.loadAnimeContentRows(sourceIds, categoriesRes, moviesPool, seriesPool),
       ]);
 
       if (runId !== undefined && runId !== this.discoveryState.getCurrentRunId()) {
@@ -1667,7 +1667,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
     // Collect all genre and Korean content rows to expand candidate universe
     const extraRows = this.masterDiscoveryRows.filter(
-      (r) => r.id.startsWith("row-genre-") || r.id.startsWith("row-mixed-genre") || r.id.startsWith("row-korean")
+      (r) =>
+        r.id.startsWith("row-genre-") ||
+        r.id.startsWith("row-mixed-genre") ||
+        r.id.startsWith("row-korean") ||
+        r.id.startsWith("row-anime")
     );
 
     const extraMovies: Channel[] = [];
@@ -2188,35 +2192,58 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.cdr.markForCheck();
   }
 
-  private async loadKoreanContentRows(sourceIds: number[]): Promise<void> {
-    await this.loadKoreanSeriesRow(sourceIds);
+  private getDiscoveryRotationCount(key: string): number {
+    try {
+      const storageKey = `lighthouse_rotation_${key}`;
+      const current = parseInt(localStorage.getItem(storageKey) || "0", 10);
+      const next = (isNaN(current) ? 0 : current + 1) % 1000;
+      localStorage.setItem(storageKey, String(next));
+      return next;
+    } catch {
+      return Math.floor(Math.random() * 10);
+    }
   }
 
-  private async loadKoreanSeriesRow(sourceIds: number[]): Promise<void> {
+  private async loadKoreanContentRows(
+    sourceIds: number[],
+    seriesPool?: Channel[]
+  ): Promise<void> {
+    await this.loadKoreanSeriesRow(sourceIds, seriesPool);
+  }
+
+  private async loadKoreanSeriesRow(
+    sourceIds: number[],
+    seriesPool?: Channel[]
+  ): Promise<void> {
     try {
-      const categoryIds = await this.findKoreanCategoryIds(
-        sourceIds,
-        MediaType.serie,
-        [
-          "ASIA SERIES (MULTI-SUBS)",
-          "ASIA SERIES",
-          "VIAPLAY SERIES",
-        ]
-      );
-      if (categoryIds.length === 0) return;
+      const activeSeriesPool = seriesPool || this.allLoadedSeries;
+      const koreanPatterns = [
+        /\b(korean|k-drama|kdrama|korea|asia\s*series|asian\s*series|doramas?)\b/i,
+      ];
 
-      const pool = await this.fetchChannelsForCategories(
+      // Scan IPTV categories matching Korean patterns (plus keyword search if needed)
+      const categoryIds = await this.findCategoryIdsMatching(
         sourceIds,
-        categoryIds,
-        MediaType.serie
+        [MediaType.serie],
+        koreanPatterns,
+        ["korean", "k-drama", "asia series"]
       );
-      if (pool.length === 0) return;
 
+      let folderPool: Channel[] = [];
+      if (categoryIds.length > 0) {
+        folderPool = await this.fetchChannelsForCategories(
+          sourceIds,
+          categoryIds.slice(0, 3),
+          MediaType.serie
+        );
+      }
+
+      const combinedPool = [...activeSeriesPool, ...folderPool];
       const eligible: Channel[] = [];
       const seenNorms = new Set<string>();
 
-      // 1. Identify channels directly from folders that match Korean metadata or tags
-      for (const ch of pool) {
+      // 1. Identify channels directly from Korean folders that match Korean tags or TMDB metadata
+      for (const ch of folderPool) {
         const cached = this.tmdbEnrichment.getEnrichmentSync(ch);
         const isKorean =
           this.isTmdbKorean(cached) || this.hasKoreanNameTag(ch.name || "");
@@ -2224,20 +2251,29 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
           const norm = this.versionMatching.normalizeNumberTokens(
             normalizeForComparison(cleanMediaTitle(ch.name))
           );
-          if (!seenNorms.has(norm)) {
+          if (!seenNorms.has(norm) && !this.animeRowNorms.has(norm)) {
             seenNorms.add(norm);
+            this.koreanRowNorms.add(norm);
             eligible.push(ch);
           }
         }
       }
 
-      // 2. Discover Korean series from TMDB to identify & enrich eligible titles from these folders
+      // 2. Discover Korean series dynamically from TMDB
       if (this.tmdbConfig.isEnabled()) {
         try {
+          const rotation = this.getDiscoveryRotationCount("korean");
+          const pageA = (rotation % 3) + 1; // 1, 2, or 3
+          const pageB = pageA === 3 ? 1 : pageA + 1;
+
+          // Fetch popular Korean TV and critically acclaimed (top-rated) Korean TV
           const tmdbPages = await Promise.allSettled([
-            this.tmdbEnrichment.getKoreanTv(1),
-            this.tmdbEnrichment.getKoreanTv(2),
+            this.tmdbEnrichment.getKoreanTv(pageA, "popularity.desc"),
+            this.tmdbEnrichment.getKoreanTv(pageB, "vote_average.desc", {
+              "vote_count.gte": 50,
+            }),
           ]);
+
           const tmdbItems: any[] = [];
           for (const res of tmdbPages) {
             if (res.status === "fulfilled" && Array.isArray(res.value)) {
@@ -2245,14 +2281,22 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
             }
           }
 
+          // Match discovered items against IPTV catalog (in-memory pool & SQLite search)
           for (const item of tmdbItems) {
-            const matched = this.matchItemToFolderPool(item, true, pool);
+            if (eligible.length >= 36) break;
+            const matched = await this.matchTmdbItemToCatalog(
+              item,
+              true,
+              combinedPool,
+              sourceIds
+            );
             if (matched && matched.id) {
               const norm = this.versionMatching.normalizeNumberTokens(
                 normalizeForComparison(cleanMediaTitle(matched.name))
               );
-              if (!seenNorms.has(norm)) {
+              if (!seenNorms.has(norm) && !this.animeRowNorms.has(norm)) {
                 seenNorms.add(norm);
+                this.koreanRowNorms.add(norm);
                 eligible.push(matched);
                 this.tmdbEnrichment.seedEnrichmentFromTrending(matched, item);
               }
@@ -2263,7 +2307,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         }
       }
 
-      if (eligible.length > 0) {
+      if (eligible.length >= 8) {
         const shuffled = this.shuffleRowSelection(
           eligible,
           "lighthouse_shuffled_korean_series",
@@ -2286,49 +2330,228 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
+  private async loadAnimeContentRows(
+    sourceIds: number[],
+    categoriesRes: Channel[],
+    moviesPool: Channel[],
+    seriesPool: Channel[]
+  ): Promise<void> {
+    await this.loadAnimeAnimationRow(sourceIds, categoriesRes, moviesPool, seriesPool);
+  }
+
+  private async loadAnimeAnimationRow(
+    sourceIds: number[],
+    categoriesRes: Channel[],
+    moviesPool: Channel[],
+    seriesPool: Channel[]
+  ): Promise<void> {
+    try {
+      const activeMoviesPool = moviesPool || this.allLoadedMovies;
+      const activeSeriesPool = seriesPool || this.allLoadedSeries;
+      const animePatterns = [/\b(anime|animation|animated)\b/i];
+
+      // Scan IPTV categories matching Anime/Animation patterns
+      const categoryIds = await this.findCategoryIdsMatching(
+        sourceIds,
+        [MediaType.movie, MediaType.serie],
+        animePatterns,
+        ["anime", "animation"]
+      );
+
+      let folderPool: Channel[] = [];
+      if (categoryIds.length > 0) {
+        folderPool = await this.fetchChannelsForCategories(
+          sourceIds,
+          categoryIds.slice(0, 3),
+          MediaType.movie
+        );
+      }
+
+      const combinedMoviePool = [
+        ...activeMoviesPool,
+        ...folderPool.filter((c) => !this.isTvShow(c)),
+      ];
+      const combinedSeriesPool = [
+        ...activeSeriesPool,
+        ...folderPool.filter((c) => this.isTvShow(c)),
+      ];
+      const eligible: Channel[] = [];
+      const seenNorms = new Set<string>();
+
+      // 1. Identify channels directly from Anime/Animation folders
+      for (const ch of folderPool) {
+        const cached = this.tmdbEnrichment.getEnrichmentSync(ch);
+        const isAnimeOrAnim =
+          this.isTmdbAnimeOrAnimation(cached) ||
+          this.hasAnimeNameTag(ch.name || "");
+        if (isAnimeOrAnim) {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(ch.name))
+          );
+          if (!seenNorms.has(norm) && !this.koreanRowNorms.has(norm)) {
+            seenNorms.add(norm);
+            this.animeRowNorms.add(norm);
+            eligible.push(ch);
+          }
+        }
+      }
+
+      // 2. Discover Anime & Animation dynamically from TMDB
+      if (this.tmdbConfig.isEnabled()) {
+        try {
+          const rotation = this.getDiscoveryRotationCount("anime");
+          const pageOffset = (rotation % 3) + 1; // 1, 2, or 3
+          const altSort =
+            rotation % 2 === 1 ? "vote_average.desc" : "popularity.desc";
+          const voteParams =
+            altSort === "vote_average.desc" ? { "vote_count.gte": 50 } : {};
+
+          // Discover diverse pool: Anime TV, Anime Movies, Global Animation TV, Global Animation Movies
+          const tmdbQueries = await Promise.allSettled([
+            this.tmdbEnrichment.getAnimeTv(pageOffset, altSort, voteParams),
+            this.tmdbEnrichment.getAnimeMovies(pageOffset, altSort, voteParams),
+            this.tmdbEnrichment.getAnimationTv(1, "popularity.desc"),
+            this.tmdbEnrichment.getAnimationMovies(1, "popularity.desc"),
+          ]);
+
+          const tmdbCandidates: { item: any; isTv: boolean }[] = [];
+          for (let i = 0; i < tmdbQueries.length; i++) {
+            const res = tmdbQueries[i];
+            if (res.status === "fulfilled" && Array.isArray(res.value)) {
+              // i = 0 (Anime TV), i = 1 (Anime Movie), i = 2 (Animation TV), i = 3 (Animation Movie)
+              const isTv = i === 0 || i === 2;
+              for (const item of res.value) {
+                tmdbCandidates.push({ item, isTv });
+              }
+            }
+          }
+
+          // Match discovered items against IPTV catalog
+          for (const cand of tmdbCandidates) {
+            if (eligible.length >= 36) break;
+            const targetPool = cand.isTv
+              ? combinedSeriesPool
+              : combinedMoviePool;
+            const matched = await this.matchTmdbItemToCatalog(
+              cand.item,
+              cand.isTv,
+              targetPool,
+              sourceIds
+            );
+            if (matched && matched.id) {
+              const norm = this.versionMatching.normalizeNumberTokens(
+                normalizeForComparison(cleanMediaTitle(matched.name))
+              );
+              if (!seenNorms.has(norm) && !this.koreanRowNorms.has(norm)) {
+                seenNorms.add(norm);
+                this.animeRowNorms.add(norm);
+                eligible.push(matched);
+                this.tmdbEnrichment.seedEnrichmentFromTrending(
+                  matched,
+                  cand.item
+                );
+              }
+            }
+          }
+        } catch (tmdbErr) {
+          console.warn("TMDB Anime and Animation lookup error:", tmdbErr);
+        }
+      }
+
+      if (eligible.length >= 8) {
+        const shuffled = this.shuffleRowSelection(
+          eligible,
+          "lighthouse_shuffled_anime_animation",
+          24
+        );
+        this.upsertDiscoveryRow({
+          id: "row-anime-animation",
+          title: "Anime and Animation",
+          icon: "bookmark",
+          items: shuffled,
+        });
+
+        // Enqueue visible items for background TMDB enrichment
+        for (const item of shuffled.slice(0, 10)) {
+          this.tmdbEnrichment.enqueue(item, "normal");
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load Anime and Animation row:", err);
+    }
+  }
+
+  private async findCategoryIdsMatching(
+    sourceIds: number[],
+    mediaTypes: MediaType[],
+    patterns: RegExp[],
+    queryKeywords: string[] = []
+  ): Promise<number[]> {
+    const matchedCategoryIds: number[] = [];
+
+    // 1. Check in-memory groupsMap
+    for (const [id, name] of this.groupsMap.entries()) {
+      const cleaned = cleanCategoryTitle(name) || "";
+      if (patterns.some((p) => p.test(name) || p.test(cleaned))) {
+        if (!matchedCategoryIds.includes(id)) {
+          matchedCategoryIds.push(id);
+        }
+      }
+    }
+
+    // 2. Search database for categories if fewer than 3 found and queryKeywords provided
+    if (matchedCategoryIds.length < 3 && queryKeywords.length > 0) {
+      for (const kw of queryKeywords) {
+        for (const mt of mediaTypes) {
+          try {
+            const categories = await this.fetchSafe({
+              source_ids: sourceIds,
+              view_type: ViewMode.Categories,
+              media_types: [mt],
+              query: kw,
+              page: 1,
+              sort: SortType.alphabeticalAscending,
+              use_keywords: false,
+            });
+
+            if (categories && categories.length > 0) {
+              for (const cat of categories) {
+                if (cat.id && cat.name) {
+                  const cleaned = cleanCategoryTitle(cat.name) || "";
+                  if (
+                    patterns.some((p) => p.test(cat.name!) || p.test(cleaned))
+                  ) {
+                    if (!matchedCategoryIds.includes(cat.id)) {
+                      matchedCategoryIds.push(cat.id);
+                      this.groupsMap.set(cat.id, cat.name);
+                    }
+                  }
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    return matchedCategoryIds;
+  }
+
   private async findKoreanCategoryIds(
     sourceIds: number[],
     mediaType: MediaType,
     targetFolderNames: string[]
   ): Promise<number[]> {
-    const matchedCategoryIds: number[] = [];
-    const normalizedTargets = targetFolderNames.map((n) => n.trim().toUpperCase());
-
-    for (const [id, name] of this.groupsMap.entries()) {
-      if (normalizedTargets.includes(name.trim().toUpperCase())) {
-        matchedCategoryIds.push(id);
-      }
-    }
-
-    for (const target of targetFolderNames) {
-      try {
-        const categories = await this.fetchSafe({
-          source_ids: sourceIds,
-          view_type: ViewMode.Categories,
-          media_types: [mediaType],
-          query: target,
-          page: 1,
-          sort: SortType.alphabeticalAscending,
-          use_keywords: false,
-        });
-
-        for (const cat of categories) {
-          if (
-            cat.id &&
-            cat.name &&
-            normalizedTargets.includes(cat.name.trim().toUpperCase()) &&
-            !matchedCategoryIds.includes(cat.id)
-          ) {
-            matchedCategoryIds.push(cat.id);
-            this.groupsMap.set(cat.id, cat.name);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    return matchedCategoryIds;
+    return this.findCategoryIdsMatching(
+      sourceIds,
+      [mediaType],
+      [
+        /\b(korean|k-drama|kdrama|korea|asia\s*series|asian\s*series|doramas?)\b/i,
+      ],
+      targetFolderNames
+    );
   }
 
   private async fetchChannelsForCategories(
@@ -2353,7 +2576,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       if (page1.length >= 36) {
         const pagePromises: Promise<Channel[]>[] = [];
-        for (let p = 2; p <= 15; p++) {
+        for (let p = 2; p <= 3; p++) {
           pagePromises.push(
             this.fetchSafe({
               source_ids: sourceIds,
@@ -2444,6 +2667,29 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     );
   }
 
+  private isTmdbAnimeOrAnimation(enrichment?: TmdbMediaEnrichment): boolean {
+    if (!enrichment) return false;
+    if (
+      enrichment.genres &&
+      enrichment.genres.some((g) => /animation/i.test(g))
+    ) {
+      return true;
+    }
+    if (
+      enrichment.originalLanguage?.toLowerCase() === "ja" &&
+      enrichment.genres &&
+      enrichment.genres.some((g) => /animation|anime/i.test(g))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private hasAnimeNameTag(name: string): boolean {
+    if (!name) return false;
+    return /\b(anime|animation|animated)\b/i.test(name);
+  }
+
   private shuffleRowSelection(
     items: Channel[],
     storageKey: string,
@@ -2454,7 +2700,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
     let prevIds: number[] = [];
     try {
-      const stored = sessionStorage.getItem(storageKey);
+      const stored =
+        sessionStorage.getItem(storageKey) || localStorage.getItem(storageKey);
       if (stored) {
         prevIds = JSON.parse(stored);
       }
@@ -2489,6 +2736,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         .map((ch) => ch.id)
         .filter((id): id is number => id != null);
       sessionStorage.setItem(storageKey, JSON.stringify(currentIds));
+      localStorage.setItem(storageKey, JSON.stringify(currentIds));
     } catch {
       // ignore
     }
