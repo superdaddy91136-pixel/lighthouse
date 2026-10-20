@@ -2,7 +2,6 @@ import { Injectable, NgZone, OnDestroy } from '@angular/core';
 import { Router, NavigationStart } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, UnlistenFn } from '@tauri-apps/api/event';
-import { ToastrService } from 'ngx-toastr';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { Channel } from '../models/channel';
@@ -143,7 +142,6 @@ export class EmbeddedPlayerService implements OnDestroy {
 
   constructor(
     private ngZone: NgZone,
-    private toastr: ToastrService,
     private router: Router,
     private memory: MemoryService,
     private versionMatching: VersionMatchingService,

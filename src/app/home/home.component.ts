@@ -1133,7 +1133,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     };
     if (isLive) {
       this.livePlayingChannel = channel;
-      this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
       invoke("add_last_watched", { id: channel.id }).catch(console.error);
       if (this.embeddedPlayer.isPlayingEmbedded) {
         await this.embeddedPlayer.switchChannel(playChannel, cleanMediaTitle(channel.name || 'Live TV'));
@@ -1163,7 +1162,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     }
 
     try {
-      this.toast.info(`Starting playback for "${cleanMediaTitle(channel.name)}"...`);
       invoke("add_last_watched", { id: channel.id }).catch(console.error);
       const savedPos = this.embeddedPlayer.getSavedPosition(channel.id, channel);
       await this.embeddedPlayer.startPlayer(playChannel, 'home-video-canvas', {
@@ -1198,7 +1196,6 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       ? formatPlayerEpisodeLabel(seriesTitle, channel.name, epNum, seasonNum).full
       : cleanMediaTitle(channel.name || 'Movie');
 
-    this.toast.info(`Resuming "${title}"...`);
     invoke("add_last_watched", { id: channel.id }).catch(console.error);
 
     const savedPos = this.embeddedPlayer.getSavedPosition(channel.id, channel);

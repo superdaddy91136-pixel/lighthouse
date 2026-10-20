@@ -4118,13 +4118,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     try {
       await invoke(call, { channelId: channel.id });
       channel.favorite = !wasFavorite;
-      const title = cleanMediaTitle(channel.name);
-      if (wasFavorite) {
-        this.toastr.success(`Removed "${title}" from favorites`);
-      } else {
-        this.toastr.success(`Added "${title}" to favorites`);
-      }
-    } catch {
+    } catch (err) {
+      console.error("Failed to update favorite status:", err);
       this.toastr.error("Failed to update favorite status");
     }
   }

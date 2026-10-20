@@ -274,22 +274,14 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
   async favorite() {
     let call = "favorite_channel";
     const wasFavorite = this.channel!.favorite;
-    let msg = `Added "${this.channel?.name}" to favorites`;
     if (wasFavorite) {
       call = "unfavorite_channel";
-      msg = `Removed "${this.channel?.name}" from favorites`;
     }
     try {
       await invoke(call, { channelId: this.channel!.id });
       this.channel!.favorite = !wasFavorite;
-      if (wasFavorite) {
-        if (this.viewMode == ViewMode.Favorites)
-          this.fade = true;
-        this.toastr.success(`${msg} (updates on reload)`);
-      } else {
-        if (this.viewMode == ViewMode.Favorites)
-          this.fade = false;
-        this.toastr.success(msg);
+      if (this.viewMode == ViewMode.Favorites) {
+        this.fade = !!wasFavorite;
       }
     } catch (e) {
       this.error.handleError(e, `Failed to add/remove "${this.channel?.name}" to/from favorites`);

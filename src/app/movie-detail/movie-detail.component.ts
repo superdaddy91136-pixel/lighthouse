@@ -773,7 +773,6 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
 
-      this.toastr.info(`Starting embedded playback for "${this.cleanTitle}"...`);
       invoke('add_last_watched', { id: playChannel.id }).catch(console.error);
 
       // Persist this played version preference
@@ -962,12 +961,8 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     try {
       await invoke(call, { channelId: this.movie.id });
       this.movie.favorite = !wasFavorite;
-      if (wasFavorite) {
-        this.toastr.success(`Removed "${this.cleanTitle}" from favorites`);
-      } else {
-        this.toastr.success(`Added "${this.cleanTitle}" to favorites`);
-      }
-    } catch {
+    } catch (err) {
+      console.error('Failed to update favorite status:', err);
       this.toastr.error('Failed to update favorite status');
     }
   }
