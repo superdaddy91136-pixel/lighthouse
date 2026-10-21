@@ -35,6 +35,7 @@ pub mod sql;
 pub mod types;
 pub mod utils;
 pub mod view_type;
+pub mod window_state;
 pub mod xtream;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -135,6 +136,11 @@ pub fn run() {
                 ..Default::default()
             }));
             app.manage(embedded_poc::EmbeddedPocState::new());
+            if let Some(window) = app.get_webview_window("main") {
+                window_state::restore_main_window(&window);
+                window_state::save_main_window_state(&window);
+                let _ = window.show();
+            }
             embedded_poc::init_overlay_window(app.handle());
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             if *ENABLE_TRAY_ICON {
@@ -149,6 +155,10 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                     return;
+                }
+
+                if let Some(main_window) = window.app_handle().get_webview_window("main") {
+                    window_state::save_main_window_state(&main_window);
                 }
 
                 if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
@@ -183,6 +193,9 @@ pub fn run() {
                         embedded_poc::apply_overlay_client_region(h, None);
                     }
                 } else if window.label() == "main" {
+                    if let Some(main_window) = window.app_handle().get_webview_window("main") {
+                        window_state::save_main_window_state(&main_window);
+                    }
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         state.sync_overlay_position_to_main_window();
                     }
@@ -197,6 +210,9 @@ pub fn run() {
                         embedded_poc::apply_overlay_client_region(h, None);
                     }
                 } else if window.label() == "main" {
+                    if let Some(main_window) = window.app_handle().get_webview_window("main") {
+                        window_state::save_main_window_state(&main_window);
+                    }
                     if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                         if window.is_minimized().unwrap_or(false) {
                             state.hide_overlay();
@@ -250,6 +266,9 @@ pub fn run() {
                 let _ = window.set_focus();
             }
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+                if let Some(window) = app.get_webview_window("main") {
+                    window_state::save_main_window_state(&window);
+                }
                 if let Some(state) = app.try_state::<embedded_poc::EmbeddedPocState>() {
                     state.stop_sync();
                 }
