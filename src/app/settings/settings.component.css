@@ -20,3 +20,223 @@
     padding: 1.5rem 1rem 4rem 1rem;
   }
 }
+
+/* ==========================================================================
+   TWO-COLUMN SETTINGS LAYOUT
+   Sidebar navigation + category content panel. Styling mirrors the existing
+   frosted-glass design tokens (blurred panels, subtle borders, rose accent).
+   ========================================================================== */
+
+.settings-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+/* Align the header with the wider two-column shell */
+.settings-nav-header {
+  max-width: 1180px;
+}
+
+/* Panel overrides the single-column global wrapper */
+.settings-panel {
+  max-width: none;
+  margin: 0;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.settings-category {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.settings-category[hidden] {
+  display: none !important;
+}
+
+/* Sidebar shell */
+.settings-sidebar {
+  position: sticky;
+  top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.7rem;
+  background: rgba(255, 255, 255, 0.032);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+}
+
+/* Category button */
+.settings-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.65rem 0.7rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  color: rgba(255, 255, 255, 0.66);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.settings-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.settings-nav-item:focus-visible {
+  border-color: rgba(244, 63, 94, 0.55);
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18);
+  color: #ffffff;
+}
+
+.settings-nav-item.active {
+  background: linear-gradient(90deg, rgba(244, 63, 94, 0.16) 0%, rgba(244, 63, 94, 0.06) 100%);
+  border-color: rgba(244, 63, 94, 0.32);
+  color: #ffffff;
+}
+
+.settings-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 3px 3px 0;
+  background: #f43f5e;
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.6);
+}
+
+.settings-nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.settings-nav-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-nav-item:hover .settings-nav-icon {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+.settings-nav-item.active .settings-nav-icon {
+  background: rgba(244, 63, 94, 0.16);
+  border-color: rgba(244, 63, 94, 0.32);
+  color: #ff8fa3;
+}
+
+.settings-nav-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.settings-nav-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.settings-nav-desc {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.42);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-nav-item.active .settings-nav-desc {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* Tablet */
+@media (max-width: 1080px) {
+  .settings-shell {
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+/* Stacked layout: sidebar becomes a horizontal category strip */
+@media (max-width: 900px) {
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
+  .settings-sidebar {
+    position: static;
+    flex-direction: row;
+    gap: 0.4rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .settings-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 0.55rem 0.85rem;
+  }
+
+  .settings-nav-item.active::before {
+    display: none;
+  }
+
+  .settings-nav-desc {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .settings-shell {
+    max-width: 100%;
+  }
+
+  .settings-nav-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .settings-nav-label {
+    font-size: 0.84rem;
+  }
+}
+
