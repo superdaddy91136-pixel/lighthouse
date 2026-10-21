@@ -53,6 +53,7 @@ import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.c
 import { PinService } from '../services/pin.service';
 import { EmbeddedPlayerService } from '../services/embedded-player.service';
 import { MovieDetailService } from '../services/movie-detail.service';
+import { AmbientBackgroundService } from '../services/ambient-background.service';
 import { SearchStateService, UniversalSearchResults, TabSearchState } from '../services/search-state.service';
 
 export interface CategoryOption {
@@ -1254,6 +1255,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     public pinService: PinService,
     public embeddedPlayer: EmbeddedPlayerService,
     private searchStateService: SearchStateService,
+    private ambientBackground: AmbientBackgroundService,
     private cdr: ChangeDetectorRef,
   ) {
     const savedFolderSort = localStorage.getItem('lighthouse_live_folder_sort') as LiveFolderSort;
@@ -1559,8 +1561,13 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       }),
     );
     this.subscriptions.push(
-      this.memory.activeNavTab.subscribe(() => {
+      this.memory.activeNavTab.subscribe((tab) => {
         this.updatePinnedItems();
+        if (tab !== NavTab.Home) {
+          this.ambientBackground.resetToDefault('non-home-tab');
+        } else {
+          this.ambientBackground.restoreHomeHero();
+        }
       }),
     );
   }

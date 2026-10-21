@@ -4,7 +4,7 @@
 @import "./assets/css/roboto.css";
 
 body {
-  background-color: #202124;
+  background-color: #07080c;
   color: white;
 }
 
@@ -292,10 +292,10 @@ body::-webkit-scrollbar-thumb:active {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(32, 33, 36, 0.3) 30%,
-    rgba(32, 33, 36, 0.75) 65%,
-    rgba(32, 33, 36, 0.95) 88%,
-    #202124 100%
+    rgba(7, 8, 12, 0.20) 30%,
+    rgba(7, 8, 12, 0.60) 65%,
+    rgba(7, 8, 12, 0.88) 88%,
+    rgba(7, 8, 12, 0.96) 100%
   );
   pointer-events: none;
 }
@@ -1186,7 +1186,7 @@ body::-webkit-scrollbar-thumb:active {
   min-height: 100vh;
   padding-bottom: 4rem;
   color: #ffffff;
-  background: #0f1117;
+  background: transparent;
 }
 
 /* ── Standardized Circular Back Button ── */
@@ -1273,7 +1273,7 @@ body::-webkit-scrollbar-thumb:active {
   z-index: 1;
   pointer-events: none;
   overflow: hidden;
-  background: #0f1117;
+  background: transparent;
 }
 .movie-backdrop-img {
   width: 100%;
@@ -1294,17 +1294,17 @@ body::-webkit-scrollbar-thumb:active {
   background: 
     linear-gradient(
       90deg,
-      rgba(15, 17, 23, 0.92) 0%,
-      rgba(15, 17, 23, 0.78) 72px,
-      rgba(15, 17, 23, 0.4) 180px,
+      rgba(7, 8, 12, 0.92) 0%,
+      rgba(7, 8, 12, 0.78) 72px,
+      rgba(7, 8, 12, 0.4) 180px,
       transparent 360px
     ),
     linear-gradient(
       to top,
-      #0f1117 0%,
-      rgba(15, 17, 23, 0.88) 30%,
-      rgba(15, 17, 23, 0.35) 65%,
-      rgba(15, 17, 23, 0.55) 100%
+      rgba(7, 8, 12, 0.96) 0%,
+      rgba(7, 8, 12, 0.88) 30%,
+      rgba(7, 8, 12, 0.35) 65%,
+      rgba(7, 8, 12, 0.55) 100%
     );
 }
 .movie-backdrop-vignette {
@@ -1313,8 +1313,8 @@ body::-webkit-scrollbar-thumb:active {
   background: radial-gradient(
     ellipse at 20% 50%,
     transparent 0%,
-    rgba(15, 17, 23, 0.5) 70%,
-    #0f1117 100%
+    rgba(7, 8, 12, 0.5) 70%,
+    rgba(7, 8, 12, 0.92) 100%
   );
 }
 

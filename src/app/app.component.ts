@@ -1,7 +1,9 @@
 import { Component, HostListener } from "@angular/core";
 import { DownloadService } from "./download.service";
-import { Router } from "@angular/router";
+import { Router, NavigationEnd } from "@angular/router";
+import { filter } from "rxjs/operators";
 import { MemoryService } from "./memory.service";
+import { AmbientBackgroundService } from "./services/ambient-background.service";
 
 @Component({
   selector: "app-root",
@@ -14,8 +16,18 @@ export class AppComponent {
   constructor(
     private download: DownloadService,
     public router: Router,
-    public memory: MemoryService
-  ) {}
+    public memory: MemoryService,
+    private ambientBackground: AmbientBackgroundService
+  ) {
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => {
+        const url = e.urlAfterRedirects || e.url;
+        if (url.includes('/settings') || url.includes('/profile') || url.includes('/setup')) {
+          this.ambientBackground.resetToDefault('route-' + url);
+        }
+      });
+  }
 
   @HostListener("document:contextmenu", ["$event"])
   onRightClick(event: MouseEvent) {

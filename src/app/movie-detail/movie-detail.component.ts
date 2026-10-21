@@ -26,6 +26,7 @@ import { ViewMode } from '../models/viewMode';
 import { TmdbCastMember, TmdbMediaEnrichment, TmdbVideo } from '../models/tmdb';
 import { MediaVersion } from '../models/version';
 import { EmbeddedPlayerService } from '../services/embedded-player.service';
+import { AmbientBackgroundService } from '../services/ambient-background.service';
 import { MovieDetailService } from '../services/movie-detail.service';
 import { TmdbCacheService } from '../services/tmdb-cache.service';
 import { TmdbConfigService } from '../services/tmdb-config.service';
@@ -55,6 +56,15 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   cleanTitle: string = '';
   backdropUrl?: string;
+
+  private updateAmbientBackground(): void {
+    const art = (!this.backdropError && this.backdropUrl) ? this.backdropUrl : (this.posterUrl || this.movie?.image);
+    if (art) {
+      this.ambientBackground.setArtwork(art, `movie-${this.movie?.id}`);
+    } else {
+      this.ambientBackground.resetToDefault(`movie-${this.movie?.id}`);
+    }
+  }
   posterUrl?: string;
   synopsis?: string;
   isSynopsisLong: boolean = false;
@@ -115,6 +125,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private sanitizer: DomSanitizer,
     private cdr: ChangeDetectorRef,
     public embeddedPlayer: EmbeddedPlayerService,
+    private ambientBackground: AmbientBackgroundService,
   ) {}
 
   private resetScrollPosition(): void {
@@ -389,6 +400,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isBackdropFallback = false;
       }
     }
+    this.updateAmbientBackground();
 
     // 2. Cache-first async retrieval / background enrichment
     this.tmdbEnrichment.getEnrichment(movie, true, 'high').then((res) => {
@@ -531,6 +543,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
             this.backdropUrl = highResBackdrop;
             this.isBackdropFallback = false;
             this.backdropError = false;
+            this.updateAmbientBackground();
             this.cdr.markForCheck();
           };
           img.onerror = () => {
@@ -587,6 +600,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       const ytUrl = `https://www.youtube-nocookie.com/embed/${this.trailer.key}?autoplay=1`;
       this.safeTrailerUrl = this.sanitizer.bypassSecurityTrustResourceUrl(ytUrl);
     }
+    this.updateAmbientBackground();
   }
 
   private checkSynopsisLength(): void {
@@ -1085,10 +1099,12 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.backdropUrl = this.movie.image;
       this.isBackdropFallback = true;
       this.backdropError = false;
+      this.updateAmbientBackground();
       return;
     }
     this.backdropError = true;
     this.backdropUrl = undefined;
+    this.updateAmbientBackground();
   }
 
   goBack(): void {

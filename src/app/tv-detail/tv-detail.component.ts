@@ -35,6 +35,7 @@ import { TvDetailService } from '../services/tv-detail.service';
 import { VersionMatchingService } from '../services/version-matching.service';
 import { EpisodeSwitcherComponent } from '../episode-switcher/episode-switcher.component';
 import { EmbeddedPlayerService } from '../services/embedded-player.service';
+import { AmbientBackgroundService } from '../services/ambient-background.service';
 import { isInputFocused } from '../utils';
 import {
   cleanMediaTitle,
@@ -76,6 +77,15 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   cleanTitle: string = '';
   backdropUrl?: string;
+
+  private updateAmbientBackground(): void {
+    const art = (!this.backdropError && this.backdropUrl) ? this.backdropUrl : (this.posterUrl || this.show?.image);
+    if (art) {
+      this.ambientBackground.setArtwork(art, `tv-${this.show?.id}`);
+    } else {
+      this.ambientBackground.resetToDefault(`tv-${this.show?.id}`);
+    }
+  }
   posterUrl?: string;
   synopsis?: string;
   isSynopsisLong: boolean = false;
@@ -147,6 +157,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private sanitizer: DomSanitizer,
     private cdr: ChangeDetectorRef,
     public embeddedPlayer: EmbeddedPlayerService,
+    private ambientBackground: AmbientBackgroundService,
   ) {}
 
 
@@ -328,6 +339,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isBackdropFallback = false;
       }
     }
+    this.updateAmbientBackground();
 
     // 2. Cache-first async retrieval / background enrichment
     this.tmdbEnrichment.getEnrichment(show, true, 'high').then((res) => {
@@ -513,6 +525,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
             this.backdropUrl = highResBackdrop;
             this.isBackdropFallback = false;
             this.backdropError = false;
+            this.updateAmbientBackground();
             this.cdr.markForCheck();
           };
           img.onerror = () => {
@@ -592,6 +605,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       const ytUrl = `https://www.youtube-nocookie.com/embed/${this.trailer.key}?autoplay=1`;
       this.safeTrailerUrl = this.sanitizer.bypassSecurityTrustResourceUrl(ytUrl);
     }
+    this.updateAmbientBackground();
   }
 
   private checkSynopsisLength(): void {
@@ -1322,10 +1336,12 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       this.backdropUrl = this.show.image;
       this.isBackdropFallback = true;
       this.backdropError = false;
+      this.updateAmbientBackground();
       return;
     }
     this.backdropError = true;
     this.backdropUrl = undefined;
+    this.updateAmbientBackground();
   }
 
   goBack(): void {

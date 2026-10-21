@@ -1,0 +1,26 @@
+<div class="ambient-viewport" aria-hidden="true">
+  <!-- Deep obsidian base -->
+  <div class="ambient-base"></div>
+
+  <!-- Crossfading Stage A -->
+  <div #stageA class="ambient-stage" [class.active]="activeLayer === 'A'">
+    <div class="ambient-glow glow-primary"></div>
+    <div class="ambient-glow glow-secondary"></div>
+    <div class="ambient-glow glow-tertiary"></div>
+    <div class="ambient-glow glow-center"></div>
+  </div>
+
+  <!-- Crossfading Stage B -->
+  <div #stageB class="ambient-stage" [class.active]="activeLayer === 'B'">
+    <div class="ambient-glow glow-primary"></div>
+    <div class="ambient-glow glow-secondary"></div>
+    <div class="ambient-glow glow-tertiary"></div>
+    <div class="ambient-glow glow-center"></div>
+  </div>
+
+  <!-- Dual-axis vignette protecting readability and control contrast -->
+  <div class="ambient-vignette"></div>
+
+  <!-- Subtle micro-grain texture eliminating gradient banding -->
+  <div class="ambient-grain"></div>
+</div>

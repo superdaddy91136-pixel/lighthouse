@@ -46,6 +46,7 @@ import {
   HomeDiscoveryStateService,
 } from "../../services/home-discovery-state.service";
 import { EmbeddedPlayerService } from "../../services/embedded-player.service";
+import { AmbientBackgroundService } from "../../services/ambient-background.service";
 
 export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
 
@@ -193,6 +194,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     private tvDetailService: TvDetailService,
     public versionMatching: VersionMatchingService,
     public embeddedPlayer: EmbeddedPlayerService,
+    private ambientBackground: AmbientBackgroundService,
     private cdr: ChangeDetectorRef,
     private ngZone: NgZone,
   ) {}
@@ -235,6 +237,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
 
     this.loadDiscovery();
+    this.updateAmbientBackground();
 
     this.subs.push(
       this.memory.Refresh.subscribe(() => {
@@ -346,6 +349,15 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.isHeroHovered = false;
   }
 
+  public updateAmbientBackground(): void {
+    const hero = this.currentHero;
+    if (hero && hero.imageUrl && !this.isImageBroken(hero.channel?.id)) {
+      this.ambientBackground.setArtwork(hero.imageUrl, 'home-hero');
+    } else {
+      this.ambientBackground.resetToDefault('home-hero');
+    }
+  }
+
   get currentHero(): HeroItem | undefined {
     if (this.heroItems.length === 0) return undefined;
     return this.heroItems[this.currentHeroIndex];
@@ -355,6 +367,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (index >= 0 && index < this.heroItems.length) {
       this.currentHeroIndex = index;
       this.recordHeroShown(this.currentHero?.channel?.id);
+      this.updateAmbientBackground();
     }
   }
 
@@ -385,6 +398,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
 
       this.recordHeroShown(this.currentHero?.channel?.id);
+      this.updateAmbientBackground();
 
       // Prioritize background TMDB enrichment for the newly active hero
       const active = this.currentHero;
@@ -403,6 +417,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.currentHeroIndex =
         (this.currentHeroIndex - 1 + this.heroItems.length) % this.heroItems.length;
       this.recordHeroShown(this.currentHero?.channel?.id);
+      this.updateAmbientBackground();
     }
   }
 
@@ -804,6 +819,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       this.applyContentPreferences();
       this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
+    this.updateAmbientBackground();
       this.cdr.markForCheck();
     } catch (err) {
       console.warn("Failed to refresh continue watching:", err);
@@ -3841,6 +3857,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   onImageError(channelId?: number) {
     if (channelId) {
       this.imageErrorSet.add(channelId);
+      if (this.currentHero?.channel?.id === channelId) {
+        this.updateAmbientBackground();
+      }
     }
   }
 
