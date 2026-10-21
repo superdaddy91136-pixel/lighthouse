@@ -11,12 +11,10 @@ import { NgbModal } from "@ng-bootstrap/ng-bootstrap";
 import { ConfirmDeleteModalComponent } from "../confirm-delete-modal/confirm-delete-modal.component";
 import { SORT_TYPES, SortType, getSortTypeText } from "../models/sortType";
 import { NavTab } from "../models/navTab";
-import { Channel } from "../models/channel";
-import { Filters } from "../models/filters";
-import { MediaType } from "../models/mediaType";
 import { ToastrService } from "ngx-toastr";
 import { TmdbConfigService } from "../services/tmdb-config.service";
 import { TmdbCacheService } from "../services/tmdb-cache.service";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export type SettingsCategoryId =
   | "general"
@@ -27,7 +25,7 @@ export type SettingsCategoryId =
   | "network"
   | "system";
 
-interface SettingsCategory {
+export interface SettingsCategory {
   id: SettingsCategoryId;
   label: string;
   description: string;
@@ -43,52 +41,60 @@ export class SettingsComponent {
   subscriptions: Subscription[] = [];
   startupPage: string = "home";
 
-  // Sidebar categories. Groups existing settings only; no setting is duplicated.
+  // Desktop categories mapping directly to existing application capabilities
   readonly categories: SettingsCategory[] = [
     {
       id: "general",
       label: "General",
-      description: "Startup page and catalog ordering",
-      icon: "M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z",
+      description: "Startup section, catalog ordering, and interface zoom",
+      icon: "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z",
     },
     {
       id: "playback",
       label: "Playback",
-      description: "Audio, buffering and video engine",
-      icon: "M12,2C6.48,2 2,6.48 2,12S6.48,22 12,22 22,17.52 22,12 17.52,2 12,2M10,16.5V7.5L16,12L10,16.5Z",
+      description: "Audio volume, network buffer, and GPU video decoding",
+      icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z",
     },
     {
       id: "library",
       label: "Library",
-      description: "Sources, sync and watch history",
-      icon: "M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z",
+      description: "IPTV sources, playlist sync, and viewing history",
+      icon: "M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z",
     },
     {
       id: "downloads",
       label: "Downloads",
-      description: "Recording folder and save prompts",
-      icon: "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z",
+      description: "Recording destination and save location prompts",
+      icon: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
     },
     {
       id: "metadata",
       label: "Metadata",
-      description: "TMDB artwork and enrichment",
-      icon: "M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18Z",
+      description: "TMDB artwork, backdrops, cast, and cache stats",
+      icon: "M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z",
     },
     {
       id: "network",
       label: "Network",
-      description: "Re-streaming to other devices",
-      icon: "M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z",
+      description: "Local TCP port for LAN re-streaming",
+      icon: "M12 21l3.6-4.8A7.95 7.95 0 0 0 12 15c-1.35 0-2.6.45-3.6 1.2L12 21zm0-18C7.95 3 4.21 4.34 1.2 6.6L3 9c2.5-1.88 5.62-3 9-3s6.5 1.12 9 3l1.8-2.4C19.79 4.34 16.05 3 12 3zm0 6c-2.7 0-5.19.89-7.2 2.4L6.6 13.8A7.93 7.93 0 0 1 12 12c2.03 0 3.9.67 5.4 1.8l1.8-2.4A11.95 11.95 0 0 0 12 9z",
     },
     {
       id: "system",
       label: "System",
-      description: "Tray behavior and startup refresh",
-      icon: "M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z",
+      description: "Taskbar notification tray and launch refresh",
+      icon: "M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z",
     },
   ];
   activeCategory: SettingsCategoryId = "general";
+
+  readonly zoomOptions = [
+    { value: 80, label: "80% (Compact)" },
+    { value: 90, label: "90% (Small)" },
+    { value: 100, label: "100% (Default)" },
+    { value: 110, label: "110% (Medium)" },
+    { value: 125, label: "125% (Large)" },
+  ];
 
   // TMDB configuration state
   tmdbEnabled: boolean = false;
@@ -98,7 +104,6 @@ export class SettingsComponent {
   tmdbTestMessage: string = "";
   tmdbTestSuccess: boolean | null = null;
   tmdbCacheStats: { enrichedCount: number; failedCount: number } = { enrichedCount: 0, failedCount: 0 };
-
 
   settings: Settings = {
     use_stream_caching: true,
@@ -180,9 +185,9 @@ export class SettingsComponent {
   @HostListener("document:keydown", ["$event"])
   onKeyDown(event: KeyboardEvent) {
     if (
-      event.key == "Escape" ||
-      event.key == "BrowserBack" ||
-      (event.key == "Backspace" && !this.isInputFocused())
+      event.key === "Escape" ||
+      event.key === "BrowserBack" ||
+      (event.key === "Backspace" && !this.isInputFocused())
     ) {
       if (this.memory.ModalRef) {
         this.memory.ModalRef.close("close");
@@ -212,26 +217,37 @@ export class SettingsComponent {
     localStorage.setItem("fred_tv_startup_page", this.startupPage);
   }
 
+  onZoomChange() {
+    this.updateSettings();
+    try {
+      if (this.settings.zoom) {
+        getCurrentWebview().setZoom(Math.trunc(this.settings.zoom * 100) / 10000);
+      }
+    } catch (e) {
+      console.warn("Could not set zoom immediately", e);
+    }
+  }
+
   getSettings() {
     invoke("get_settings").then((x) => {
       this.settings = x as Settings;
-      if (this.settings.use_stream_caching == undefined) this.settings.use_stream_caching = true;
-      if (this.settings.default_view == undefined) this.settings.default_view = ViewMode.All;
-      if (this.settings.volume == undefined) this.settings.volume = 100;
-      if (this.settings.restream_port == undefined) this.settings.restream_port = 3000;
-      if (this.settings.enable_tray_icon == undefined) this.settings.enable_tray_icon = true;
-      if (this.settings.zoom == undefined) this.settings.zoom = 100;
-      if (this.settings.default_sort == undefined) this.settings.default_sort = SortType.provider;
-      if (this.settings.enable_hwdec == undefined) this.settings.enable_hwdec = true;
-      if (this.settings.always_ask_save == undefined) this.settings.always_ask_save = false;
-      if (this.settings.enable_gpu == undefined) this.settings.enable_gpu = false;
+      if (this.settings.use_stream_caching === undefined) this.settings.use_stream_caching = true;
+      if (this.settings.default_view === undefined) this.settings.default_view = ViewMode.All;
+      if (this.settings.volume === undefined) this.settings.volume = 100;
+      if (this.settings.restream_port === undefined) this.settings.restream_port = 3000;
+      if (this.settings.enable_tray_icon === undefined) this.settings.enable_tray_icon = true;
+      if (this.settings.zoom === undefined) this.settings.zoom = 100;
+      if (this.settings.default_sort === undefined) this.settings.default_sort = SortType.provider;
+      if (this.settings.enable_hwdec === undefined) this.settings.enable_hwdec = true;
+      if (this.settings.always_ask_save === undefined) this.settings.always_ask_save = false;
+      if (this.settings.enable_gpu === undefined) this.settings.enable_gpu = false;
     });
   }
 
   getSources() {
     invoke("get_sources").then((x) => {
       this.sources = x as Source[];
-      if (this.sources.length == 0) {
+      if (this.sources.length === 0) {
         this.memory.AddingAdditionalSource = false;
         this.nav.navigateByUrl("setup");
       }
@@ -245,19 +261,22 @@ export class SettingsComponent {
   }
 
   ngAfterViewInit(): void {
-    this.subscriptions.push(
-      fromEvent(this.mpvParams.nativeElement, "keyup")
-        .pipe(
-          map((event: any) => {
-            return event.target.value;
+    if (this.mpvParams?.nativeElement) {
+      this.subscriptions.push(
+        fromEvent(this.mpvParams.nativeElement, "keyup")
+          .pipe(
+            map((event: any) => {
+              return event.target.value;
+            }),
+            debounceTime(500),
+            distinctUntilChanged(),
+          )
+          .subscribe(async () => {
+            await this.updateSettings();
           }),
-          debounceTime(500),
-          distinctUntilChanged(),
-        )
-        .subscribe(async () => {
-          await this.updateSettings();
-        }),
-    );
+      );
+    }
+
     this.subscriptions.push(
       this.memory.RefreshSources.subscribe((_) => {
         this.getSources();
@@ -286,7 +305,7 @@ export class SettingsComponent {
 
   async updateSettings() {
     this.settings.mpv_params = this.settings.mpv_params?.trim();
-    if (this.settings.mpv_params == "")
+    if (this.settings.mpv_params === "")
       this.settings.mpv_params = undefined;
     await invoke("update_settings", { settings: this.settings });
   }
@@ -381,6 +400,7 @@ export class SettingsComponent {
     await this.loadTmdbCacheStats();
     this.toastr.success("TMDB metadata cache cleared.");
   }
+
   ngOnDestroy(): void {
     this.subscriptions.forEach((x) => x.unsubscribe());
   }
