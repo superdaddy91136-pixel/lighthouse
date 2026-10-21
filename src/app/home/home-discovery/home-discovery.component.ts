@@ -228,6 +228,12 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }),
     );
 
+    const cachedSnapshot = this.discoveryState.getSnapshot();
+    if (cachedSnapshot?.masterHeroItems.length) {
+      this.syncFromSnapshot(cachedSnapshot);
+      this.loading = false;
+    }
+
     this.loadDiscovery();
 
     this.subs.push(
