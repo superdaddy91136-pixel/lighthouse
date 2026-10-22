@@ -343,69 +343,10 @@
   </section>
 
   <!-- ========================================== -->
-  <!-- 3. TV SHOW INFORMATION                     -->
-  <!-- ========================================== -->
-  <section class="movie-body-section" *ngIf="hasAnyInfo()">
-    <div class="section-block">
-      <h3 class="section-heading">
-        <svg viewBox="0 0 24 24" fill="currentColor" class="section-icon">
-          <path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" />
-        </svg>
-        Series Information
-      </h3>
-      <div class="info-grid">
-        <div class="info-item" *ngIf="firstAirDate || releaseYear">
-          <span class="info-label">First Air Date</span>
-          <span class="info-value">{{ firstAirDate || releaseYear }}</span>
-        </div>
-        <div class="info-item" *ngIf="lastAirDate">
-          <span class="info-label">Last Air Date</span>
-          <span class="info-value">{{ lastAirDate }}</span>
-        </div>
-        <div class="info-item" *ngIf="numberOfSeasons">
-          <span class="info-label">Seasons</span>
-          <span class="info-value">{{ numberOfSeasons }}</span>
-        </div>
-        <div class="info-item" *ngIf="numberOfEpisodes">
-          <span class="info-label">Total Episodes</span>
-          <span class="info-value">{{ numberOfEpisodes }}</span>
-        </div>
-        <div class="info-item" *ngIf="genres.length > 0">
-          <span class="info-label">Genres</span>
-          <span class="info-value">{{ genres.join(', ') }}</span>
-        </div>
-        <div class="info-item" *ngIf="creator">
-          <span class="info-label">Creator</span>
-          <span class="info-value">{{ creator }}</span>
-        </div>
-        <div class="info-item" *ngIf="status">
-          <span class="info-label">Status</span>
-          <span class="info-value">{{ status }}</span>
-        </div>
-        <div class="info-item" *ngIf="rating">
-          <span class="info-label">TMDB Rating</span>
-          <span class="info-value">
-            ★ {{ rating | number:'1.1-1' }} / 10
-            <span class="vote-count" *ngIf="voteCount"> ({{ voteCount | number }} votes)</span>
-          </span>
-        </div>
-        <div class="info-item" *ngIf="originalLanguage">
-          <span class="info-label">Language</span>
-          <span class="info-value">{{ originalLanguage | uppercase }}</span>
-        </div>
-        <div class="info-item" *ngIf="qualityBadge">
-          <span class="info-label">Stream Quality</span>
-          <span class="info-value quality-value">{{ qualityBadge }}</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ========================================== -->
-  <!-- 4. CAST & CREW                             -->
+  <!-- 3. CAST & CREW                             -->
   <!-- ========================================== -->
   <section class="movie-body-section" *ngIf="cast.length > 0">
-    <div class="section-block">
+    <div class="section-block detail-section-flat">
       <h3 class="section-heading">
         <svg viewBox="0 0 24 24" fill="currentColor" class="section-icon">
           <path d="M16,13C15.71,13 15.38,13 15.03,13.05C16.19,13.89 17,15 17,16.5V19H23V16.5C23,14.17 18.33,13 16,13M8,13C5.67,13 1,14.17 1,16.5V19H15V16.5C15,14.17 10.33,13 8,13M8,11A3,3 0 0,0 11,8A3,3 0 0,0 8,5A3,3 0 0,0 5,8A3,3 0 0,0 8,11M16,11A3,3 0 0,0 19,8A3,3 0 0,0 16,5A3,3 0 0,0 13,8A3,3 0 0,0 16,11Z" />
@@ -438,10 +379,10 @@
   </section>
 
   <!-- ========================================== -->
-  <!-- 5. MORE LIKE THIS                          -->
+  <!-- 4. MORE LIKE THIS                          -->
   <!-- ========================================== -->
   <section class="movie-body-section" *ngIf="similarShows.length > 0">
-    <div class="section-block">
+    <div class="section-block detail-section-flat">
       <div class="section-header-row">
         <h3 class="section-heading">
           More Like This

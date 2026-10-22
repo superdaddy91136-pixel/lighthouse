@@ -666,19 +666,6 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.castImageErrors.has(actorId);
   }
 
-  hasAnyInfo(): boolean {
-    return !!(
-      this.releaseYear ||
-      this.enrichment?.releaseDate ||
-      this.runtimeText ||
-      this.genres.length > 0 ||
-      this.director ||
-      this.rating ||
-      this.enrichment?.originalLanguage ||
-      this.qualityBadge
-    );
-  }
-
   updateWatchProgress(): void {
     this.hasWatchProgress = this.checkWatchProgress();
     this.cdr.markForCheck();

@@ -679,21 +679,6 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.episodeImageErrors.has(episodeId);
   }
 
-  hasAnyInfo(): boolean {
-    return !!(
-      this.firstAirDate ||
-      this.lastAirDate ||
-      this.numberOfSeasons ||
-      this.numberOfEpisodes ||
-      this.genres.length > 0 ||
-      this.status ||
-      this.creator ||
-      this.rating ||
-      this.originalLanguage ||
-      this.qualityBadge
-    );
-  }
-
   // -------------------------------------------------------------
   // Seasons & Episodes Loading
   // -------------------------------------------------------------

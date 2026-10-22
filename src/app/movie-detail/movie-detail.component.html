@@ -204,57 +204,10 @@
   </section>
 
   <!-- ========================================== -->
-  <!-- 2. MOVIE INFORMATION                       -->
-  <!-- ========================================== -->
-  <section class="movie-body-section" *ngIf="hasAnyInfo()">
-    <div class="section-block">
-      <h3 class="section-heading">
-        <svg viewBox="0 0 24 24" fill="currentColor" class="section-icon">
-          <path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" />
-        </svg>
-        Movie Information
-      </h3>
-      <div class="info-grid">
-        <div class="info-item" *ngIf="enrichment?.releaseDate || releaseYear">
-          <span class="info-label">Release Date</span>
-          <span class="info-value">{{ enrichment?.releaseDate || releaseYear }}</span>
-        </div>
-        <div class="info-item" *ngIf="runtimeText">
-          <span class="info-label">Runtime</span>
-          <span class="info-value">{{ runtimeText }}</span>
-        </div>
-        <div class="info-item" *ngIf="genres.length > 0">
-          <span class="info-label">Genres</span>
-          <span class="info-value">{{ genres.join(', ') }}</span>
-        </div>
-        <div class="info-item" *ngIf="director">
-          <span class="info-label">Director</span>
-          <span class="info-value">{{ director }}</span>
-        </div>
-        <div class="info-item" *ngIf="rating">
-          <span class="info-label">Rating</span>
-          <span class="info-value">
-            ★ {{ rating | number:'1.1-1' }} / 10
-            <span class="vote-count" *ngIf="voteCount"> ({{ voteCount | number }} votes)</span>
-          </span>
-        </div>
-        <div class="info-item" *ngIf="enrichment?.originalLanguage">
-          <span class="info-label">Language</span>
-          <span class="info-value">{{ enrichment?.originalLanguage | uppercase }}</span>
-        </div>
-        <div class="info-item" *ngIf="qualityBadge">
-          <span class="info-label">Stream Quality</span>
-          <span class="info-value quality-value">{{ qualityBadge }}</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ========================================== -->
-  <!-- 3. CAST                                    -->
+  <!-- 2. CAST                                    -->
   <!-- ========================================== -->
   <section class="movie-body-section" *ngIf="cast.length > 0">
-    <div class="section-block">
+    <div class="section-block detail-section-flat">
       <h3 class="section-heading">
         <svg viewBox="0 0 24 24" fill="currentColor" class="section-icon">
           <path d="M16,13C15.71,13 15.38,13 15.03,13.05C16.19,13.89 17,15 17,16.5V19H23V16.5C23,14.17 18.33,13 16,13M8,13C5.67,13 1,14.17 1,16.5V19H15V16.5C15,14.17 10.33,13 8,13M8,11A3,3 0 0,0 11,8A3,3 0 0,0 8,5A3,3 0 0,0 5,8A3,3 0 0,0 8,11M16,11A3,3 0 0,0 19,8A3,3 0 0,0 16,5A3,3 0 0,0 13,8A3,3 0 0,0 16,11Z" />
@@ -287,10 +240,10 @@
   </section>
 
   <!-- ========================================== -->
-  <!-- 4. MORE LIKE THIS                          -->
+  <!-- 3. MORE LIKE THIS                          -->
   <!-- ========================================== -->
   <section class="movie-body-section" *ngIf="similarMovies.length > 0">
-    <div class="section-block">
+    <div class="section-block detail-section-flat">
       <div class="section-header-row">
         <h3 class="section-heading">
           More Like This
