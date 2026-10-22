@@ -45,7 +45,15 @@ export class TmdbEnrichmentService {
    */
   getEnrichmentSync(channel?: Channel): TmdbMediaEnrichment | undefined {
     if (!channel?.id) return undefined;
-    return this.cacheService.getEnrichmentSync(channel.id);
+    const cached = this.cacheService.getEnrichmentSync(channel.id);
+    if (cached) {
+      const isSeries = Number(channel.media_type) === MediaType.serie || (channel as any).series_id != null;
+      const expectedType: 'movie' | 'tv' = isSeries ? 'tv' : 'movie';
+      if (cached.mediaType && cached.mediaType !== expectedType) {
+        return undefined;
+      }
+    }
+    return cached;
   }
 
   /**
@@ -65,7 +73,16 @@ export class TmdbEnrichmentService {
     const cached = await this.cacheService.getEnrichment(channel.id);
 
     if (cached) {
-      const isIncomplete = priority === 'high' && (!cached.backdropPath || (!cached.overview && !cached.cast));
+      const isSeries = Number(channel.media_type) === MediaType.serie || (channel as any).series_id != null;
+      const expectedType: 'movie' | 'tv' = isSeries ? 'tv' : 'movie';
+      if (cached.mediaType && cached.mediaType !== expectedType) {
+        if (allowBackgroundFetch && this.configService.isEnabled()) {
+          this.enqueue(channel, priority);
+        }
+        return undefined;
+      }
+
+      const isIncomplete = priority === 'high' && (!cached.backdropPath || (!cached.overview && !cached.cast) || !cached.logoPath);
       if ((this.cacheService.isStale(cached) || isIncomplete) && allowBackgroundFetch && this.configService.isEnabled()) {
         this.enqueue(channel, priority);
       }
@@ -200,30 +217,36 @@ export class TmdbEnrichmentService {
     }
 
     // 4. Search TMDB
+    // For TV series, search by clean series title without year constraint initially,
+    // because IPTV channel years often indicate season release year rather than series premiere date.
     let searchResults = isSeries
-      ? await this.tmdbService.searchTv(query, year)
+      ? await this.tmdbService.searchTv(query)
       : await this.tmdbService.searchMovie(query, year);
 
-    // If search with year returned no results, retry without year constraint
-    if ((!searchResults || searchResults.length === 0) && year) {
-      searchResults = isSeries
-        ? await this.tmdbService.searchTv(query)
-        : await this.tmdbService.searchMovie(query);
+    // For movies: if search with year returned no results, retry without year constraint
+    if (!isSeries && (!searchResults || searchResults.length === 0) && year) {
+      searchResults = await this.tmdbService.searchMovie(query);
     }
 
-    // If still no results and query contains a colon (e.g. "Shaque: Trust No One"), try primary part
-    if ((!searchResults || searchResults.length === 0) && query.includes(':')) {
-      const primaryPart = query.split(':')[0].trim();
-      if (primaryPart.length >= 2) {
+    // Alternative query 1: try primary title before colon or dash if query contains subtitle
+    if ((!searchResults || searchResults.length === 0) && /[:–—-]/.test(query)) {
+      const primaryPart = query.split(/[:–—-]/)[0].trim();
+      if (primaryPart.length >= 2 && primaryPart !== query) {
         searchResults = isSeries
-          ? await this.tmdbService.searchTv(primaryPart, year)
+          ? await this.tmdbService.searchTv(primaryPart)
           : await this.tmdbService.searchMovie(primaryPart, year);
-        if ((!searchResults || searchResults.length === 0) && year) {
-          searchResults = isSeries
-            ? await this.tmdbService.searchTv(primaryPart)
-            : await this.tmdbService.searchMovie(primaryPart);
+        if (!isSeries && (!searchResults || searchResults.length === 0) && year) {
+          searchResults = await this.tmdbService.searchMovie(primaryPart);
         }
       }
+    }
+
+    // Alternative query 2: try replacing '&' with 'and' or vice versa
+    if ((!searchResults || searchResults.length === 0) && query.includes('&')) {
+      const andQuery = query.replace(/&/g, 'and').trim();
+      searchResults = isSeries
+        ? await this.tmdbService.searchTv(andQuery)
+        : await this.tmdbService.searchMovie(andQuery, year);
     }
 
     if (!searchResults || searchResults.length === 0) {
@@ -234,13 +257,13 @@ export class TmdbEnrichmentService {
     // 5. Score candidates
     const scored = searchResults.map((cand) => ({
       candidate: cand,
-      score: scoreMatch(cand, query, year),
+      score: scoreMatch(cand, query, year, mediaType),
     }));
 
-    if (query.includes(':')) {
-      const primaryPart = query.split(':')[0].trim();
+    if (/[:–—-]/.test(query)) {
+      const primaryPart = query.split(/[:–—-]/)[0].trim();
       for (const s of scored) {
-        const altScore = scoreMatch(s.candidate, primaryPart, year);
+        const altScore = scoreMatch(s.candidate, primaryPart, year, mediaType);
         if (altScore.confidence > s.score.confidence) {
           s.score = altScore;
         }

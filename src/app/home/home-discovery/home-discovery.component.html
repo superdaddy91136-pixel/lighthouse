@@ -58,6 +58,7 @@
             *ngIf="currentHero.logoUrl" 
             [src]="currentHero.logoUrl" 
             alt="{{ currentHero.cleanTitle }}" 
+            (error)="onHeroLogoError(currentHero)"
             class="hero-title-logo" />
           <h1 
             *ngIf="!currentHero.logoUrl" 

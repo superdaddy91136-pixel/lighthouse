@@ -1,121 +1,220 @@
 import { Channel } from "../models/channel";
 
+export const VIDEO_EXTENSIONS = /\.(mkv|mp4|avi|ts|m2ts|mov|wmv|iso|flv|webm|m4v|vob|mpg|mpeg)$/i;
+
+export const BRAND_PREFIX_REGEX = /^[\ [\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(?:\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(?:\s*VIDEO)?|DSNP|HMAX|MAX|HBO(?:\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i;
+
+export const CATEGORY_PREFIX_REGEX = /^(?:[\ [\(|]\s*(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA|MOVIES?)\s*[\]\)|]\s*[-:|–—\/]?|(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA|MOVIES?)\s*[-:|–—\/])\s*/i;
+
+export const RESOLUTION_PREFIX_REGEX = /^[-*#~_+=|\s]*(\[?(?:4K(?:\s*UHD)?|UHD|2160p|1080p|1080i|FHD|720p|HD|SD|480p)\]?)\s*[-:|–—\/]?\s*/i;
+
+export const LEADING_LANG_CODE_REGEX = /^(?:\|[A-Za-z0-9\s_-]+\|\[[A-Za-z0-9\s_-]+\]|\([A-Za-z0-9\s_-]+\))\s*[-:|–—\/]?\s*/;
+
+export const FULL_LANGUAGE_PREFIX_REGEX = /^(?:ENGLISH|SPANISH|FRENCH|GERMAN|ITALIAN|PORTUGUESE|RUSSIAN|HINDI|TAMIL|TELUGU|KOREAN|JAPANESE|CHINESE|ARABIC|TURKISH|DUTCH|POLISH|SWEDISH|NORWEGIAN|DANISH|FINNISH|GREEK|HEBREW|THAI|VIETNAMESE|INDONESIAN|LATIN|MULTI|DUAL)\s*[-:|–—\/]\s*/i;
+
+export const COUNTRY_CODE_PREFIX_REGEX = /^(?:[A-Z]{2,4})\s*[-:|–—\/]\s*/;
+
+export const TECHNICAL_TAGS_BRACKETS = /\[\s*(?:4K(?:\s*UHD)?|UHD|2160p|1080p|1080i|FHD|720p|HD|480p|SD|HEVC|H\.?26[45]|x26[45]|10bit|HDR(?:10\+?)?|DV|Dolby(?:\s*(?:Vision|Atmos|Digital))?|Atmos|DTS(?:-HD)?|TrueHD|5\.1|7\.1|WEBRip|WEB-Rip|WEB-DL|WEBDL|BluRay|Blu-Ray|BRRip|BDRip|HDTV|DVDRip|REMUX|PROPER|REPACK|MULTI|DUAL|VOSTFR|VF|Subbed|Dubbed|Dual\s*Audio)[^\]]*\]/gi;
+
+export const TECHNICAL_TAGS_PARENS = /\(\s*(?:4K(?:\s*UHD)?|UHD|2160p|1080p|1080i|FHD|720p|HD|480p|SD|HEVC|x26[45]|H\.?26[45]|10bit|HDR|DV|BluRay|WEBRip|WEB-DL|REMUX|MULTI|VOSTFR|Subbed|Dubbed)\s*\)/gi;
+
+export const TRAILING_SCENE_TAGS = /\b(?:REMUX|BluRay|Blu-Ray|BRRip|BDRip|WEBRip|WEB-Rip|WEB-DL|WEBDL|HDTV|DVDRip|DVD|x26[45]|h\.?26[45]|HEVC|AVC|10bit|2160p|4K|UHD|1080p|1080i|FHD|720p|HD|480p|HDR(?:10\+?)?|DV|Dolby|DTS-HD|DTS|TrueHD|Atmos|DDP5\.1|DD5\.1|AC3|AAC2\.0|AAC|PROPER|REPACK|REMASTERED|UNRATED|EXTENDED|DIRECTORS\s*CUT|THEATRICAL)\b/gi;
+
+export interface ParsedMediaTitle {
+  cleanTitle: string;
+  year?: string;
+  season?: number;
+  episode?: number;
+  quality?: string;
+}
+
+/**
+ * Strips video file extensions (.mkv, .mp4, etc.) from titles or filenames.
+ */
+export function stripFileExtensions(title?: string): string {
+  if (!title) return '';
+  return title.replace(VIDEO_EXTENSIONS, '').trim();
+}
+
+/**
+ * Strips folder and directory path prefixes (e.g. "MOVIES/SCI-FI/...", "SERIES/Show/Season 01/...").
+ */
+export function stripFolderPaths(rawTitle?: string): string {
+  if (!rawTitle) return '';
+  let str = rawTitle.trim();
+  if (!str.includes('/') && !str.includes('\\')) {
+    return str;
+  }
+  const parts = str.split(/[\\/]+/).map(p => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || str;
+
+  const last = parts[parts.length - 1];
+  const lastClean = stripFileExtensions(last);
+
+  // If the last segment is just an episode indicator (e.g. "S01E01" or "01"), find parent show folder
+  if (/^(?:S\d{1,2}\s*E\d{1,3}|\d{1,2}x\d{1,3}|(?:Episode|Ep\.?)\s*\d+|\d{1,3})$/i.test(lastClean)) {
+    for (let i = parts.length - 2; i >= 0; i--) {
+      const part = parts[i];
+      if (!/^(?:Season|Series|S)\s*\d+$/i.test(part) && !/^(?:SERIES|TV|SHOWS?|VOD|MOVIES?|FILMS?)$/i.test(part)) {
+        return part;
+      }
+    }
+  }
+
+  return last;
+}
+
+/**
+ * Replaces dot and underscore scene separators with spaces while preserving
+ * legitimate decimals (e.g. "2.0", "5.1", "Vol. 1").
+ */
+export function replaceSceneSeparators(str?: string): string {
+  if (!str) return '';
+  let s = str.trim();
+  const dotCount = (s.match(/\./g) || []).length;
+  if (dotCount >= 2 && !/^[A-Za-z]\.[A-Za-z](\.[A-Za-z])*$/.test(s)) {
+    s = s.replace(/(?<!\b\d)\.(?!\d\b)/g, ' ');
+  }
+  s = s.replace(/_/g, ' ');
+  return s.replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Strips provider branding, streaming platform identifiers, language markers, and category noise.
+ */
+export function stripProviderPrefixes(str?: string): string {
+  if (!str) return '';
+  let s = str.trim();
+  for (let pass = 0; pass < 4; pass++) {
+    const prev = s;
+    s = s.replace(BRAND_PREFIX_REGEX, '');
+    s = s.replace(CATEGORY_PREFIX_REGEX, '');
+    s = s.replace(RESOLUTION_PREFIX_REGEX, '');
+    s = s.replace(FULL_LANGUAGE_PREFIX_REGEX, '');
+    s = s.replace(LEADING_LANG_CODE_REGEX, '');
+    s = s.replace(COUNTRY_CODE_PREFIX_REGEX, '');
+    s = s.replace(/^[-*#~_+=|:–—\s/]+/, '');
+    if (s === prev) break;
+  }
+  return s.trim();
+}
+
+/**
+ * Extracts a 4-digit release year (1900-2099) from bracketed tags or scene filenames.
+ * Protects legitimate titles that begin with years (e.g. "1917", "2001: A Space Odyssey").
+ */
+export function extractYear(rawTitle?: string): string | undefined {
+  if (!rawTitle) return undefined;
+  // 1. Bracketed/parenthesized year: e.g. (2014), [2014]
+  const bracketMatch = rawTitle.match(/[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]/);
+  if (bracketMatch) return bracketMatch[1];
+
+  // 2. Standalone 4-digit year in scene/delimited string: e.g. "Interstellar.2014.1080p", "The.Dark.Knight.2008.WEB-DL"
+  // Must NOT be the first word of the title (to protect "1917", "2001: A Space Odyssey", "2012")
+  const words = rawTitle.split(/[\s._/\\-]+/).filter(Boolean);
+  if (words.length > 1) {
+    for (let i = 1; i < words.length; i++) {
+      const w = words[i];
+      if (/^(19\d\d|20\d\d)$/.test(w)) {
+        const y = parseInt(w, 10);
+        const currentYear = new Date().getFullYear();
+        if (y >= 1900 && y <= currentYear + 2) {
+          return w;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extracts quality indicators (4K UHD, 1080p, 720p, HD) only when reliably present.
+ */
+export function extractQuality(rawTitle?: string): string | undefined {
+  if (!rawTitle) return undefined;
+  if (/\b(?:4K(?:\s*UHD)?|UHD|2160p)\b/i.test(rawTitle)) return '4K UHD';
+  if (/\b(?:1080p|1080i|FHD)\b/i.test(rawTitle)) return '1080p';
+  if (/\b(?:720p|HD)\b/i.test(rawTitle)) return '720p';
+  return undefined;
+}
+
 /**
  * Normalizes and cleans raw IPTV/VOD channel and movie titles for presentation.
  * Removes provider prefixes, repeated symbols, language tags, technical codes,
  * while preserving meaningful franchise information and subtitles.
  *
- * Example: "-TOP - Toy Story 5" -> "Toy Story 5"
- * Example: "|EN| Dune: Part Two (2024) [4K]" -> "Dune: Part Two"
+ * Example: "[4K UHD] Interstellar (2014) REMUX" -> "Interstellar"
+ * Example: "MOVIES/SCI-FI/Interstellar.2014.1080p.BluRay.x265" -> "Interstellar"
+ * Example: "ENGLISH - The.Dark.Knight.2008.WEB-DL" -> "The Dark Knight"
  */
 export function cleanMediaTitle(raw?: string): string {
-  if (!raw) return "Untitled";
+  if (!raw) return 'Untitled';
 
   let title = raw.trim();
 
-  // 1. Replace dot-separated or underscore-separated scene release names if detected
-  // e.g. "Toy.Story.5.2024.1080p" -> "Toy Story 5 2024 1080p"
-  if (/^[A-Za-z0-9]+([._][A-Za-z0-9]+){3,}$/.test(title)) {
-    title = title.replace(/[._]/g, " ");
+  // 1. Strip folder paths if any
+  title = stripFolderPaths(title);
+
+  // 2. Strip file extensions
+  title = stripFileExtensions(title);
+
+  // 3. Replace scene separators (. and _)
+  title = replaceSceneSeparators(title);
+
+  // 4. Strip provider, language, and category prefixes
+  title = stripProviderPrefixes(title);
+
+  // 5. Strip technical brackets and parentheses
+  title = title.replace(TECHNICAL_TAGS_BRACKETS, ' ');
+  title = title.replace(TECHNICAL_TAGS_PARENS, ' ');
+
+  // 6. Extract release year if present
+  const year = extractYear(raw);
+  if (year) {
+    // Only strip year if it's not the primary title itself (e.g. "1917", "2001: A Space Odyssey")
+    const cleanedWithoutYear = title.replace(new RegExp(`\\b${year}\\b`, 'g'), '').replace(/[\(\[]\s*[\)\]]/g, '').trim();
+    if (cleanedWithoutYear.length >= 2) {
+      title = cleanedWithoutYear;
+    }
   }
 
-  // 2. Iteratively remove common provider tags and prefixes:
-  for (let pass = 0; pass < 4; pass++) {
+  // 7. Strip country/region/language tags in parentheses or brackets: (US), (UK), (KR), (Multi), (Sub)
+  title = title.replace(/\s*[\(\[]\s*(?:[A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR|Dual)\s*[\)\]]/gi, '');
+
+  // 8. Strip season/episode markers from series titles:
+  title = title.replace(/\s*[-–—:|/]?\s*\b(?:S\d{1,2}\s*[-–—.]?\s*E\d{1,3}|\d{1,2}x\d{1,3}|(?:Season|Series)\s*\d+(?:\s*(?:Episode|Ep\.?)\s*\d+)?|(?:Episode|Ep\.?)\s*\d+|S\d{1,2}|E\d{1,3})\b.*$/i, '');
+  title = title.replace(/\b(?:Complete\s+Series|Complete\s+Season|Mini-Series|Miniseries)\b/gi, '');
+
+  // 9. Repeatedly strip scene tags and trailing release groups from the end: e.g. "WEBRip", "BluRay", "REMUX", "HDR", "-EVO"
+  for (let pass = 0; pass < 3; pass++) {
     const prev = title;
-
-    // Standard category and streaming prefixes
-    title = title.replace(
-      /^[-*#~_+=|\s]*\b(TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|CINEMA|MOVIES?|SERIES?|FILMS?)\b[-*#~_+=|\s:]*/i,
-      "",
-    );
-
-    // Platform prefixes: 4K-NF, 4K-D+, D+, NF, ATVP, AMZN, DSNP, HMAX, MAX, HBO, HULU, BBC, etc.
-    title = title.replace(
-      /^[-*#~_+=|\s]*\b(4K-)?(D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(\s*VIDEO)?|DSNP|HMAX|MAX|HBO(\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\b[-*#~_+=|\s:]*/i,
-      "",
-    );
-
-    // Remove country/language bracket/pipe tags: "|EN|", "[EN]", "EN |", "US -", "FR:", "UK |", "LATAM |", etc.
-    title = title.replace(/^\|?[A-Z]{2,4}\|?\s*[-:|]\s*/g, "");
-    title = title.replace(/^\[[A-Z]{2,4}\]\s*[-:|]?\s*/g, "");
-    title = title.replace(/\|[A-Z]{2,4}\|\s*/g, "");
-
-    // Remove leading resolution / format prefix tags: "4K -", "[4K]", "UHD |", "1080p -", etc.
-    title = title.replace(
-      /^[-*#~_+=|\s]*(\[?(4K|UHD|1080p|FHD|720p|HD)\]?)[-*#~_+=|\s:]+/i,
-      "",
-    );
-
-    title = title.replace(/^[-*#~_+=|:–—\s]+/, "");
+    title = title.replace(TRAILING_SCENE_TAGS, '');
+    title = title.replace(/\s+-[A-Za-z0-9]{2,12}\s*$/g, '');
+    title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '');
     if (title === prev) break;
   }
 
-  // Remove technical brackets: "[1080p]", "[4K]", "[HEVC]", "[HDR]", "[x265]", "[Multi-Sub]", etc.
-  title = title.replace(
-    /\[\s*(4K|UHD|1080p|FHD|720p|HD|HEVC|H264|x265|x264|HDR|HDR10|DV|Dolby|WEBRip|BluRay|HDTV|REMUX|MULTI|VOSTFR|Subbed|Dubbed)[^\]]*\]/gi,
-    "",
-  );
-
-  // Remove standalone bracketed or parenthesized years at the end or enclosed in brackets: e.g. "(2024)", "[2024]"
-  title = title.replace(/[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]/g, "");
-
-  // Remove trailing country/region/language tags in parentheses or brackets: e.g. "(US)", "(GB)", "(TW)", "[US]", "(Multi)", "(Sub)"
-  title = title.replace(/[\(\[]\s*([A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR|Eng)\s*[\)\]]\s*$/gi, "");
-
-  // Remove season/episode markers from series titles: "Season 1", "Seasons 1-5", "S01-S05", "S01 E01", "Complete Series"
-  title = title.replace(/\b(Season|Seasons|Series)\s*\d+(\s*[-–]\s*\d+)?\b/gi, "");
-  title = title.replace(/\bS\d{1,2}(\s*[-–]\s*S?\d{1,2})?\b/gi, "");
-  title = title.replace(/\b(Complete\s+Series|Complete\s+Season|Mini-Series|Miniseries)\b/gi, "");
-
-  // Remove scene tags at end of string: "WEBRip", "BluRay", "x264", "1080p", "4K", etc.
-  title = title.replace(/\b(WEBRip|BluRay|HDTV|BRRip|DVDRip|REMUX|x264|x265|HEVC|1080p|720p|4K|UHD|FHD)\b/gi, "");
-
-  // 3. Strip remaining leading/trailing symbols, separators, or whitespace
-  title = title.replace(/^[-*#~_+=|:–—\s]+/, "");
-  title = title.replace(/[-*#~_+=|:–—\s]+$/, "");
+  // 10. Strip empty brackets/parentheses and stray punctuation
+  title = title.replace(/\(\s*\)/g, '').replace(/\[\s*\]/g, '');
+  title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '');
 
   // Collapse multiple spaces
-  title = title.replace(/\s{2,}/g, " ").trim();
+  title = title.replace(/\s{2,}/g, ' ').trim();
 
-  // If cleaning resulted in an empty string, fallback to raw
   return title.length > 0 ? title : raw.trim();
 }
 
 /**
- * Extracts a 4-digit release year only when explicitly present in parentheses or brackets.
- * Returns undefined if no year exists to prevent inventing false metadata.
- */
-export function extractYear(rawTitle?: string): string | undefined {
-  if (!rawTitle) return undefined;
-  const match = rawTitle.match(/[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]/);
-  return match ? match[1] : undefined;
-}
-
-/**
- * Extracts quality indicators (4K UHD, 1080p, 720p, HD) only when reliably present.
- * Returns undefined if missing.
- */
-export function extractQuality(rawTitle?: string): string | undefined {
-  if (!rawTitle) return undefined;
-  if (/\b(4K|UHD)\b/i.test(rawTitle)) return "4K UHD";
-  if (/\b(1080p|FHD)\b/i.test(rawTitle)) return "1080p";
-  if (/\b(720p)\b/i.test(rawTitle)) return "720p";
-  if (/\b(HD)\b/i.test(rawTitle)) return "HD";
-  return undefined;
-}
-
-/**
  * Cleans category / genre labels from provider noise.
- * Returns undefined if generic (e.g. "ALL", "VOD") to avoid awkward badges.
  */
 export function cleanCategoryTitle(category?: string): string | undefined {
   if (!category) return undefined;
   let clean = category
-    .replace(/^[-*#~_+=|\s]*\b(VOD|MOVIES?|SERIES?|CHANNELS?|LIVE)\b[-*#~_+=|\s:]*/gi, "")
-    .replace(/^\|?[A-Z]{2,4}\|?\s*[-:|]\s*/g, "")
-    .replace(/Movies|Series|VOD/gi, "")
-    .replace(/^[-*#~_+=|:–—\s]+/, "")
-    .replace(/[-*#~_+=|:–—\s]+$/, "")
+    .replace(/^[-*#~_+=|\s]*\b(VOD|MOVIES?|SERIES?|CHANNELS?|LIVE)\b[-*#~_+=|\s:]*/gi, '')
+    .replace(/^\|?[A-Z]{2,4}\|?\s*[-:|]\s*/g, '')
+    .replace(/Movies|Series|VOD/gi, '')
+    .replace(/^[-*#~_+=|:–—\s]+/, '')
+    .replace(/[-*#~_+=|:–—\s]+$/, '')
     .trim();
 
   if (clean.length < 2 || /^(all|vod|movies|series)$/i.test(clean)) {
@@ -126,42 +225,32 @@ export function cleanCategoryTitle(category?: string): string | undefined {
 
 /**
  * Returns the best available synopsis from the catalog data if one exists.
- * Returns undefined if not available so generic filler text is never shown.
  */
 export function selectSynopsis(channel: Channel): string | undefined {
   const anyChannel = channel as any;
   if (
     anyChannel.overview &&
-    typeof anyChannel.overview === "string" &&
+    typeof anyChannel.overview === 'string' &&
     anyChannel.overview.trim().length > 0
   ) {
     return anyChannel.overview.trim();
   }
   if (
     anyChannel.description &&
-    typeof anyChannel.description === "string" &&
+    typeof anyChannel.description === 'string' &&
     anyChannel.description.trim().length > 0
   ) {
     return anyChannel.description.trim();
   }
   if (
     anyChannel.plot &&
-    typeof anyChannel.plot === "string" &&
+    typeof anyChannel.plot === 'string' &&
     anyChannel.plot.trim().length > 0
   ) {
     return anyChannel.plot.trim();
   }
   return undefined;
 }
-
-const BRAND_PREFIX_REGEX = /^[\[\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(\s*VIDEO)?|DSNP|HMAX|MAX|HBO(\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i;
-
-// Generic category words MUST be followed by a separator or be bracketed to avoid stripping legitimate title words like "Top Gun", "New Girl", "Show Me A Hero"
-const CATEGORY_PREFIX_REGEX = /^(?:[\[\(|]\s*(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA)\s*[\]\)|]\s*[-:|–—\/]?|(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA)\s*[-:|–—\/])\s*/i;
-
-const LEADING_TAG_REGEX = /^(?:\|[A-Za-z0-9\s_-]+\||\([A-Za-z0-9\s_-]+\)|\[[A-Za-z0-9\s_-]+\])\s*[-:|–—\/]?\s*/;
-
-const RESOLUTION_PREFIX_REGEX = /^(?:\[?(?:4K|UHD|1080p|FHD|720p|HD)\]?)\s*[-:|–—\/]\s*/i;
 
 /**
  * Normalizes title casing while preserving uppercase roman numerals and acronyms,
@@ -205,43 +294,12 @@ export function toTitleCase(str?: string): string {
 }
 
 /**
- * Strips provider branding, streaming platform identifiers, and category noise.
- */
-export function stripProviderPrefixes(str?: string): string {
-  if (!str) return '';
-  let s = str.trim();
-  for (let pass = 0; pass < 4; pass++) {
-    const prev = s;
-    s = s.replace(BRAND_PREFIX_REGEX, '');
-    s = s.replace(CATEGORY_PREFIX_REGEX, '');
-    s = s.replace(LEADING_TAG_REGEX, '');
-    s = s.replace(RESOLUTION_PREFIX_REGEX, '');
-    s = s.replace(/^[-*#~_+=|:–—\s/]+/, '');
-    if (s === prev) break;
-  }
-  return s.trim();
-}
-
-/**
  * Sanitizes a TV show title by stripping provider prefixes, trailing year markers,
  * technical tags, and redundant season suffixes.
  */
 export function sanitizeShowTitle(rawTitle?: string): string {
   if (!rawTitle) return '';
-  let title = stripProviderPrefixes(rawTitle);
-
-  // Remove trailing year if present: (2023) or [2023]
-  title = title.replace(/\s*[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]/g, '');
-  // Remove trailing country tags: (US), (KR), [UK]
-  title = title.replace(/\s*[\(\[]\s*([A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR)\s*[\)\]]\s*$/gi, '');
-  // Remove technical brackets: [4K], [1080p], etc.
-  title = title.replace(/\s*\[\s*(?:4K|UHD|1080p|FHD|720p|HD|HEVC|HDR|HDR10|DV|Dolby)[^\]]*\]/gi, '');
-  // Strip trailing season markers like "Season 1", "S1", "Series 1"
-  title = title.replace(/\s*[-–—:|/]?\s*\b(?:Season|Series)\s*\d+\b/gi, '');
-  title = title.replace(/\s*[-–—:|/]?\s*\bS\d{1,2}\b/gi, '');
-  title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '').trim();
-
-  return toTitleCase(title) || rawTitle.trim();
+  return cleanMediaTitle(rawTitle);
 }
 
 /**
@@ -257,7 +315,9 @@ export function sanitizeEpisodeTitle(
   if (!rawTitle) return '';
   let title = rawTitle.trim();
 
-  // Run cleanup passes to handle provider prefixes appearing before or after show/season/episode tags
+  title = stripFileExtensions(title);
+  title = replaceSceneSeparators(title);
+
   for (let pass = 0; pass < 3; pass++) {
     const prev = title;
     title = stripProviderPrefixes(title);
@@ -265,23 +325,22 @@ export function sanitizeEpisodeTitle(
     // 1. Remove duplicated series name if at beginning of episode title
     const cleanShow = sanitizeShowTitle(showTitle);
     if (cleanShow) {
-      const escapedShow = cleanShow.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedShow = cleanShow.replace(/[.*+?^$${}()|[\]\\]/g, '\\$&');
       const showRegex = new RegExp(`^\\s*${escapedShow}\\s*[-:|–—/]?\\s*`, 'i');
       title = title.replace(showRegex, '');
     }
     if (showTitle) {
-      const escapedRawShow = showTitle.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedRawShow = showTitle.trim().replace(/[.*+?^$${}()|[\]\\]/g, '\\$&');
       const rawShowRegex = new RegExp(`^\\s*${escapedRawShow}\\s*[-:|–—/]?\\s*`, 'i');
       title = title.replace(rawShowRegex, '');
     }
 
     // 2. Remove redundant season & episode notation
-    // Matches: S01E11, S1 E11, s1 e11, Season 1 Episode 11, Episode 11, Ep 11, 1x11, 01x11
     const redundantNotationRegex = /^\s*[-:|–—/]?\s*(?:(?:Season\s*\d+\s*[,–-]?\s*)?(?:Episode\s*\d+|Ep\s*\d+|E\d{1,3}|S\d{1,2}\s*E\d{1,3}|\d{1,2}x\d{1,3}))\s*[-:|–—/.]?\s*/i;
     title = title.replace(redundantNotationRegex, '');
     title = title.replace(/^\s*(?:s\d{1,2}\s*e\d{1,3}|ep(?:isode)?\s*\d+|\d{1,2}x\d{1,3})\s*[-:|–—/.]?\s*/i, '');
 
-    // 3. Remove leading episode number prefix if matching episodeNum: e.g. "11 - The Romanticist" or "11. The Romanticist"
+    // 3. Remove leading episode number prefix if matching episodeNum: e.g. "11 - The Romanticist"
     if (episodeNum != null) {
       const epNumPattern = new RegExp(`^\\s*0*${episodeNum}\\s*[-–—:|/.]\\s*`, 'i');
       title = title.replace(epNumPattern, '');
@@ -290,13 +349,14 @@ export function sanitizeEpisodeTitle(
     if (title === prev) break;
   }
 
-  // 4. Strip technical tags at end of episode title: [1080p], [4K], etc.
-  title = title.replace(/\s*\[\s*(?:4K|UHD|1080p|FHD|720p|HD|HEVC|HDR)[^\]]*\]/gi, '');
+  // 4. Strip technical tags at end of episode title
+  title = title.replace(TECHNICAL_TAGS_BRACKETS, ' ');
+  title = title.replace(TECHNICAL_TAGS_PARENS, ' ');
+  title = title.replace(TRAILING_SCENE_TAGS, '');
   title = title.replace(/^[-*#~_+=|:–—/·.\s]+/, '');
   title = title.replace(/[-*#~_+=|:–—/·.\s]+$/, '');
   title = title.trim();
 
-  // If after removing redundant metadata there is a real title left, normalize capitalization
   if (title.length > 0) {
     return toTitleCase(title);
   }
@@ -306,14 +366,6 @@ export function sanitizeEpisodeTitle(
 
 /**
  * Formats a clean player episode label with primary (show) and secondary (episode) titles.
- * Example:
- *   Show: "D+ - Moving"
- *   Episode: "D+ - s1 e11 the romanticist"
- *   Result:
- *     primary: "Moving"
- *     secondary: "- 11. The Romanticist"
- *     full: "Moving - 11. The Romanticist"
- *     epTitle: "The Romanticist"
  */
 export function formatPlayerEpisodeLabel(
   rawShowTitle?: string,
@@ -329,7 +381,6 @@ export function formatPlayerEpisodeLabel(
   let showTitle = sanitizeShowTitle(rawShowTitle);
   let epRaw = (rawEpisodeTitle || '').trim();
 
-  // If showTitle is not provided, strip provider prefixes first so "D+ - Moving - ..." doesn't split on "D+ - "
   if (!showTitle && epRaw) {
     const stripped = stripProviderPrefixes(epRaw);
     const splitIdx = stripped.indexOf(' - ');
@@ -366,4 +417,38 @@ export function formatPlayerEpisodeLabel(
 
   const full = showTitle ? (secondary ? `${showTitle} ${secondary}` : showTitle) : (secondary.replace(/^-\s*/, '') || epRaw);
   return { primary: showTitle, secondary, full, epTitle };
+}
+
+/**
+ * Comprehensive parser returning structured metadata for an IPTV media item.
+ */
+export function parseMediaTitle(raw?: string, isTvHint?: boolean): ParsedMediaTitle {
+  if (!raw) return { cleanTitle: 'Untitled' };
+  const cleanTitle = cleanMediaTitle(raw);
+  const year = extractYear(raw);
+  const quality = extractQuality(raw);
+
+  let season: number | undefined;
+  let episode: number | undefined;
+
+  const sMatch = raw.match(/\bS(\d{1,2})\s*[-–—.]?\s*E(\d{1,3})\b/i) ||
+                 raw.match(/\b(\d{1,2})x(\d{1,3})\b/i) ||
+                 raw.match(/\b(?:Season|Series)\s*(\d{1,2})\s*(?:Episode|Ep\.?)\s*(\d{1,3})\b/i);
+  if (sMatch) {
+    season = parseInt(sMatch[1], 10);
+    episode = parseInt(sMatch[2], 10);
+  } else {
+    const sOnly = raw.match(/\b(?:Season|Series|S)\s*(\d{1,2})\b/i);
+    if (sOnly) season = parseInt(sOnly[1], 10);
+    const eOnly = raw.match(/\b(?:Episode|Ep\.?|E)\s*(\d{1,3})\b/i);
+    if (eOnly) episode = parseInt(eOnly[1], 10);
+  }
+
+  return {
+    cleanTitle,
+    year,
+    season,
+    episode,
+    quality,
+  };
 }

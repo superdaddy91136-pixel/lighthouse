@@ -339,6 +339,7 @@ export class TmdbService {
   async getMovieDetails(movieId: number): Promise<any | null> {
     return await this.safeGet<any>(`/movie/${movieId}`, {
       append_to_response: 'credits,videos,images',
+      include_image_language: 'en,null,ja,ko,es,fr,de,it,pt,zh,hi',
     });
   }
 
@@ -348,6 +349,7 @@ export class TmdbService {
   async getTvDetails(tvId: number): Promise<any | null> {
     return await this.safeGet<any>(`/tv/${tvId}`, {
       append_to_response: 'credits,videos,images',
+      include_image_language: 'en,null,ja,ko,es,fr,de,it,pt,zh,hi',
     });
   }
 
@@ -553,8 +555,9 @@ function extractBestLogoPath(images: any): string | undefined {
   if (valid.length === 0) return undefined;
 
   const scored = [...valid].sort((a, b) => {
-    const aLang = a.iso_639_1 === 'en' ? 2 : (!a.iso_639_1 ? 1 : 0);
-    const bLang = b.iso_639_1 === 'en' ? 2 : (!b.iso_639_1 ? 1 : 0);
+    // Language priority: English ('en') = 3, language-neutral/null = 2, other language = 1
+    const aLang = a.iso_639_1 === 'en' ? 3 : (!a.iso_639_1 ? 2 : 1);
+    const bLang = b.iso_639_1 === 'en' ? 3 : (!b.iso_639_1 ? 2 : 1);
     if (aLang !== bLang) return bLang - aLang;
 
     const aScore = (a.vote_average || 0) * (a.vote_count || 1);

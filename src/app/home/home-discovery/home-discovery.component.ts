@@ -3355,7 +3355,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     const cached = this.tmdbEnrichment.getEnrichmentSync(channel);
     if (cached) {
       if (cached.backdropPath) {
-        const bd = getTmdbBackdropUrl(cached.backdropPath, 'w1280');
+        const bd = getTmdbBackdropUrl(cached.backdropPath, 'original') || getTmdbBackdropUrl(cached.backdropPath, 'w1280');
         if (bd) imageUrl = bd;
       }
       if (cached.logoPath) {
@@ -3410,7 +3410,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
     for (const heroMatch of matches) {
       if (enrichment.backdropPath) {
-        const bd = getTmdbBackdropUrl(enrichment.backdropPath, 'w1280');
+        const bd = getTmdbBackdropUrl(enrichment.backdropPath, 'original') || getTmdbBackdropUrl(enrichment.backdropPath, 'w1280');
         if (bd) heroMatch.imageUrl = bd;
       }
       if (enrichment.logoPath) {
@@ -3428,6 +3428,12 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (enrichment.rating) {
         heroMatch.rating = enrichment.rating;
       }
+    }
+  }
+
+  onHeroLogoError(hero?: HeroItem): void {
+    if (hero) {
+      hero.logoUrl = undefined;
     }
   }
 

@@ -1,4 +1,4 @@
-import { cleanMediaTitle, extractYear } from './media-presentation';
+import { cleanMediaTitle, extractYear, stripFolderPaths, stripFileExtensions, stripProviderPrefixes } from './media-presentation';
 
 export const TMDB_MINIMUM_CONFIDENCE_THRESHOLD = 0.65;
 
@@ -26,56 +26,15 @@ export function extractImdbId(input?: string): string | undefined {
 
 /**
  * Extracts only the clean parent series name from a messy IPTV/VOD provider TV title.
- * Strips provider prefixes, country markers, season/episode numbers, and episode names.
+ * Strips folder paths, provider prefixes, country markers, season/episode numbers, and episode names.
  *
+ * Example: "SERIES/Breaking Bad/Season 01/Breaking.Bad.S01E01.1080p" -> "Breaking Bad"
+ * Example: "US | Stranger Things | S01E01" -> "Stranger Things"
  * Example: "D+ - Moving (KR) - S01E08 - Black" -> "Moving"
  */
 export function extractCleanSeriesTitle(rawTitle?: string): string {
   if (!rawTitle) return '';
-  let title = rawTitle.trim();
-
-  // Strip scene dots/underscores if present
-  if (/^[A-Za-z0-9]+([._][A-Za-z0-9]+){3,}$/.test(title)) {
-    title = title.replace(/[._]/g, ' ');
-  }
-
-  // 1. Strip provider / platform / category prefixes (e.g. "D+ - ", "[D+]", "NF - ", "4K-NF - ")
-  for (let pass = 0; pass < 3; pass++) {
-    const prev = title;
-    title = title.replace(
-      /^[\[\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+|DISNEY\+|APPLE\s*TV\+|NF|NETFLIX|ATVP|APPLE|AMZN|PRIME(?:\s*VIDEO)?|DSNP|DISNEY|HMAX|MAX|HBO(?:\s*MAX)?|HULU|PARAMOUNT|PEACOCK|BBC|SKY|CANAL|CRUNCHYROLL|CR|STARZ|SHOWTIME|MGM|VIP|PREMIUM|TOP|VOD|SERIES?|TV|SHOWS?)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i,
-      ''
-    );
-    title = title.replace(/^\|?[A-Za-z]{2,4}\|?\s*[-:|]\s*/g, '');
-    title = title.replace(/^\[[A-Za-z]{2,4}\]\s*[-:|]?\s*/g, '');
-    title = title.replace(/\|[A-Za-z]{2,4}\|\s*/g, '');
-    title = title.replace(/^[-*#~_+=|:–—\s/]+/, '');
-    if (title === prev) break;
-  }
-
-  // 2. Strip season/episode numbers and any trailing episode names
-  // e.g. " - S01E08 - Black", " S01E08 Black", " - 1x08 - Black", " Season 1 Episode 8 - Black", " - S01"
-  title = title.replace(
-    /\s*[-–—:|/]?\s*\b(?:S\d{1,2}\s*[-–—.]?\s*E\d{1,3}|\d{1,2}x\d{1,3}|(?:Season|Series)\s*\d+(?:\s*(?:Episode|Ep\.?)\s*\d+)?|(?:Episode|Ep\.?)\s*\d+|S\d{1,2}|E\d{1,3})\b.*$/i,
-    ''
-  );
-
-  // 3. Strip country / region / language markers anywhere in the title like (KR), [KR], (US), (UK), (Multi)
-  title = title.replace(/\s*[\(\[]\s*([A-Za-z]{2,3}|Multi|Sub|Dub|VF|VOSTFR|Dual)\s*[\)\]]/gi, '');
-
-  // 4. Strip technical / resolution brackets e.g. [1080p], [4K]
-  title = title.replace(/\[\s*(4K|UHD|1080p|FHD|720p|HD|HEVC|HDR|HDR10|DV|Dolby)[^\]]*\]/gi, '');
-
-  // 5. Remove empty or leftover parentheses/brackets
-  title = title.replace(/\(\s*\)/g, '').replace(/\[\s*\]/g, '');
-
-  // 6. Strip leading and trailing non-alphanumeric separators
-  title = title.replace(/^[-*#~_+=|:–—\s/]+/, '').replace(/[-*#~_+=|:–—\s/]+$/, '').trim();
-
-  // Collapse multiple spaces
-  title = title.replace(/\s{2,}/g, ' ').trim();
-
-  return title.length > 0 ? title : rawTitle.trim();
+  return cleanMediaTitle(rawTitle);
 }
 
 /**
@@ -96,7 +55,7 @@ export function prepareSearchQuery(rawTitle?: string, mediaType?: 'movie' | 'tv'
   let clean = isTv ? extractCleanSeriesTitle(rawTitle) : cleanMediaTitle(rawTitle);
 
   // If year is in the clean title, strip it out for the search query to improve API match rate
-  if (year) {
+  if (year && clean.toLowerCase() !== year) {
     clean = clean.replace(new RegExp(`\\b${year}\\b`, 'g'), '').trim();
   }
 
@@ -211,6 +170,7 @@ export function scoreMatch(
   },
   query: string,
   targetYear?: string,
+  mediaType?: 'movie' | 'tv',
 ): MatchScoreResult {
   const primaryTitle = candidate.title || candidate.name || '';
   const originalTitle = candidate.original_title || candidate.original_name;
@@ -247,11 +207,24 @@ export function scoreMatch(
       if (diff === 0) {
         finalConfidence += 0.15; // Exact year match bonus
       } else if (diff === 1) {
-        finalConfidence += 0.05; // 1-year margin bonus (festival/international release date variation)
-      } else if (diff > 2 && diff <= 5) {
-        finalConfidence -= 0.25; // Likely different edition or remake
-      } else if (diff > 5) {
-        finalConfidence -= 0.50; // Heavy penalty for big year mismatch
+        finalConfidence += 0.05; // 1-year margin bonus
+      } else if (mediaType === 'tv') {
+        // For TV series, IPTV channel years are frequently season release years (e.g. 2022 for Season 4),
+        // while TMDB first_air_date is the series premiere year (e.g. 2016 for Stranger Things).
+        // Only penalize if the candidate show premiered AFTER the target year (by more than 1 year)
+        if (candY > targetY + 1) {
+          finalConfidence -= 0.35;
+        } else {
+          // Candidate premiered before or during target year: completely valid for multi-season TV!
+          finalConfidence += 0.05;
+        }
+      } else {
+        // Movies
+        if (diff > 2 && diff <= 5) {
+          finalConfidence -= 0.25; // Likely different edition or remake
+        } else if (diff > 5) {
+          finalConfidence -= 0.50; // Heavy penalty for big year mismatch
+        }
       }
     }
   }
