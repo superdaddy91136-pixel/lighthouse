@@ -137,6 +137,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   episodeImageErrors: Set<number> = new Set();
 
   private subs: Subscription[] = [];
+  private seasonLoadRequestId = 0;
+  private episodeLoadRequestId = 0;
   @ViewChild('similarTrack') similarTrack?: ElementRef<HTMLDivElement>;
   @ViewChild('seasonSelectorTrack') seasonSelectorTrack?: ElementRef<HTMLDivElement>;
   @ViewChild(EpisodeSwitcherComponent) episodeSwitcher?: EpisodeSwitcherComponent;
@@ -277,6 +279,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   initShow(show: Channel): void {
+    this.seasonLoadRequestId++;
+    this.episodeLoadRequestId++;
     this.resetScrollPosition();
     this.showSeasonMenu = false;
     this.show = show;
@@ -310,6 +314,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedSeason = undefined;
     this.episodes = [];
     this.enrichedEpisodes = [];
+    this.loadingSeasons = false;
+    this.loadingEpisodes = false;
     this.continueEpisode = undefined;
     this.lastWatchedEpisode = undefined;
     this.highlightedEpisodeId = undefined;
@@ -351,6 +357,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // 2. Cache-first async retrieval / background enrichment
     this.tmdbEnrichment.getEnrichment(show, true, 'high').then((res) => {
+      if (this.show !== show) return;
       if (res) {
         this.applyEnrichment(res);
         if (this.selectedSeason) {
@@ -683,6 +690,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Seasons & Episodes Loading
   // -------------------------------------------------------------
   async loadSeasonsAndEpisodes(show: Channel): Promise<void> {
+    const requestId = ++this.seasonLoadRequestId;
     this.loadingSeasons = true;
     try {
       const seriesId = parseInt(show.url || `${show.id}`, 10);
@@ -690,18 +698,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         ? [show.source_id]
         : Array.from(this.memory.Sources.keys());
 
-      // 1. Trigger episode refresh from Xtream provider if not already cached
-      if (!this.memory.SeriesRefreshed.has(show.id!)) {
-        try {
-          await invoke('get_episodes', { channel: show });
-          this.memory.SeriesRefreshed.set(show.id!, true);
-        } catch (e) {
-          console.warn('Failed to get_episodes from Xtream:', e);
-        }
-      }
-
-      // 2. Query seasons from SQLite
-      const filters: Filters = {
+      const seasonFilters: Filters = {
         source_ids: sourceIds,
         series_id: seriesId,
         media_types: [MediaType.serie],
@@ -710,37 +707,42 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         page: 1,
         sort: SortType.alphabeticalAscending,
       };
+      const historyFilters: Filters = {
+        source_ids: sourceIds,
+        series_id: seriesId,
+        media_types: [MediaType.movie],
+        view_type: ViewMode.History,
+        use_keywords: false,
+        page: 1,
+        sort: 0,
+      };
 
-      let seasonChannels = (await invoke('search', { filters })) as Channel[];
+      const [cachedSeasons, watchedEpisodes] = await Promise.all([
+        invoke('search', { filters: seasonFilters }) as Promise<Channel[]>,
+        (invoke('search', { filters: historyFilters }) as Promise<Channel[]>).catch((err) => {
+          console.warn('Failed to query watch history for series:', err);
+          return [];
+        }),
+      ]);
+      if (this.show !== show || requestId !== this.seasonLoadRequestId) return;
 
-      // Fallback: If empty, attempt one more get_episodes call
-      if ((!seasonChannels || seasonChannels.length === 0) && !this.memory.SeriesRefreshed.has(show.id!)) {
+      let seasonChannels = cachedSeasons || [];
+      if (seasonChannels.length === 0 && !this.memory.SeriesRefreshed.has(show.id!)) {
+        this.memory.SeriesRefreshed.set(show.id!, true);
         try {
           await invoke('get_episodes', { channel: show });
-          this.memory.SeriesRefreshed.set(show.id!, true);
-          seasonChannels = (await invoke('search', { filters })) as Channel[];
-        } catch {}
+          if (this.show !== show || requestId !== this.seasonLoadRequestId) return;
+          seasonChannels = (await invoke('search', { filters: seasonFilters })) as Channel[];
+        } catch (e) {
+          console.warn('Failed to get_episodes from Xtream:', e);
+        }
       }
 
       this.seasons = seasonChannels || [];
 
-      // 3. Find the most recently watched episode across this series
-      let lastWatchedEp: Channel | undefined;
-      try {
-        const historyFilters: Filters = {
-          source_ids: sourceIds,
-          series_id: seriesId,
-          media_types: [MediaType.movie],
-          view_type: ViewMode.History,
-          use_keywords: false,
-          page: 1,
-          sort: 0,
-        };
-        const watchedEpisodes = (await invoke('search', { filters: historyFilters })) as Channel[];
-        if (watchedEpisodes && watchedEpisodes.length > 0) {
-          lastWatchedEp = watchedEpisodes[0];
-        } else {
-          // Fallback: check global history in case series_id was null or differently mapped
+      let lastWatchedEp: Channel | undefined = watchedEpisodes?.[0];
+      if (!lastWatchedEp) {
+        try {
           const globalHistory = (await invoke('search', {
             filters: {
               source_ids: sourceIds,
@@ -751,25 +753,21 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
               sort: 0,
             },
           })) as Channel[];
-          if (globalHistory && globalHistory.length > 0) {
-            const cleanTitleLower = this.cleanTitle.toLowerCase();
-            const found = globalHistory.find((h) => {
-              if (h.series_id != null && h.series_id === seriesId) return true;
-              const hClean = cleanMediaTitle(h.name).toLowerCase();
-              return hClean.startsWith(cleanTitleLower) || cleanTitleLower.startsWith(hClean);
-            });
-            if (found) {
-              lastWatchedEp = found;
-            }
-          }
+          if (this.show !== show || requestId !== this.seasonLoadRequestId) return;
+          const cleanTitleLower = this.cleanTitle.toLowerCase();
+          lastWatchedEp = globalHistory?.find((h) => {
+            if (h.series_id != null && h.series_id === seriesId) return true;
+            const hClean = cleanMediaTitle(h.name).toLowerCase();
+            return hClean.startsWith(cleanTitleLower) || cleanTitleLower.startsWith(hClean);
+          });
+        } catch (e) {
+          console.warn('Failed to query watch history for series:', e);
         }
-      } catch (e) {
-        console.warn('Failed to query watch history for series:', e);
       }
 
+      if (this.show !== show || requestId !== this.seasonLoadRequestId) return;
       this.lastWatchedEpisode = lastWatchedEp;
 
-      // 4. Select the season matching the last watched episode, or default to Season 1
       let initialSeason: Channel | undefined;
       if (lastWatchedEp && this.seasons.length > 0) {
         if (lastWatchedEp.season_id != null) {
@@ -800,27 +798,34 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         await this.selectSeason(initialSeason, lastWatchedEp);
       }
     } catch (err) {
+      if (this.show !== show || requestId !== this.seasonLoadRequestId) return;
       console.error('Failed to load seasons:', err);
     } finally {
-      this.loadingSeasons = false;
+      if (this.show === show && requestId === this.seasonLoadRequestId) {
+        this.loadingSeasons = false;
+      }
     }
   }
 
   async selectSeason(season: Channel, targetEpisode?: Channel): Promise<void> {
+    const requestId = ++this.episodeLoadRequestId;
+    const show = this.show;
+    if (!show) return;
     this.showSeasonMenu = false;
     this.selectedSeason = season;
     this.loadingEpisodes = true;
     this.episodeImageErrors.clear();
 
     try {
-      const seriesId = this.getSeriesIdNumber() || parseInt(this.show!.url || `${this.show!.id}`, 10);
-      const sourceIds = this.show!.source_id
-        ? [this.show!.source_id]
+      const seriesId = this.getSeriesIdNumber() || parseInt(show.url || `${show.id}`, 10);
+      const sourceIds = show.source_id
+        ? [show.source_id]
         : Array.from(this.memory.Sources.keys());
 
       // Extract season number from name: e.g. "Season 2" -> 2
       const sMatch = season.name?.match(/(\d+)/);
       this.selectedSeasonNumber = sMatch ? parseInt(sMatch[1], 10) : 1;
+      const seasonNumber = this.selectedSeasonNumber;
 
       // Query episodes from SQLite for this season
       const filters: Filters = {
@@ -835,22 +840,28 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       };
 
       const episodeChannels = (await invoke('search', { filters })) as Channel[];
+      if (this.show !== show || requestId !== this.episodeLoadRequestId) return;
       this.episodes = episodeChannels || [];
+      this.mapEnrichedEpisodes();
+      this.updateContinueEpisode(targetEpisode);
+      this.loadingEpisodes = false;
 
-      // Fetch TMDB season details if TMDB ID exists
-      let tmdbSeason: TmdbSeasonDetail | undefined;
       if (this.enrichment?.tmdbId) {
-        tmdbSeason = await this.tmdbEnrichment.getSeasonDetails(
-          this.enrichment.tmdbId,
-          this.selectedSeasonNumber,
+        const tmdbId = this.enrichment.tmdbId;
+        void this.tmdbEnrichment.getSeasonDetails(tmdbId, seasonNumber).then(
+          (tmdbSeason: TmdbSeasonDetail | undefined) => {
+            if (this.show === show && requestId === this.episodeLoadRequestId && tmdbSeason) {
+              this.mapEnrichedEpisodes(tmdbSeason);
+              this.updateContinueEpisode(targetEpisode);
+            }
+          },
+          (err) => console.warn('Failed to enrich season episodes:', err),
         );
       }
 
-      this.mapEnrichedEpisodes(tmdbSeason);
-      this.updateContinueEpisode(targetEpisode);
-
       // Scroll active season and highlighted episode into view
       setTimeout(() => {
+        if (this.show !== show || requestId !== this.episodeLoadRequestId) return;
         const activeSeasonBtn = this.elementRef.nativeElement.querySelector('.season-pill-btn.active');
         if (activeSeasonBtn) {
           activeSeasonBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -861,10 +872,13 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }, 100);
     } catch (err) {
+      if (this.show !== show || requestId !== this.episodeLoadRequestId) return;
       console.error('Failed to load episodes for season:', err);
       this.enrichedEpisodes = [];
     } finally {
-      this.loadingEpisodes = false;
+      if (this.show === show && requestId === this.episodeLoadRequestId) {
+        this.loadingEpisodes = false;
+      }
     }
   }
 

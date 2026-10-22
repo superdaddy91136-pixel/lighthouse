@@ -11,6 +11,7 @@ import { LAST_SEEN_VERSION } from "./models/localStorage";
 import { SetNodeDTO } from "./models/setNodeDTO";
 import { NavTab } from "./models/navTab";
 import { Stack } from "./models/stack";
+import { Channel } from "./models/channel";
 
 @Injectable({
   providedIn: "root",
@@ -39,6 +40,10 @@ export class MemoryService {
   public nodeStack: Stack = new Stack();
   public categoryScrollPositions: Map<NavTab, number> = new Map();
   public allScrollPositions: Map<NavTab, number> = new Map();
+  private catalogPageCache = new Map<
+    string,
+    { channels: Channel[]; reachedMax: boolean; cachedAt: number }
+  >();
   public folderScrollPositions: Map<string, number> = new Map();
   public searchScrollPositions: Map<NavTab, number> = new Map();
   public searchHorizontalScrollPositions: Map<NavTab, Record<string, number>> = new Map();
@@ -67,6 +72,32 @@ export class MemoryService {
   public trayEnabled?: boolean;
   public IsContainer?: boolean;
   public AlwaysAskSave?: boolean;
+
+  getCatalogPage(key: string): { channels: Channel[]; reachedMax: boolean } | undefined {
+    const cached = this.catalogPageCache.get(key);
+    if (!cached || Date.now() - cached.cachedAt > 5 * 60 * 1000) {
+      this.catalogPageCache.delete(key);
+      return undefined;
+    }
+    return { channels: cached.channels, reachedMax: cached.reachedMax };
+  }
+
+  setCatalogPage(
+    key: string,
+    channels: Channel[],
+    reachedMax: boolean,
+  ): void {
+    this.catalogPageCache.delete(key);
+    this.catalogPageCache.set(key, { channels, reachedMax, cachedAt: Date.now() });
+    if (this.catalogPageCache.size > 20) {
+      const oldestKey = this.catalogPageCache.keys().next().value;
+      if (oldestKey !== undefined) this.catalogPageCache.delete(oldestKey);
+    }
+  }
+
+  clearCatalogPageCache(): void {
+    this.catalogPageCache.clear();
+  }
 
   async tryIPC<T>(
     successMessage: string,

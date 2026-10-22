@@ -182,6 +182,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   private heroTimer?: any;
   private subs: Subscription[] = [];
   private isDestroyed: boolean = false;
+  private discoveryLoadRequestId = 0;
 
   constructor(
     public memory: MemoryService,
@@ -485,6 +486,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   async loadDiscovery(isManualRefresh: boolean = false) {
+    const requestId = ++this.discoveryLoadRequestId;
     if (!this.hasAnyContent) {
       this.loading = true;
     }
@@ -500,6 +502,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
 
       const enabledSourceIds = sources.filter((s) => s.enabled).map((s) => s.id!);
+      if (requestId !== this.discoveryLoadRequestId || this.isDestroyed) return;
       if (enabledSourceIds.length === 0) {
         this.loading = false;
         this.hasAnyContent = false;
@@ -512,8 +515,26 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       // Base filter strictly excluding LiveTV (Movies and Series only)
       const baseMediaTypes = [MediaType.movie, MediaType.serie];
 
-      // 1. Fetch History, Favorites, Movies, Series, Categories concurrently
-      const [historyRes, favoritesRes, moviesRes, seriesRes, categoriesRes] = await Promise.all([
+      const categoriesReady = this.fetchSafe({
+        source_ids: enabledSourceIds,
+        view_type: ViewMode.Categories,
+        media_types: baseMediaTypes,
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+        use_keywords: false,
+      }).then((categoriesRes) => {
+        if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return undefined;
+        this.groupsMap.clear();
+        for (const cat of categoriesRes) {
+          if (cat.id && cat.name) {
+            this.groupsMap.set(cat.id, cat.name);
+          }
+        }
+        return categoriesRes;
+      });
+
+      // 1. Fetch display-critical catalog results without waiting for category metadata.
+      const [historyRes, favoritesRes, moviesRes, seriesRes] = await Promise.all([
         this.fetchSafe({
           source_ids: enabledSourceIds,
           view_type: ViewMode.History,
@@ -546,25 +567,23 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
           sort: SortType.provider,
           use_keywords: false,
         }),
-        this.fetchSafe({
-          source_ids: enabledSourceIds,
-          view_type: ViewMode.Categories,
-          media_types: baseMediaTypes,
-          page: 1,
-          sort: SortType.alphabeticalAscending,
-          use_keywords: false,
-        }),
       ]);
 
-      if (this.isDestroyed) return;
+      if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
 
-      // Populate groups map
-      this.groupsMap.clear();
-      for (const cat of categoriesRes) {
-        if (cat.id && cat.name) {
-          this.groupsMap.set(cat.id, cat.name);
-        }
-      }
+      const runPipelineWhenCategoriesReady = () => {
+        void categoriesReady.then((categoriesRes) => {
+          if (!categoriesRes || this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
+          this.triggerTmdbDiscoveryPipeline(
+            enabledSourceIds,
+            historyRes,
+            favoritesRes,
+            moviesRes,
+            seriesRes,
+            categoriesRes,
+          );
+        });
+      };
 
       // Cache loaded series for fast resolution and episode show title lookup
       this.loadedSeries = seriesRes || [];
@@ -672,15 +691,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         const shouldRevalidate = isManualRefresh || !this.discoveryState.isFresh();
         if (shouldRevalidate && this.tmdbConfig.isEnabled()) {
           setTimeout(() => {
-            if (this.isDestroyed) return;
-            this.triggerTmdbDiscoveryPipeline(
-              enabledSourceIds,
-              historyRes,
-              favoritesRes,
-              moviesRes,
-              seriesRes,
-              categoriesRes
-            );
+            if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
+            runPipelineWhenCategoriesReady();
           }, 0);
         }
 
@@ -745,20 +757,14 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       // 5. Asynchronously run TMDB discovery pipeline in background without blocking
       setTimeout(() => {
-        if (this.isDestroyed) return;
-        this.triggerTmdbDiscoveryPipeline(
-          enabledSourceIds,
-          historyRes,
-          favoritesRes,
-          moviesRes,
-          seriesRes,
-          categoriesRes
-        );
+        if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
+        runPipelineWhenCategoriesReady();
       }, 0);
 
       // 6. Non-blocking progressive TMDB background enrichment if enabled
       this.enqueueVisibleCardsEnrichment();
     } catch (e) {
+      if (requestId !== this.discoveryLoadRequestId) return;
       console.error("Failed to load discovery:", e);
       this.loading = false;
     }
@@ -4181,4 +4187,3 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.navigateTab.emit(NavTab.Settings);
   }
 }
-

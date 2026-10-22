@@ -44,6 +44,9 @@
           [src]="currentHero.imageUrl" 
           (error)="onImageError(currentHero.channel.id)" 
           alt="{{ currentHero.cleanTitle }}" 
+          fetchpriority="high"
+          loading="eager"
+          decoding="async"
           class="hero-backdrop-img" />
         <div class="hero-gradient-left"></div>
         <div class="hero-gradient-bottom"></div>

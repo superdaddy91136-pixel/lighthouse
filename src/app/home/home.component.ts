@@ -129,6 +129,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   chkSerie = true;
   reachedMax = false;
   readonly PAGE_SIZE = 36;
+  private catalogLoadRequestId = 0;
   channelsVisible = true;
   prevSearchValue: String = "";
   loading = false;
@@ -1537,9 +1538,15 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     );
     this.subscriptions.push(
       this.memory.Refresh.subscribe((scroll) => {
+        this.memory.clearCatalogPageCache();
         this.load();
         if(scroll)
           window.scrollTo({ top: 0, behavior: "instant" });
+      }),
+    );
+    this.subscriptions.push(
+      this.memory.RefreshSources.subscribe(() => {
+        this.memory.clearCatalogPageCache();
       }),
     );
     this.subscriptions.push(
@@ -1752,17 +1759,18 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
   }
 
   async load(more = false) {
+    const requestId = ++this.catalogLoadRequestId;
     this.loading = true;
     if (this.isSearching) {
       await this.performUniversalSearch(this.filters!.query!);
-      this.loading = false;
+      if (requestId === this.catalogLoadRequestId) this.loading = false;
       return;
     }
 
     if (this.isLiveTvTab && !this.liveSidebarSelection) {
       this.channels = [];
       this.reachedMax = true;
-      this.loading = false;
+      if (requestId === this.catalogLoadRequestId) this.loading = false;
       this.updatePinnedItems();
       this.channelsVisible = true;
       this.cdr.markForCheck();
@@ -1774,22 +1782,54 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     } else {
       this.filters!.page = 1;
     }
+
+    const filters: Filters = {
+      ...this.filters!,
+      source_ids: [...this.filters!.source_ids],
+      media_types: [...this.filters!.media_types],
+    };
+    const cacheKey =
+      !more && filters.view_type === ViewMode.All
+        ? JSON.stringify({
+            ...filters,
+            source_ids: [...filters.source_ids].sort((a, b) => a - b),
+            media_types: [...filters.media_types].sort((a, b) => a - b),
+          })
+        : undefined;
+    const cached = cacheKey ? this.memory.getCatalogPage(cacheKey) : undefined;
+    if (cached) {
+      this.channels = cached.channels;
+      this.reachedMax = cached.reachedMax;
+      this.channelsVisible = true;
+      this.viewType = filters.view_type;
+      this.loading = false;
+      this.updatePinnedItems();
+      this.cdr.markForCheck();
+    }
+
     try {
-      let channels: Channel[] = await invoke("search", { filters: this.filters });
+      const channels: Channel[] = await invoke("search", { filters });
+      if (requestId !== this.catalogLoadRequestId) return;
       if (!more) {
         this.channels = channels;
         this.channelsVisible = true;
         // prevent flicker of hiding opacity
-        this.viewType = this.filters!.view_type;
+        this.viewType = filters.view_type;
       } else {
         this.channels = this.channels.concat(channels);
       }
       this.reachedMax = channels.length < this.PAGE_SIZE;
+      if (cacheKey) {
+        this.memory.setCatalogPage(cacheKey, channels, this.reachedMax);
+      }
     } catch (e) {
-      this.error.handleError(e);
+      if (requestId === this.catalogLoadRequestId) this.error.handleError(e);
+    } finally {
+      if (requestId === this.catalogLoadRequestId) {
+        this.updatePinnedItems();
+        this.loading = false;
+      }
     }
-    this.updatePinnedItems();
-    this.loading = false;
   }
 
   checkScrollTop() {
