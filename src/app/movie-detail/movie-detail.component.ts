@@ -385,19 +385,27 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (cached?.backdropPath) {
-      this.backdropUrl = getTmdbBackdropUrl(cached.backdropPath, 'w1280');
+      this.backdropUrl = getTmdbBackdropUrl(cached.backdropPath, 'original') || getTmdbBackdropUrl(cached.backdropPath, 'w1280');
       this.isBackdropFallback = false;
       this.applyEnrichment(cached);
     } else {
       if (cached) {
         this.applyEnrichment(cached);
       }
-      if (movie.image) {
-        this.backdropUrl = movie.image;
-        this.isBackdropFallback = true;
-      } else {
-        this.backdropUrl = undefined;
-        this.isBackdropFallback = false;
+      if (!this.backdropUrl) {
+        const tmdbPoster = cached?.posterPath
+          ? (getTmdbPosterUrl(cached.posterPath, 'original') || getTmdbPosterUrl(cached.posterPath, 'w780'))
+          : undefined;
+        if (tmdbPoster) {
+          this.backdropUrl = tmdbPoster;
+          this.isBackdropFallback = true;
+        } else if (movie.image) {
+          this.backdropUrl = movie.image;
+          this.isBackdropFallback = true;
+        } else {
+          this.backdropUrl = undefined;
+          this.isBackdropFallback = false;
+        }
       }
     }
     this.updateAmbientBackground();
@@ -533,7 +541,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.enrichment = enr;
 
     if (enr.backdropPath) {
-      const highResBackdrop = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+      const highResBackdrop = getTmdbBackdropUrl(enr.backdropPath, 'original') || getTmdbBackdropUrl(enr.backdropPath, 'w1280');
       if (highResBackdrop) {
         if (this.backdropUrl === highResBackdrop && !this.backdropError) {
           this.isBackdropFallback = false;
@@ -547,17 +555,38 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
             this.cdr.markForCheck();
           };
           img.onerror = () => {
-            if (!this.backdropUrl && this.movie?.image) {
-              this.backdropUrl = this.movie.image;
-              this.isBackdropFallback = true;
+            const w1280 = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+            if (w1280 && w1280 !== highResBackdrop) {
+              this.backdropUrl = w1280;
+              this.isBackdropFallback = false;
+              this.backdropError = false;
+              this.updateAmbientBackground();
+              this.cdr.markForCheck();
+            } else if (!this.backdropUrl) {
+              const p = enr.posterPath ? (getTmdbPosterUrl(enr.posterPath, 'original') || getTmdbPosterUrl(enr.posterPath, 'w780')) : undefined;
+              if (p) {
+                this.backdropUrl = p;
+                this.isBackdropFallback = true;
+              } else if (this.movie?.image) {
+                this.backdropUrl = this.movie.image;
+                this.isBackdropFallback = true;
+              }
+              this.updateAmbientBackground();
+              this.cdr.markForCheck();
             }
           };
           img.src = highResBackdrop;
         }
       }
-    } else if (!this.backdropUrl && this.movie?.image) {
-      this.backdropUrl = this.movie.image;
-      this.isBackdropFallback = true;
+    } else if (!this.backdropUrl) {
+      const p = enr.posterPath ? (getTmdbPosterUrl(enr.posterPath, 'original') || getTmdbPosterUrl(enr.posterPath, 'w780')) : undefined;
+      if (p) {
+        this.backdropUrl = p;
+        this.isBackdropFallback = true;
+      } else if (this.movie?.image) {
+        this.backdropUrl = this.movie.image;
+        this.isBackdropFallback = true;
+      }
     }
 
     if (enr.posterPath && !this.imageError) {
@@ -1095,12 +1124,27 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onBackdropError(): void {
-    if (this.backdropUrl && !this.isBackdropFallback && this.movie?.image) {
-      this.backdropUrl = this.movie.image;
-      this.isBackdropFallback = true;
-      this.backdropError = false;
-      this.updateAmbientBackground();
-      return;
+    if (this.backdropUrl && !this.isBackdropFallback) {
+      if (this.enrichment?.backdropPath && this.backdropUrl.includes('/original/')) {
+        const w1280 = getTmdbBackdropUrl(this.enrichment.backdropPath, 'w1280');
+        if (w1280 && w1280 !== this.backdropUrl) {
+          this.backdropUrl = w1280;
+          this.isBackdropFallback = false;
+          this.backdropError = false;
+          this.updateAmbientBackground();
+          return;
+        }
+      }
+      const posterFallback = this.enrichment?.posterPath
+        ? (getTmdbPosterUrl(this.enrichment.posterPath, 'w780') || getTmdbPosterUrl(this.enrichment.posterPath, 'w500'))
+        : this.movie?.image;
+      if (posterFallback) {
+        this.backdropUrl = posterFallback;
+        this.isBackdropFallback = true;
+        this.backdropError = false;
+        this.updateAmbientBackground();
+        return;
+      }
     }
     this.backdropError = true;
     this.backdropUrl = undefined;
