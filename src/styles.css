@@ -251,6 +251,8 @@ body::-webkit-scrollbar-thumb:active {
   height: 100%;
   overflow: hidden;
   z-index: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 66%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 66%, transparent 100%);
 }
 
 .hero-backdrop-img {
@@ -282,13 +284,13 @@ body::-webkit-scrollbar-thumb:active {
   pointer-events: none;
 }
 
-/* 2. Bottom Gradient: fades seamlessly into body background (#202124) */
+/* 2. Bottom Gradient: darkens the image before it fades into the ambient background */
 .hero-gradient-bottom {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 240px;
+  height: 320px;
   background: linear-gradient(
     180deg,
     transparent 0%,
