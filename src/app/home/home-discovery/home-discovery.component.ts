@@ -49,6 +49,8 @@ import { EmbeddedPlayerService } from "../../services/embedded-player.service";
 import { AmbientBackgroundService } from "../../services/ambient-background.service";
 import { SplashScreenService } from "../../services/splash-screen.service";
 
+const BANNER_ROTATE_MS = 7000;
+
 export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
 
 export interface MixedGenreDef {
@@ -181,6 +183,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   private lastWatchProgressReadTime: number = 0;
 
   private heroTimer?: any;
+  private isHeroFocused: boolean = false;
+  private isHeroDragging: boolean = false;
   private subs: Subscription[] = [];
   private isDestroyed: boolean = false;
   private discoveryLoadRequestId = 0;
@@ -242,7 +246,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     }
 
-    this.loadDiscovery();
+    if (!this.discoveryState.isFresh()) {
+      this.loadDiscovery();
+    }
     this.updateAmbientBackground();
 
     this.subs.push(
@@ -333,12 +339,13 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   startHeroTimer() {
-    this.stopHeroTimer();
-    this.heroTimer = setInterval(() => {
-      if (!this.isHeroHovered && this.heroItems.length > 1) {
-        this.nextHero();
-      }
-    }, 9000);
+    if (this.heroTimer || this.shouldPauseHeroTimer()) return;
+    this.ngZone.runOutsideAngular(() => {
+      this.heroTimer = setInterval(() => {
+        if (this.shouldPauseHeroTimer() || this.heroItems.length <= 1) return;
+        this.ngZone.run(() => this.nextHero());
+      }, BANNER_ROTATE_MS);
+    });
   }
 
   stopHeroTimer() {
@@ -350,10 +357,62 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   onHeroMouseEnter() {
     this.isHeroHovered = true;
+    this.updateHeroTimer();
   }
 
   onHeroMouseLeave() {
     this.isHeroHovered = false;
+    this.updateHeroTimer();
+  }
+
+  onHeroFocusIn(): void {
+    this.isHeroFocused = true;
+    this.updateHeroTimer();
+  }
+
+  onHeroFocusOut(event: FocusEvent): void {
+    const hero = event.currentTarget as HTMLElement;
+    if (hero?.contains(event.relatedTarget as Node)) return;
+    this.isHeroFocused = false;
+    this.updateHeroTimer();
+  }
+
+  onHeroPointerDown(): void {
+    this.isHeroDragging = true;
+    this.updateHeroTimer();
+  }
+
+  onHeroPointerEnd(): void {
+    this.isHeroDragging = false;
+    this.updateHeroTimer();
+  }
+
+  @HostListener('document:visibilitychange')
+  onDocumentVisibilityChange(): void {
+    this.updateHeroTimer();
+  }
+
+  private shouldPauseHeroTimer(): boolean {
+    return this.isDestroyed || document.hidden || this.isHeroHovered || this.isHeroFocused || this.isHeroDragging;
+  }
+
+  private updateHeroTimer(): void {
+    if (this.shouldPauseHeroTimer()) {
+      this.stopHeroTimer();
+    } else {
+      this.startHeroTimer();
+    }
+  }
+
+  private preloadVisibleHeroImages(): void {
+    if (typeof Image === "undefined" || this.heroItems.length === 0) return;
+    const nextIndex = (this.currentHeroIndex + 1) % this.heroItems.length;
+    for (const hero of [this.currentHero, this.heroItems[nextIndex]]) {
+      if (hero?.imageUrl) {
+        const image = new Image();
+        image.src = hero.imageUrl;
+      }
+    }
   }
 
   public updateAmbientBackground(): void {
@@ -375,6 +434,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.currentHeroIndex = index;
       this.recordHeroShown(this.currentHero?.channel?.id);
       this.updateAmbientBackground();
+      this.preloadVisibleHeroImages();
     }
   }
 
@@ -406,6 +466,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       this.recordHeroShown(this.currentHero?.channel?.id);
       this.updateAmbientBackground();
+      this.preloadVisibleHeroImages();
 
       // Prioritize background TMDB enrichment for the newly active hero
       const active = this.currentHero;
@@ -1235,6 +1296,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   private recordHeroShown(channelId?: number): void {
     if (!channelId) return;
+    this.discoveryState.setActiveHero(channelId);
+    this.preloadVisibleHeroImages();
     try {
       const recent = this.getRecentHeroIds().filter((id) => id !== channelId);
       recent.unshift(channelId);
@@ -2316,6 +2379,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.isEligibleHeroChannel(hero.channel)
     );
     this.heroItems = [...this.masterHeroItems];
+    this.currentHeroIndex = this.discoveryState.getActiveHeroIndex(this.heroItems);
+    this.preloadVisibleHeroImages();
 
     // Preserve fresh local rows: Continue Watching & Favorites
     const cwRow = this.masterDiscoveryRows.find((r) => r.id === "row-continue-watching");

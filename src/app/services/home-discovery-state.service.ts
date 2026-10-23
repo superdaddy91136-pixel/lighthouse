@@ -22,11 +22,14 @@ export class HomeDiscoveryStateService {
   /** Emits whenever new discovery rows or hero items are successfully updated/refreshed */
   public discoveryUpdated$ = new Subject<HomeDiscoverySnapshot>();
 
-  /** 30-minute freshness TTL for TMDB recommendation rows */
-  public readonly CACHE_TTL_MS = 30 * 60 * 1000;
+  /** Five-minute freshness TTL for the Home discovery snapshot. */
+  public readonly CACHE_TTL_MS = 5 * 60 * 1000;
 
   /** Stored in-memory snapshot surviving navigation across tabs and routes */
   private snapshot: HomeDiscoverySnapshot | null = null;
+
+  /** Active banner identity survives Home's tab-driven component recreation. */
+  private activeHeroChannelId?: number;
 
   /** Fast in-memory cache of resolved catalog matches: `${isTv ? 'tv' : 'mv'}_${tmdbId}` -> Channel */
   private resolvedCatalogMatches: Map<string, Channel> = new Map();
@@ -92,6 +95,18 @@ export class HomeDiscoveryStateService {
    */
   public getSnapshot(): HomeDiscoverySnapshot | null {
     return this.snapshot;
+  }
+
+  public setActiveHero(channelId?: number): void {
+    this.activeHeroChannelId = channelId;
+  }
+
+  public getActiveHeroIndex(heroItems: HeroItem[]): number {
+    if (!this.activeHeroChannelId) return 0;
+    const index = heroItems.findIndex(
+      (hero) => hero.channel?.id === this.activeHeroChannelId
+    );
+    return index >= 0 ? index : 0;
   }
 
   /**
@@ -270,6 +285,7 @@ export class HomeDiscoveryStateService {
    */
   public clearCache(): void {
     this.snapshot = null;
+    this.activeHeroChannelId = undefined;
     this.resolvedCatalogMatches.clear();
     this.inFlightPipelinePromise = null;
     this.currentRunId++;
