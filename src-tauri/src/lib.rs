@@ -10,14 +10,6 @@ use types::{
     AppState, Channel, CustomChannel, CustomChannelExtraData, EPG, EPGNotify, Filters, Group,
     IdName, NetworkInfo, Settings, Source, SourceContentCounts,
 };
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use {
-    std::sync::LazyLock,
-    tauri::{
-        menu::{Menu, MenuItem},
-        tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    },
-};
 
 pub mod bulk_action_type;
 pub mod embedded_poc;
@@ -37,13 +29,6 @@ pub mod utils;
 pub mod view_type;
 pub mod window_state;
 pub mod xtream;
-
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-static ENABLE_TRAY_ICON: LazyLock<bool> = LazyLock::new(|| {
-    settings::get_settings()
-        .and_then(|s| s.enable_tray_icon.context("no value"))
-        .unwrap_or(true)
-});
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -142,10 +127,6 @@ pub fn run() {
                 let _ = window.show();
             }
             embedded_poc::init_overlay_window(app.handle());
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            if *ENABLE_TRAY_ICON {
-                let _ = build_tray_icon(app);
-            }
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -164,15 +145,12 @@ pub fn run() {
                 if let Some(state) = window.try_state::<embedded_poc::EmbeddedPocState>() {
                     state.stop_sync();
                 }
-                if !*ENABLE_TRAY_ICON {
-                    if let Some(overlay) = window.app_handle().get_webview_window("player-overlay") {
-                        let _ = overlay.destroy();
-                    }
-                    return;
+
+                if let Some(overlay) = window.app_handle().get_webview_window("player-overlay") {
+                    let _ = overlay.destroy();
                 }
 
-                window.hide().unwrap();
-                api.prevent_close();
+                window.app_handle().exit(0);
             }
             #[cfg(target_os = "windows")]
             tauri::WindowEvent::Focused(_) => {
@@ -258,9 +236,6 @@ pub fn run() {
         .run(|app, event| match event {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
-                if !*ENABLE_TRAY_ICON {
-                    return;
-                }
                 let window = app.get_webview_window("main").expect("no main window");
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -278,53 +253,6 @@ pub fn run() {
             }
             _ => {}
         });
-}
-
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn build_tray_icon(app: &mut tauri::App) -> anyhow::Result<()> {
-    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
-    TrayIconBuilder::new()
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "quit" => {
-                if let Some(state) = app.try_state::<embedded_poc::EmbeddedPocState>() {
-                    state.stop_sync();
-                }
-                if let Some(overlay) = app.get_webview_window("player-overlay") {
-                    let _ = overlay.destroy();
-                }
-                app.exit(0);
-            }
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| match event {
-            TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } => {
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-            _ => {}
-        })
-        .icon(app.default_window_icon().unwrap().clone())
-        .build(app)?;
-    Ok(())
 }
 
 fn map_err_frontend(e: Error) -> String {

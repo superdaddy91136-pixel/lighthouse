@@ -1540,6 +1540,7 @@ pub async fn start_embedded_player_internal(
 
         let mut cmd = tokio::process::Command::new(&mpv_path);
         cmd.args(&args);
+        cmd.kill_on_drop(true);
 
         let child = cmd
             .spawn()

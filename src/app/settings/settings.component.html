@@ -553,30 +553,12 @@
       <div class="settings-category" [hidden]="activeCategory !== 'system'">
         <div class="category-header">
           <h2 class="category-title">Application &amp; System</h2>
-          <p class="category-subtitle">Taskbar notification tray, background behavior, and launch sync</p>
+          <p class="category-subtitle">Background behavior and launch sync</p>
         </div>
 
         <div class="settings-section">
           <h3 class="section-title">System Integration</h3>
           <div class="section-card">
-            <!-- System Tray -->
-            <div class="setting-item">
-              <div class="setting-meta">
-                <label class="setting-title" for="trayIconSwitch">System Tray Resident Mode</label>
-                <p class="setting-hint">Keep Lighthouse resident in the Windows notification tray when minimized. Required for EPG program reminders</p>
-              </div>
-              <div class="setting-control">
-                <label class="modern-toggle" for="trayIconSwitch">
-                  <input 
-                    id="trayIconSwitch" 
-                    type="checkbox"
-                    [(ngModel)]="settings.enable_tray_icon" 
-                    (ngModelChange)="updateSettings()" />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-
             <!-- Refresh on Start -->
             <div class="setting-item">
               <div class="setting-meta">
