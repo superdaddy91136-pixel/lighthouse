@@ -124,8 +124,43 @@ export class TmdbCacheService {
   }
 
   /**
-   * Retrieves all cached enrichments matching a TMDB ID from persistent IndexedDB.
+   * Pre-warms the hot memory cache from persistent IndexedDB for a set of candidate channel IDs.
+   * Enables immediate synchronous retrieval in initial hero pool computation.
    */
+  async preloadChannels(channelIds: number[]): Promise<number> {
+    if (!channelIds || channelIds.length === 0) return 0;
+    const missingIds = channelIds.filter((id) => id && !this.memoryCache.has(id));
+    if (missingIds.length === 0) return 0;
+
+    try {
+      const db = await this.initDb();
+      return new Promise<number>((resolve) => {
+        const tx = db.transaction(STORE_MEDIA, 'readonly');
+        const store = tx.objectStore(STORE_MEDIA);
+        let loaded = 0;
+
+        for (const id of missingIds) {
+          const req = store.get(id);
+          req.onsuccess = () => {
+            const result = req.result as TmdbMediaEnrichment | undefined;
+            if (result) {
+              this.memoryCache.set(id, result);
+              if (result.tmdbId) {
+                this.tmdbIdMemoryCache.set(result.tmdbId, result);
+              }
+              loaded++;
+            }
+          };
+        }
+
+        tx.oncomplete = () => resolve(loaded);
+        tx.onerror = () => resolve(0);
+      });
+    } catch {
+      return 0;
+    }
+  }
+
   async getEnrichmentsByTmdbId(tmdbId: number): Promise<TmdbMediaEnrichment[]> {
     if (!tmdbId) return [];
 

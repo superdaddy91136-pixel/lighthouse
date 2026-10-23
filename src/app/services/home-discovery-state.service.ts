@@ -36,7 +36,28 @@ export class HomeDiscoveryStateService {
   private currentRunId: number = 0;
   private lastSourceKey: string = '';
 
-  constructor() {}
+  constructor() {
+    this.hydrateFromStorage();
+  }
+
+  private hydrateFromStorage(): void {
+    try {
+      const stored = localStorage.getItem('lighthouse_home_discovery_snapshot');
+      if (stored) {
+        const parsed = JSON.parse(stored) as HomeDiscoverySnapshot;
+        if (
+          parsed &&
+          Array.isArray(parsed.masterHeroItems) &&
+          parsed.masterHeroItems.length > 0 &&
+          Date.now() - parsed.timestamp < this.CACHE_TTL_MS
+        ) {
+          this.snapshot = parsed;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   /**
    * Checks whether valid TMDB-generated discovery data exists in the in-memory cache.
@@ -187,6 +208,11 @@ export class HomeDiscoveryStateService {
       timestamp: Date.now(),
       status: 'success',
     };
+    try {
+      localStorage.setItem('lighthouse_home_discovery_snapshot', JSON.stringify(this.snapshot));
+    } catch {
+      // ignore storage errors
+    }
     this.discoveryUpdated$.next(this.snapshot);
   }
 
@@ -247,5 +273,10 @@ export class HomeDiscoveryStateService {
     this.resolvedCatalogMatches.clear();
     this.inFlightPipelinePromise = null;
     this.currentRunId++;
+    try {
+      localStorage.removeItem('lighthouse_home_discovery_snapshot');
+    } catch {
+      // ignore storage errors
+    }
   }
 }

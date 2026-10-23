@@ -6,8 +6,92 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <style>
+      body {
+        margin: 0;
+        background-color: #07080c;
+        overflow: hidden;
+      }
+      .boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        background-color: #07080c;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+      }
+      .boot-logo-wrap {
+        width: 108px;
+        height: 108px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 22px;
+      }
+      .boot-logo {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.65));
+      }
+      .boot-title {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        text-indent: 0.28em;
+        color: rgba(255, 255, 255, 0.92);
+        margin-bottom: 28px;
+        text-transform: uppercase;
+      }
+      .boot-loader-track {
+        width: 110px;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 2px;
+        overflow: hidden;
+        position: relative;
+      }
+      .boot-loader-bar {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 45%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(96, 165, 250, 0.85),
+          rgba(255, 255, 255, 0.95),
+          rgba(96, 165, 250, 0.85),
+          transparent
+        );
+        border-radius: 2px;
+        animation: boot-shimmer 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes boot-shimmer {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+    </style>
   </head>
   <body>
-    <app-root></app-root>
+    <app-root>
+      <div class="boot-splash" aria-hidden="true">
+        <div class="boot-logo-wrap">
+          <img src="assets/logo.png" alt="Lighthouse" class="boot-logo" />
+        </div>
+        <div class="boot-title">LIGHTHOUSE</div>
+        <div class="boot-loader-track">
+          <div class="boot-loader-bar"></div>
+        </div>
+      </div>
+    </app-root>
   </body>
 </html>

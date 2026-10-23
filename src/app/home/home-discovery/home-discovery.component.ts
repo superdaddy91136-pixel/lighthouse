@@ -47,6 +47,7 @@ import {
 } from "../../services/home-discovery-state.service";
 import { EmbeddedPlayerService } from "../../services/embedded-player.service";
 import { AmbientBackgroundService } from "../../services/ambient-background.service";
+import { SplashScreenService } from "../../services/splash-screen.service";
 
 export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
 
@@ -198,6 +199,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     private ambientBackground: AmbientBackgroundService,
     private cdr: ChangeDetectorRef,
     private ngZone: NgZone,
+    private splashScreen: SplashScreenService,
   ) {}
 
   ngOnInit(): void {
@@ -235,6 +237,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (cachedSnapshot?.masterHeroItems.length) {
       this.syncFromSnapshot(cachedSnapshot);
       this.loading = false;
+      if (this.currentHero?.imageUrl) {
+        this.splashScreen.markHeroReady();
+      }
     }
 
     this.loadDiscovery();
@@ -324,6 +329,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
     this.rafScrollChecks.clear();
     this.subs.forEach((s) => s.unsubscribe());
+    this.splashScreen.dismiss('destroyed');
   }
 
   startHeroTimer() {
@@ -506,6 +512,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (enabledSourceIds.length === 0) {
         this.loading = false;
         this.hasAnyContent = false;
+        this.splashScreen.dismiss('no-sources');
         return;
       }
 
@@ -570,6 +577,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       ]);
 
       if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
+
+      // Preload persistent TMDB cache for candidate channels so initial synchronous build can reuse cached artwork
+      const initialCandidateIds = [
+        ...Array.from(this.getLastFeaturedIds()),
+        ...(moviesRes || []).map((m) => m.id!).filter(Boolean),
+        ...(seriesRes || []).map((s) => s.id!).filter(Boolean),
+        ...(historyRes || []).map((h) => h.id!).filter(Boolean),
+        ...(favoritesRes || []).map((f) => f.id!).filter(Boolean),
+      ];
+      await this.tmdbCache.preloadChannels(initialCandidateIds);
 
       const runPipelineWhenCategoriesReady = () => {
         void categoriesReady.then((categoriesRes) => {
@@ -646,7 +663,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.allRecommended = snapshot.allRecommended;
         this.allLoadedMovies = snapshot.allLoadedMovies.length > 0 ? snapshot.allLoadedMovies : (moviesRes || []);
         this.allLoadedSeries = snapshot.allLoadedSeries.length > 0 ? snapshot.allLoadedSeries : (seriesRes || []);
-        this.masterHeroItems = [...snapshot.masterHeroItems];
+        this.masterHeroItems = snapshot.masterHeroItems.filter((hero) =>
+          this.isEligibleHeroChannel(hero.channel)
+        );
         this.heroItems = [...this.masterHeroItems];
 
         // Restore all TMDB rows (Recommended, Popular, Trending, Genre, Korean)
@@ -686,6 +705,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
         this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
         this.loading = false;
+      if (this.currentHero?.imageUrl) {
+        this.splashScreen.markHeroReady();
+      }
 
         // Background revalidation only if stale or forced refresh
         const shouldRevalidate = isManualRefresh || !this.discoveryState.isFresh();
@@ -755,6 +777,17 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
       this.loading = false;
 
+      // If TMDB is disabled or hero banner already has usable cached TMDB content, dismiss splash screen immediately
+      const hasCachedTmdbHero = !this.tmdbConfig.isEnabled() || (
+        this.currentHero?.imageUrl && (
+          this.currentHero.logoUrl ||
+          this.tmdbCache.getEnrichmentSync(this.currentHero.channel?.id)?.backdropPath
+        )
+      );
+      if (hasCachedTmdbHero) {
+        this.splashScreen.markHeroReady();
+      }
+
       // 5. Asynchronously run TMDB discovery pipeline in background without blocking
       setTimeout(() => {
         if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
@@ -767,6 +800,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (requestId !== this.discoveryLoadRequestId) return;
       console.error("Failed to load discovery:", e);
       this.loading = false;
+      this.splashScreen.dismiss('load-error');
     }
   }
 
@@ -1071,17 +1105,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       })
       .filter((row) => row.items.length > 0);
 
-    const prefMovies = this.allLoadedMovies.filter((m) =>
-      this.matchesContentPreference(m, this.selectedContentPref)
+    // The master pool is built only from language-filtered TMDB discovery
+    // results. Do not rebuild it from the broader provider catalog here.
+    const prefHeroPool = this.masterHeroItems.filter((hero) =>
+      this.matchesContentPreference(hero.channel, this.selectedContentPref)
     );
-    const prefSeries = this.allLoadedSeries.filter((s) =>
-      this.matchesContentPreference(s, this.selectedContentPref)
-    );
-    const prefRec = this.allRecommended.filter((r) =>
-      this.matchesContentPreference(r, this.selectedContentPref)
-    );
-
-    const prefHeroPool = this.buildHeroPool(prefMovies, prefSeries, prefRec);
     this.heroItems = prefHeroPool.length > 0 ? prefHeroPool : [...this.masterHeroItems];
     if (this.currentHeroIndex >= this.heroItems.length) {
       this.currentHeroIndex = 0;
@@ -1295,8 +1323,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.allLoadedMovies = moviesPool;
       this.allLoadedSeries = seriesPool;
 
-      // 2. Concurrently execute TMDB discovery pipelines
+      // 2. Prioritize dynamic hero banner pool preparation concurrently with recommendation rows
+      const heroPromise = this.refreshHeroPoolFromTmdbDiscovery(sourceIds).then(() => {
+        if (this.currentHero?.imageUrl) {
+          this.splashScreen.markHeroReady();
+        }
+      });
+
+      // Concurrently execute TMDB discovery pipelines in background without blocking hero presentation
       await Promise.allSettled([
+        heroPromise,
         this.loadTmdbRecommendedRow(sourceIds, historyRes, favoritesRes, moviesPool, seriesPool),
         this.loadTmdbPopularMoviesRow(sourceIds, moviesPool),
         this.loadTmdbPopularTvRow(sourceIds, seriesPool),
@@ -1310,9 +1346,6 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (runId !== undefined && runId !== this.discoveryState.getCurrentRunId()) {
         return;
       }
-
-      // 3. Assemble dynamic hero banner pool from highest quality TMDB candidates
-      await this.refreshHeroPoolFromTmdbDiscovery(sourceIds);
 
       // 4. Save completed snapshot to HomeDiscoveryStateService so it survives navigation
       const tmdbRows = this.masterDiscoveryRows.filter(
@@ -1687,75 +1720,23 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   private async refreshHeroPoolFromTmdbDiscovery(sourceIds?: number[]): Promise<void> {
-    const trendingMoviesRow = this.masterDiscoveryRows.find((r) => r.id === "row-trending-movies");
-    const trendingTvRow = this.masterDiscoveryRows.find((r) => r.id === "row-trending-series");
-    const popularMoviesRow = this.masterDiscoveryRows.find((r) => r.id === "row-popular-movies");
-    const popularTvRow = this.masterDiscoveryRows.find((r) => r.id === "row-popular-series");
-    const recommendedRow = this.masterDiscoveryRows.find((r) => r.id === "row-recommended");
+    const sIds = sourceIds && sourceIds.length > 0
+      ? sourceIds
+      : Array.from(this.memory.Sources.keys());
+    const heroDiscovery = await this.loadHeroTmdbDiscovery();
+    const heroCandidateMovies: Channel[] = [];
+    const heroCandidateSeries: Channel[] = [];
 
-    // Collect all genre and Korean content rows to expand candidate universe
-    const extraRows = this.masterDiscoveryRows.filter(
-      (r) =>
-        r.id.startsWith("row-genre-") ||
-        r.id.startsWith("row-mixed-genre") ||
-        r.id.startsWith("row-korean") ||
-        r.id.startsWith("row-anime")
-    );
-
-    const extraMovies: Channel[] = [];
-    const extraSeries: Channel[] = [];
-    for (const r of extraRows) {
-      for (const item of r.items) {
-        if (this.isTvShow(item)) {
-          extraSeries.push(item);
-        } else {
-          extraMovies.push(item);
-        }
-      }
-    }
-
-    const heroCandidateMovies: Channel[] = [
-      ...(trendingMoviesRow?.items || []),
-      ...(popularMoviesRow?.items || []),
-      ...(recommendedRow?.items || []).filter((i) => !this.isTvShow(i)),
-      ...extraMovies,
-      ...this.allLoadedMovies,
-    ];
-
-    const heroCandidateSeries: Channel[] = [
-      ...(trendingTvRow?.items || []),
-      ...(popularTvRow?.items || []),
-      ...(recommendedRow?.items || []).filter((i) => this.isTvShow(i)),
-      ...extraSeries,
-      ...this.allLoadedSeries,
-    ];
-
-    // Enrich candidate pools with top rated items from TMDB cache if available
-    if (this.tmdbConfig.isEnabled()) {
-      try {
-        const [topMovies, topTv] = await Promise.allSettled([
-          this.tmdbEnrichment.getTopRatedMovies(1),
-          this.tmdbEnrichment.getTopRatedTv(1),
-        ]);
-        const sIds = sourceIds && sourceIds.length > 0 ? sourceIds : Array.from(this.memory.Sources.keys());
-        if (topMovies.status === "fulfilled" && Array.isArray(topMovies.value)) {
-          for (const item of topMovies.value.slice(0, 10)) {
-            const matched = await this.matchTmdbItemToCatalog(item, false, this.allLoadedMovies, sIds);
-            if (matched && matched.id) {
-              heroCandidateMovies.push(matched);
-            }
-          }
-        }
-        if (topTv.status === "fulfilled" && Array.isArray(topTv.value)) {
-          for (const item of topTv.value.slice(0, 10)) {
-            const matched = await this.matchTmdbItemToCatalog(item, true, this.allLoadedSeries, sIds);
-            if (matched && matched.id) {
-              heroCandidateSeries.push(matched);
-            }
-          }
-        }
-      } catch {
-        // ignore
+    for (const candidate of heroDiscovery) {
+      const pool = candidate.isTv ? this.allLoadedSeries : this.allLoadedMovies;
+      const matched = await this.matchTmdbItemToCatalog(
+        candidate.item,
+        candidate.isTv,
+        pool,
+        sIds
+      );
+      if (matched?.id) {
+        (candidate.isTv ? heroCandidateSeries : heroCandidateMovies).push(matched);
       }
     }
 
@@ -1783,19 +1764,152 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const featuredIds: number[] = [];
       const currentHeroId = this.heroItems[this.currentHeroIndex]?.channel?.id;
       if (currentHeroId) featuredIds.push(currentHeroId);
-      for (const item of (recommendedRow?.items || []).slice(0, 8)) {
-        if (item.id) featuredIds.push(item.id);
-      }
-      for (const item of (popularMoviesRow?.items || []).slice(0, 6)) {
-        if (item.id) featuredIds.push(item.id);
-      }
       this.saveCurrentFeaturedIds(featuredIds);
 
       if (!this.isDestroyed) {
         this.applyContentPreferences();
         this.cdr.markForCheck();
       }
+      if (this.currentHero?.imageUrl) {
+        this.splashScreen.markHeroReady();
+      }
     }
+  }
+
+  private async loadHeroTmdbDiscovery(): Promise<{ item: any; isTv: boolean }[]> {
+    const minimumDate = new Date();
+    minimumDate.setFullYear(minimumDate.getFullYear() - 4);
+    const minimumDateString = minimumDate.toISOString().slice(0, 10);
+    type HeroCategory = "english" | "hindi" | "korean" | "uk" | "anime";
+    const baseParams = { "vote_count.gte": 10, sort_by: "popularity.desc" };
+    const discoveryRequests: { request: Promise<any[]>; isTv: boolean; category: HeroCategory }[] = [];
+    const addLanguageDiscovery = (language: string, category: HeroCategory, extraParams = {}) => {
+      discoveryRequests.push({
+        category,
+        isTv: false,
+        request: this.tmdbEnrichment.discoverMovies({
+          ...baseParams,
+          ...extraParams,
+          with_original_language: language,
+          "primary_release_date.gte": minimumDateString,
+        }),
+      });
+      discoveryRequests.push({
+        category,
+        isTv: true,
+        request: this.tmdbEnrichment.discoverTv({
+          ...baseParams,
+          ...extraParams,
+          with_original_language: language,
+          "first_air_date.gte": minimumDateString,
+        }),
+      });
+    };
+
+    addLanguageDiscovery("en", "english");
+    addLanguageDiscovery("hi", "hindi");
+    addLanguageDiscovery("ko", "korean");
+    addLanguageDiscovery("en", "uk", { with_origin_country: "GB" });
+    addLanguageDiscovery("ja", "anime", { with_genres: "16" });
+
+    const results = await Promise.allSettled(discoveryRequests.map((entry) => entry.request));
+    const candidates: { item: any; isTv: boolean; category: HeroCategory }[] = [];
+    const seen = new Set<string>();
+
+    results.forEach((result, index) => {
+      if (result.status !== "fulfilled" || !Array.isArray(result.value)) return;
+      const { isTv, category } = discoveryRequests[index];
+      for (const item of result.value) {
+        if (!this.isEligibleHeroTmdbItem(item, isTv, category)) continue;
+        const key = `${isTv ? "tv" : "movie"}:${item.id}`;
+        if (!item?.id || seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({ item, isTv, category });
+      }
+    });
+
+    const [trendingMovies, trendingTv] = await Promise.allSettled([
+      this.tmdbEnrichment.getTrendingMovies("week"),
+      this.tmdbEnrichment.getTrendingTv("week"),
+    ]);
+    for (const [result, isTv] of [[trendingMovies, false], [trendingTv, true]] as const) {
+      if (result.status !== "fulfilled" || !Array.isArray(result.value)) continue;
+      for (const item of result.value) {
+        const category = this.getHeroTmdbCategory(item);
+        if (!category || !this.isEligibleHeroTmdbItem(item, isTv, category)) continue;
+        const key = `${isTv ? "tv" : "movie"}:${item.id}`;
+        if (!item?.id || seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({ item, isTv, category });
+      }
+    }
+
+    const categoryOrder: HeroCategory[] = ["english", "hindi", "korean", "uk", "anime"];
+    const categoryPools = categoryOrder.map((category) => candidates
+      .filter((candidate) => candidate.category === category)
+      .sort((a, b) => (b.item.popularity || 0) - (a.item.popularity || 0)));
+    const balanced: { item: any; isTv: boolean }[] = [];
+    const maxLength = Math.max(...categoryPools.map((pool) => pool.length));
+    for (let index = 0; index < maxLength; index++) {
+      for (const pool of categoryPools) {
+        if (index < pool.length) balanced.push(pool[index]);
+      }
+    }
+    return balanced.slice(0, 48);
+  }
+
+  private getHeroTmdbCategory(item: any): "english" | "hindi" | "korean" | "uk" | "anime" | undefined {
+    const language = (item?.original_language || "").toLowerCase();
+    if (language === "ja" && Array.isArray(item.genre_ids) && item.genre_ids.includes(16)) return "anime";
+    if (language === "ko") return "korean";
+    if (language === "hi") return "hindi";
+    if (language === "en") {
+      return Array.isArray(item.origin_country) && item.origin_country.includes("GB") ? "uk" : "english";
+    }
+    return undefined;
+  }
+
+  private isEligibleHeroTmdbItem(
+    item: any,
+    isTv: boolean,
+    category?: "english" | "hindi" | "korean" | "uk" | "anime"
+  ): boolean {
+    const language = (item?.original_language || "").toLowerCase();
+    const categoryLanguage = {
+      english: "en",
+      hindi: "hi",
+      korean: "ko",
+      uk: "en",
+      anime: "ja",
+    } as const;
+    const allowedLanguages = ["en", "hi", "ko", "ja"];
+    if (
+      !item ||
+      !allowedLanguages.includes(language) ||
+      (category && language !== categoryLanguage[category])
+    ) {
+      return false;
+    }
+
+    const date = isTv ? item.first_air_date : item.release_date;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    const releaseTime = Date.parse(date);
+    const newestAllowed = Date.now() + 24 * 60 * 60 * 1000;
+    const oldestAllowed = new Date().setFullYear(new Date().getFullYear() - 4);
+    return !isNaN(releaseTime) && releaseTime >= oldestAllowed && releaseTime <= newestAllowed;
+  }
+
+  private isEligibleHeroChannel(channel: Channel): boolean {
+    const metadata = this.tmdbEnrichment.getEnrichmentSync(channel);
+    if (!metadata) return false;
+    return this.isEligibleHeroTmdbItem(
+      {
+        original_language: metadata.originalLanguage,
+        release_date: metadata.releaseDate,
+        first_air_date: metadata.releaseDate,
+      },
+      this.isTvShow(channel)
+    );
   }
 
   private async loadTrendingMoviesRow(
@@ -2165,6 +2279,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.applyContentPreferences();
         this.cdr.markForCheck();
       }
+      if (this.currentHero?.imageUrl) {
+        this.splashScreen.markHeroReady();
+      }
     }
   }
 
@@ -2195,7 +2312,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       snapshot.allLoadedMovies.length > 0 ? snapshot.allLoadedMovies : this.allLoadedMovies;
     this.allLoadedSeries =
       snapshot.allLoadedSeries.length > 0 ? snapshot.allLoadedSeries : this.allLoadedSeries;
-    this.masterHeroItems = [...snapshot.masterHeroItems];
+    this.masterHeroItems = snapshot.masterHeroItems.filter((hero) =>
+      this.isEligibleHeroChannel(hero.channel)
+    );
     this.heroItems = [...this.masterHeroItems];
 
     // Preserve fresh local rows: Continue Watching & Favorites
@@ -3241,7 +3360,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
     // 4. Collect and deduplicate movie candidates
     const rawMovies = [...recMovies, ...movies].filter(
-      (m) => m.image && m.image.startsWith("http"),
+      (m) => m.image && m.image.startsWith("http") && this.isEligibleHeroChannel(m),
     );
 
     const uniqueMovies: Channel[] = [];
@@ -3273,7 +3392,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
     // 5. Collect and deduplicate series candidates
     const rawSeries = [...recSeries, ...series].filter(
-      (s) => s.image && s.image.startsWith("http"),
+      (s) => s.image && s.image.startsWith("http") && this.isEligibleHeroChannel(s),
     );
 
     const uniqueSeries: Channel[] = [];
@@ -3433,6 +3552,12 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
       if (enrichment.rating) {
         heroMatch.rating = enrichment.rating;
+      }
+    }
+
+    if (this.currentHero && matches.some((h) => h.channel.id === this.currentHero?.channel.id)) {
+      if (this.currentHero.imageUrl) {
+        this.splashScreen.markHeroReady();
       }
     }
   }

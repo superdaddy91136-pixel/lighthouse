@@ -4,6 +4,7 @@ import { Router, NavigationEnd } from "@angular/router";
 import { filter } from "rxjs/operators";
 import { MemoryService } from "./memory.service";
 import { AmbientBackgroundService } from "./services/ambient-background.service";
+import { SplashScreenService } from "./services/splash-screen.service";
 
 @Component({
   selector: "app-root",
@@ -17,7 +18,8 @@ export class AppComponent {
     private download: DownloadService,
     public router: Router,
     public memory: MemoryService,
-    private ambientBackground: AmbientBackgroundService
+    private ambientBackground: AmbientBackgroundService,
+    public splashScreen: SplashScreenService
   ) {
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
@@ -25,6 +27,7 @@ export class AppComponent {
         const url = e.urlAfterRedirects || e.url;
         if (url.includes('/settings') || url.includes('/profile') || url.includes('/setup')) {
           this.ambientBackground.resetToDefault('route-' + url);
+          this.splashScreen.dismiss('route-' + url);
         }
       });
   }
