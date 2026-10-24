@@ -1,4 +1,5 @@
 import { Channel } from "../models/channel";
+import { MediaType } from "../models/mediaType";
 
 export const VIDEO_EXTENSIONS = /\.(mkv|mp4|avi|ts|m2ts|mov|wmv|iso|flv|webm|m4v|vob|mpg|mpeg)$/i;
 
@@ -451,4 +452,55 @@ export function parseMediaTitle(raw?: string, isTvHint?: boolean): ParsedMediaTi
     episode,
     quality,
   };
+}
+
+
+/**
+ * Determines whether a channel/catalog item represents a TV show, season, or individual episode
+ * rather than a standalone movie.
+ *
+ * Uses existing media-type metadata, catalog database classification fields (series_id, season_id,
+ * episode_num), provider URL path structure, group classification, and episode naming patterns.
+ */
+export function isEpisodicOrTvContent(channel?: Channel | null): boolean {
+  if (!channel) return false;
+
+  // 1. Explicit series or season media type
+  if (channel.media_type === MediaType.serie || channel.media_type === MediaType.season) {
+    return true;
+  }
+
+  // 2. Database catalog episodic classification (series_id, season_id, episode_num)
+  if (
+    channel.series_id != null ||
+    channel.season_id != null ||
+    (channel.episode_num != null && channel.episode_num > 0)
+  ) {
+    return true;
+  }
+
+  // 3. Provider URL structure (Xtream or M3U series stream paths)
+  if (channel.url && /\/(?:series|tvshows?|episodes?)\//i.test(channel.url)) {
+    return true;
+  }
+
+  // 4. Provider group / folder categorization (if labeled as Series / TV Shows)
+  const groupName = (channel as any).group;
+  if (typeof groupName === 'string' && /^(?:.*[^\w])?(?:series|tv\s*shows?|shows?|seasons?)(?:[^\w].*)?$/i.test(groupName)) {
+    return true;
+  }
+
+  // 5. Explicit episode / season naming patterns (e.g. "S01E01", "1x02", "Season 1 Episode 2")
+  const name = channel.name?.trim();
+  if (name) {
+    if (
+      /\b(?:s\d{1,2}\s*[-–—.]?\s*e\d{1,3}|\d{1,2}x\d{1,3}|season\s*\d+\s*(?:episode|ep\.?)\s*\d+)\b/i.test(name) ||
+      /\b(?:episode|ep\.?)\s*\d{1,3}\b/i.test(name) ||
+      /\bseason\s*\d+\b/i.test(name)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }

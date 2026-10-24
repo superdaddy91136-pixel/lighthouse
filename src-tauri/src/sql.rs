@@ -498,9 +498,14 @@ pub fn search(filters: Filters) -> Result<Vec<Channel>> {
     if filters.series_id.is_some() {
         sql_query += &format!("\nAND series_id = ?");
         baked_params += 1;
-    } else if filters.group_id.is_some() {
-        sql_query += &format!("\nAND group_id = ?");
-        baked_params += 1;
+    } else {
+        if filters.view_type != view_type::HISTORY {
+            sql_query += "\nAND series_id IS NULL AND season_id IS NULL AND episode_num IS NULL";
+        }
+        if filters.group_id.is_some() {
+            sql_query += &format!("\nAND group_id = ?");
+            baked_params += 1;
+        }
     }
     if filters.season.is_some() {
         sql_query += &format!("\nAND season_id = ?");
@@ -786,8 +791,13 @@ fn apply_bulk_channels(
 
     if filters.series_id.is_some() {
         sql_query += "\nAND series_id = ?";
-    } else if filters.group_id.is_some() {
-        sql_query += "\nAND group_id = ?";
+    } else {
+        if filters.view_type != view_type::HISTORY {
+            sql_query += "\nAND series_id IS NULL AND season_id IS NULL AND episode_num IS NULL";
+        }
+        if filters.group_id.is_some() {
+            sql_query += "\nAND group_id = ?";
+        }
     }
     if filters.season.is_some() {
         sql_query += "\nAND season_id = ?";
@@ -845,6 +855,7 @@ fn search_hidden(filters: Filters) -> Result<Vec<Channel>> {
         AND media_type IN ({})
         AND source_id IN ({})
         AND hidden = 1
+        AND series_id IS NULL
         UNION ALL
         SELECT id, image, name, NULL as series_id, source_id, NULL as stream_id, NULL as tv_archive, NULL as url, NULL as episode_num, hidden, 3 as media_type, NULL as group_id, NULL as season_id, 0 as favorite
         FROM groups

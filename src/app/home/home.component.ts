@@ -48,6 +48,7 @@ import {
   extractYear,
   sanitizeShowTitle,
   formatPlayerEpisodeLabel,
+  isEpisodicOrTvContent,
 } from '../utils/media-presentation';
 import { ChannelSwitcherComponent } from '../channel-switcher/channel-switcher.component';
 import { PinService } from '../services/pin.service';
@@ -1776,9 +1777,11 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
+    const actualMovies = movieResults.filter((m) => !isEpisodicOrTvContent(m));
+
     this.rawSearchResults = {
       channels,
-      movies: this.dedupeMediaSearchResults(movieResults),
+      movies: this.dedupeMediaSearchResults(actualMovies),
       tvShows: this.dedupeMediaSearchResults(tvShowResults),
       categories,
     };
@@ -1839,13 +1842,16 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     try {
       const channels: Channel[] = await invoke("search", { filters });
       if (requestId !== this.catalogLoadRequestId) return;
+      const sanitized = filters.media_types?.includes(MediaType.movie) && !filters.media_types?.includes(MediaType.serie)
+        ? channels.filter((c) => !isEpisodicOrTvContent(c))
+        : channels;
       if (!more) {
-        this.channels = channels;
+        this.channels = sanitized;
         this.channelsVisible = true;
         // prevent flicker of hiding opacity
         this.viewType = filters.view_type;
       } else {
-        this.channels = this.channels.concat(channels);
+        this.channels = this.channels.concat(sanitized);
       }
       this.reachedMax = channels.length < this.PAGE_SIZE;
       if (cacheKey) {
