@@ -576,6 +576,51 @@ export class TmdbEnrichmentService {
   }
 
   /**
+   * Resolves and verifies TMDB title logo artwork for a channel.
+   * Checks hot cache first; if logo is missing, fetches full details to verify artwork.
+   * Returns valid logoPath or undefined if the title has no TMDB logo artwork.
+   */
+  async resolveChannelLogo(
+    channel: Channel,
+    tmdbId?: number,
+    isTv?: boolean,
+  ): Promise<string | undefined> {
+    if (!channel?.id || !this.configService.isEnabled()) return undefined;
+
+    const cached = this.getEnrichmentSync(channel);
+    if (cached?.logoPath && typeof cached.logoPath === 'string' && cached.logoPath.trim() !== '') {
+      return cached.logoPath;
+    }
+
+    const resolvedTmdbId = tmdbId || cached?.tmdbId;
+    if (!resolvedTmdbId) return undefined;
+
+    const isSeries =
+      isTv !== undefined
+        ? isTv
+        : Number(channel.media_type) === MediaType.serie || (channel as any).series_id != null;
+
+    try {
+      const details = isSeries
+        ? await this.tmdbService.getTvDetails(resolvedTmdbId)
+        : await this.tmdbService.getMovieDetails(resolvedTmdbId);
+
+      if (!details) return undefined;
+
+      const title = cleanMediaTitle(channel.name);
+      const enrichment = isSeries
+        ? this.tmdbService.parseTvDetails(details, 1.0, title, channel.id)
+        : this.tmdbService.parseMovieDetails(details, 1.0, title, channel.id);
+
+      await this.cacheService.saveEnrichment(enrichment);
+      this.enrichmentUpdated$.next(enrichment);
+      return enrichment.logoPath && enrichment.logoPath.trim() !== '' ? enrichment.logoPath : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Fetches Korean TV shows from TMDB with config enabled check.
    */
   async getKoreanTv(

@@ -70,7 +70,7 @@
             (error)="onHeroLogoError(currentHero)"
             class="hero-title-logo" />
           <h1 
-            *ngIf="!currentHero.logoUrl" 
+            *ngIf="!currentHero.logoUrl && !isBollywood(currentHero.channel)"
             class="hero-title mb-0" 
             [title]="currentHero.cleanTitle">
             {{ currentHero.cleanTitle }}

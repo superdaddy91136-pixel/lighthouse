@@ -52,6 +52,7 @@ import { SplashScreenService } from "../../services/splash-screen.service";
 const BANNER_ROTATE_MS = 7000;
 
 export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
+export type HeroCategory = "english" | "hindi" | "korean" | "uk" | "anime";
 
 export interface MixedGenreDef {
   id: string;
@@ -1774,6 +1775,17 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         sIds
       );
       if (matched?.id) {
+        const isBolly = candidate.category === "hindi" || this.isBollywood(matched);
+        if (isBolly) {
+          const logoPath = await this.tmdbEnrichment.resolveChannelLogo(
+            matched,
+            candidate.item?.id,
+            candidate.isTv
+          );
+          if (!logoPath) {
+            continue;
+          }
+        }
         (candidate.isTv ? heroCandidateSeries : heroCandidateMovies).push(matched);
       }
     }
@@ -1814,11 +1826,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
-  private async loadHeroTmdbDiscovery(): Promise<{ item: any; isTv: boolean }[]> {
+  private async loadHeroTmdbDiscovery(): Promise<{ item: any; isTv: boolean; category?: HeroCategory }[]> {
     const minimumDate = new Date();
     minimumDate.setFullYear(minimumDate.getFullYear() - 4);
     const minimumDateString = minimumDate.toISOString().slice(0, 10);
-    type HeroCategory = "english" | "hindi" | "korean" | "uk" | "anime";
     const baseParams = { "vote_count.gte": 10, sort_by: "popularity.desc" };
     const discoveryRequests: { request: Promise<any[]>; isTv: boolean; category: HeroCategory }[] = [];
     const addLanguageDiscovery = (language: string, category: HeroCategory, extraParams = {}) => {
@@ -1886,14 +1897,14 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     const categoryPools = categoryOrder.map((category) => candidates
       .filter((candidate) => candidate.category === category)
       .sort((a, b) => (b.item.popularity || 0) - (a.item.popularity || 0)));
-    const balanced: { item: any; isTv: boolean }[] = [];
+    const balanced: { item: any; isTv: boolean; category?: HeroCategory }[] = [];
     const maxLength = Math.max(...categoryPools.map((pool) => pool.length));
     for (let index = 0; index < maxLength; index++) {
       for (const pool of categoryPools) {
         if (index < pool.length) balanced.push(pool[index]);
       }
     }
-    return balanced.slice(0, 48);
+    return balanced.slice(0, 60);
   }
 
   private getHeroTmdbCategory(item: any): "english" | "hindi" | "korean" | "uk" | "anime" | undefined {
@@ -1937,9 +1948,12 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     return !isNaN(releaseTime) && releaseTime >= oldestAllowed && releaseTime <= newestAllowed;
   }
 
-  private isEligibleHeroChannel(channel: Channel): boolean {
+  isEligibleHeroChannel(channel: Channel): boolean {
     const metadata = this.tmdbEnrichment.getEnrichmentSync(channel);
     if (!metadata) return false;
+    if (this.isBollywood(channel, metadata) && (!metadata.logoPath || metadata.logoPath.trim() === "")) {
+      return false;
+    }
     return this.isEligibleHeroTmdbItem(
       {
         original_language: metadata.originalLanguage,
@@ -1948,6 +1962,19 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       },
       this.isTvShow(channel)
     );
+  }
+
+  isBollywood(channel?: Channel, enrichment?: TmdbMediaEnrichment | null): boolean {
+    if (!channel) return false;
+    const meta = enrichment ?? this.tmdbEnrichment.getEnrichmentSync(channel);
+    const lang = (meta?.originalLanguage || "").toLowerCase();
+    if (lang === "hi" || ["hi", "te", "ta", "ml", "kn", "pa", "bn", "mr", "gu"].includes(lang)) {
+      return true;
+    }
+    if (meta?.originCountry && meta.originCountry.some((c) => String(c).toUpperCase() === "IN")) {
+      return true;
+    }
+    return this.matchesContentPreference(channel, "hindi");
   }
 
   private async loadTrendingMoviesRow(
@@ -3540,6 +3567,21 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     ];
 
     for (const heroMatch of matches) {
+      if (this.isBollywood(heroMatch.channel, enrichment) && (!enrichment.logoPath || enrichment.logoPath.trim() === '')) {
+        this.masterHeroItems = this.masterHeroItems.filter((h) => h.channel.id !== heroMatch.channel.id);
+        this.heroItems = this.heroItems.filter((h) => h.channel.id !== heroMatch.channel.id);
+        if (this.heroItems.length === 0 && this.masterHeroItems.length > 0) {
+          this.heroItems = [...this.masterHeroItems];
+        }
+        if (this.currentHeroIndex >= this.heroItems.length) {
+          this.currentHeroIndex = 0;
+        }
+        this.recordHeroShown(this.currentHero?.channel?.id);
+        this.updateAmbientBackground();
+        this.preloadVisibleHeroImages();
+        this.cdr.markForCheck();
+        continue;
+      }
       if (enrichment.backdropPath) {
         const bd = getTmdbBackdropUrl(enrichment.backdropPath, 'original') || getTmdbBackdropUrl(enrichment.backdropPath, 'w1280');
         if (bd) heroMatch.imageUrl = bd;
@@ -3569,8 +3611,21 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   onHeroLogoError(hero?: HeroItem): void {
-    if (hero) {
-      hero.logoUrl = undefined;
+    if (!hero) return;
+    hero.logoUrl = undefined;
+    if (this.isBollywood(hero.channel)) {
+      this.masterHeroItems = this.masterHeroItems.filter((h) => h.channel.id !== hero.channel.id);
+      this.heroItems = this.heroItems.filter((h) => h.channel.id !== hero.channel.id);
+      if (this.heroItems.length === 0 && this.masterHeroItems.length > 0) {
+        this.heroItems = [...this.masterHeroItems];
+      }
+      if (this.currentHeroIndex >= this.heroItems.length) {
+        this.currentHeroIndex = 0;
+      }
+      this.recordHeroShown(this.currentHero?.channel?.id);
+      this.updateAmbientBackground();
+      this.preloadVisibleHeroImages();
+      this.cdr.markForCheck();
     }
   }
 
