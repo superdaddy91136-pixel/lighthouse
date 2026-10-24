@@ -25,6 +25,62 @@ export class VersionMatchingService {
   constructor(private memory: MemoryService) {}
 
   /**
+   * Returns whether two catalog items are safe to present as one title in a
+   * catalog title. This deliberately uses strict normalized-title equality:
+   * the fuzzy matching used while discovering versions is useful for provider
+   * metadata, but is too permissive for deciding which search cards to hide.
+   */
+  hasSameStrictTitleIdentity(
+    first: Channel,
+    second: Channel,
+    firstKnownYear?: string,
+  ): boolean {
+    if (!first || !second) return false;
+    if (!first.name?.trim() || !second.name?.trim()) return false;
+
+    const firstMediaType =
+      first.media_type != null ? Number(first.media_type) : MediaType.movie;
+    const secondMediaType =
+      second.media_type != null ? Number(second.media_type) : MediaType.movie;
+    if (
+      firstMediaType !== secondMediaType ||
+      (firstMediaType !== MediaType.movie && firstMediaType !== MediaType.serie)
+    ) {
+      return false;
+    }
+
+    // Search cards represent top-level movies or series, never a season/episode.
+    if (
+      first.season_id != null ||
+      second.season_id != null ||
+      (firstMediaType === MediaType.movie &&
+        (first.series_id != null || second.series_id != null))
+    ) {
+      return false;
+    }
+
+    const firstTitle = this.normalizeNumberTokens(
+      normalizeForComparison(cleanMediaTitle(first.name)),
+    );
+    const secondTitle = this.normalizeNumberTokens(
+      normalizeForComparison(cleanMediaTitle(second.name)),
+    );
+    if (!firstTitle || firstTitle !== secondTitle) return false;
+
+    const firstYear = firstKnownYear || extractYear(first.name);
+    const secondYear = extractYear(second.name);
+    if (!firstYear || !secondYear) return true;
+
+    const firstYearNumber = parseInt(firstYear, 10);
+    const secondYearNumber = parseInt(secondYear, 10);
+    return (
+      isNaN(firstYearNumber) ||
+      isNaN(secondYearNumber) ||
+      Math.abs(firstYearNumber - secondYearNumber) <= 1
+    );
+  }
+
+  /**
    * Extracts platform/provider tags: Netflix, Prime Video, Disney+, Apple TV+, Max, etc.
    */
   extractPlatformPrefix(rawTitle?: string): string | undefined {
@@ -296,9 +352,7 @@ export class VersionMatchingService {
 
       let isMatch = false;
 
-      if (candNorm === targetNorm) {
-        isMatch = true;
-      } else if (candClean.toLowerCase() === cleanTitle.toLowerCase()) {
+      if (this.hasSameStrictTitleIdentity(channel, cand, targetYear)) {
         isMatch = true;
       } else {
         // Fuzzy comparison for minor subtitle or punctuation differences

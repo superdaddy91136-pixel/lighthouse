@@ -55,6 +55,7 @@ import { EmbeddedPlayerService } from '../services/embedded-player.service';
 import { MovieDetailService } from '../services/movie-detail.service';
 import { AmbientBackgroundService } from '../services/ambient-background.service';
 import { SearchStateService, UniversalSearchResults, TabSearchState } from '../services/search-state.service';
+import { VersionMatchingService } from '../services/version-matching.service';
 
 export interface CategoryOption {
   id: number;
@@ -1256,6 +1257,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     public pinService: PinService,
     public embeddedPlayer: EmbeddedPlayerService,
     private searchStateService: SearchStateService,
+    private versionMatching: VersionMatchingService,
     private ambientBackground: AmbientBackgroundService,
     private cdr: ChangeDetectorRef,
   ) {
@@ -1622,6 +1624,28 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     return result;
   }
 
+  /**
+   * Keep one search card for each movie or series title. The selected card is
+   * still a provider item, so the existing details screen can load every
+   * matching provider version through VersionMatchingService.
+   */
+  private dedupeMediaSearchResults(channels: Channel[]): Channel[] {
+    const uniqueChannels: Channel[] = [];
+
+    for (const channel of channels) {
+      if (
+        uniqueChannels.some((existing) =>
+          this.versionMatching.hasSameStrictTitleIdentity(existing, channel),
+        )
+      ) {
+        continue;
+      }
+      uniqueChannels.push(channel);
+    }
+
+    return uniqueChannels;
+  }
+
   async performUniversalSearch(rawQuery: string): Promise<void> {
     const query = rawQuery.trim();
     this.searchKeyword = query;
@@ -1741,7 +1765,7 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       );
     }
 
-    const [channels, movies, tvShows, categories] = await Promise.all([
+    const [channels, movieResults, tvShowResults, categories] = await Promise.all([
       fetchChannelsPromise,
       fetchMoviesPromise,
       fetchTvShowsPromise,
@@ -1752,7 +1776,12 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.rawSearchResults = { channels, movies, tvShows, categories };
+    this.rawSearchResults = {
+      channels,
+      movies: this.dedupeMediaSearchResults(movieResults),
+      tvShows: this.dedupeMediaSearchResults(tvShowResults),
+      categories,
+    };
     this.applySearchSortAndFilter();
     this.channelsVisible = true;
     this.saveCurrentTabSearchState();
