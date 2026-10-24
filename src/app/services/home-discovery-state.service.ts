@@ -6,6 +6,7 @@ import { DiscoveryRow, HeroItem } from '../models/discovery';
 export type DiscoveryPipelineStatus = 'idle' | 'loading' | 'success' | 'refreshing' | 'error';
 
 export interface HomeDiscoverySnapshot {
+  recommendationSource: 'tmdb';
   tmdbRows: DiscoveryRow[];
   masterHeroItems: HeroItem[];
   allRecommended: Channel[];
@@ -50,6 +51,7 @@ export class HomeDiscoveryStateService {
         const parsed = JSON.parse(stored) as HomeDiscoverySnapshot;
         if (
           parsed &&
+          parsed.recommendationSource === 'tmdb' &&
           Array.isArray(parsed.masterHeroItems) &&
           parsed.masterHeroItems.length > 0 &&
           Date.now() - parsed.timestamp < this.CACHE_TTL_MS
@@ -66,7 +68,7 @@ export class HomeDiscoveryStateService {
    * Checks whether valid TMDB-generated discovery data exists in the in-memory cache.
    */
   public hasValidTmdbData(): boolean {
-    if (!this.snapshot) return false;
+    if (!this.snapshot || this.snapshot.recommendationSource !== 'tmdb') return false;
     const hasRows =
       Array.isArray(this.snapshot.tmdbRows) &&
       this.snapshot.tmdbRows.length > 0 &&
@@ -143,6 +145,7 @@ export class HomeDiscoveryStateService {
   public upsertTmdbRow(row: DiscoveryRow): void {
     if (!this.snapshot) {
       this.snapshot = {
+        recommendationSource: 'tmdb',
         tmdbRows: [row],
         masterHeroItems: [],
         allRecommended: [],
@@ -179,6 +182,7 @@ export class HomeDiscoveryStateService {
   public setHeroPool(heroItems: HeroItem[]): void {
     if (!this.snapshot) {
       this.snapshot = {
+        recommendationSource: 'tmdb',
         tmdbRows: [],
         masterHeroItems: [...heroItems],
         allRecommended: [],
@@ -215,6 +219,7 @@ export class HomeDiscoveryStateService {
     series: Channel[]
   ): void {
     this.snapshot = {
+      recommendationSource: 'tmdb',
       tmdbRows: tmdbRows.map((r) => ({ ...r, items: [...r.items] })),
       masterHeroItems: [...heroPool],
       allRecommended: [...recommended],

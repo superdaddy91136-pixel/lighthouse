@@ -255,8 +255,12 @@
       </div>
     </section>
 
+      <div *ngIf="tmdbRecommendationsUnavailable" class="empty-prefs-notice text-center py-5 my-4">
+        <p class="text-secondary mb-0">TMDB recommendations are unavailable right now. Check your TMDB settings or try again later.</p>
+      </div>
+
       <!-- Empty state if all rows filtered out by selected preference -->
-      <div *ngIf="discoveryRows.length === 0" class="empty-prefs-notice text-center py-5 my-4">
+      <div *ngIf="discoveryRows.length === 0 && !tmdbRecommendationsUnavailable" class="empty-prefs-notice text-center py-5 my-4">
         <p class="text-secondary mb-3">No titles match the selected preference in your catalog.</p>
         <button type="button" class="btn btn-outline-light rounded-pill px-4 py-2" (click)="setContentPreference('all')">
           Show All Content

@@ -131,6 +131,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   masterDiscoveryRows: DiscoveryRow[] = [];
   loading: boolean = true;
   hasAnyContent: boolean = false;
+  tmdbRecommendationsUnavailable: boolean = false;
   groupsMap: Map<number, string> = new Map();
   imageErrorSet: Set<number> = new Set();
   isHeroHovered: boolean = false;
@@ -720,6 +721,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       // 3. Check for existing valid TMDB discovery state
       if (this.discoveryState.hasValidTmdbData()) {
+        this.tmdbRecommendationsUnavailable = false;
         const snapshot = this.discoveryState.getSnapshot()!;
         this.allRecommended = snapshot.allRecommended;
         this.allLoadedMovies = snapshot.allLoadedMovies.length > 0 ? snapshot.allLoadedMovies : (moviesRes || []);
@@ -783,17 +785,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         return;
       }
 
-      // 4. Fallback State: only for initial cold start or when TMDB is disabled
-      const recommendedList = this.computeRecommendations(
-        historyRes,
-        favoritesRes,
-        moviesRes,
-        seriesRes,
-      );
-
+      // 4. Keep the catalog available for TMDB matching and the existing hero,
+      // but never turn provider ordering into recommendation rows.
       this.allLoadedMovies = moviesRes || [];
       this.allLoadedSeries = seriesRes || [];
-      this.allRecommended = recommendedList || [];
+      this.allRecommended = [];
 
       this.masterHeroItems = this.buildHeroPool(
         this.allLoadedMovies,
@@ -803,39 +799,17 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.heroItems = [...this.masterHeroItems];
       this.currentHeroIndex = 0;
       this.recordHeroShown(this.currentHero?.channel?.id);
-
-      if (recommendedList.length >= 2) {
-        rows.push({
-          id: "row-recommended",
-          title: "Recommended for You",
-          icon: "sparkles",
-          items: recommendedList,
-        });
-      }
-
-      if (moviesRes.length >= 2) {
-        rows.push({
-          id: "row-popular-movies",
-          title: "Popular Movies",
-          icon: "film",
-          items: moviesRes.slice(0, 24),
-        });
-      }
-
-      if (seriesRes.length >= 2) {
-        rows.push({
-          id: "row-popular-series",
-          title: "Popular TV Shows",
-          icon: "tv",
-          items: seriesRes.slice(0, 24),
-        });
-      }
+      this.tmdbRecommendationsUnavailable = !this.tmdbConfig.isEnabled();
 
       this.masterDiscoveryRows = rows.sort(
         (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
       );
       this.applyContentPreferences();
-      this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
+      this.hasAnyContent =
+        this.heroItems.length > 0 ||
+        this.discoveryRows.length > 0 ||
+        this.allLoadedMovies.length > 0 ||
+        this.allLoadedSeries.length > 0;
       this.loading = false;
 
       // If TMDB is disabled or hero banner already has usable cached TMDB content, dismiss splash screen immediately
@@ -849,11 +823,14 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.splashScreen.markHeroReady();
       }
 
-      // 5. Asynchronously run TMDB discovery pipeline in background without blocking
-      setTimeout(() => {
-        if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
-        runPipelineWhenCategoriesReady();
-      }, 0);
+      // 5. Start TMDB discovery behind the splash screen without waiting for all
+      // background rows. SplashScreenService has its own safety timeout.
+      if (this.tmdbConfig.isEnabled()) {
+        setTimeout(() => {
+          if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
+          runPipelineWhenCategoriesReady();
+        }, 0);
+      }
 
       // 6. Non-blocking progressive TMDB background enrichment if enabled
       this.enqueueVisibleCardsEnrichment();
@@ -1345,13 +1322,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
 
     if (!this.tmdbConfig.isEnabled()) {
-      await Promise.allSettled([
-        this.loadTrendingMoviesRow(sourceIds, initialMovies),
-        this.loadTrendingTvRow(sourceIds, initialSeries),
-        this.loadCuratedMixedGenreRows(sourceIds, categoriesRes, initialMovies, initialSeries),
-        this.loadKoreanContentRows(sourceIds, initialSeries),
-        this.loadAnimeContentRows(sourceIds, categoriesRes, initialMovies, initialSeries),
-      ]);
+      this.tmdbRecommendationsUnavailable = true;
+      this.cdr.markForCheck();
       return;
     }
 
@@ -1401,7 +1373,6 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.loadTmdbPopularTvRow(sourceIds, seriesPool),
         this.loadTrendingMoviesRow(sourceIds, moviesPool),
         this.loadTrendingTvRow(sourceIds, seriesPool),
-        this.loadCuratedMixedGenreRows(sourceIds, categoriesRes, moviesPool, seriesPool),
         this.loadKoreanContentRows(sourceIds, seriesPool),
         this.loadAnimeContentRows(sourceIds, categoriesRes, moviesPool, seriesPool),
       ]);
@@ -1414,6 +1385,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const tmdbRows = this.masterDiscoveryRows.filter(
         (r) => r.id !== "row-continue-watching" && r.id !== "row-favorites"
       );
+      this.tmdbRecommendationsUnavailable = tmdbRows.length === 0;
+      this.cdr.markForCheck();
       this.discoveryState.markPipelineSuccess(
         tmdbRows,
         this.masterHeroItems,
@@ -1423,6 +1396,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       );
     } catch (err) {
       console.warn("Error in TMDB discovery pipeline:", err);
+      this.tmdbRecommendationsUnavailable = true;
+      this.cdr.markForCheck();
     }
   }
 
@@ -2349,6 +2324,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   private upsertDiscoveryRow(newRow: DiscoveryRow): void {
+    this.tmdbRecommendationsUnavailable = false;
     this.discoveryState.upsertTmdbRow(newRow);
     const existingIdx = this.masterDiscoveryRows.findIndex(
       (r) => r.id === newRow.id
@@ -2454,24 +2430,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const eligible: Channel[] = [];
       const seenNorms = new Set<string>();
 
-      // 1. Identify channels directly from Korean folders that match Korean tags or TMDB metadata
-      for (const ch of folderPool) {
-        const cached = this.tmdbEnrichment.getEnrichmentSync(ch);
-        const isKorean =
-          this.isTmdbKorean(cached) || this.hasKoreanNameTag(ch.name || "");
-        if (isKorean) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(ch.name))
-          );
-          if (!seenNorms.has(norm) && !this.animeRowNorms.has(norm)) {
-            seenNorms.add(norm);
-            this.koreanRowNorms.add(norm);
-            eligible.push(ch);
-          }
-        }
-      }
-
-      // 2. Discover Korean series dynamically from TMDB
+      // Discover Korean series from TMDB, then match only those candidates to IPTV.
       if (this.tmdbConfig.isEnabled()) {
         try {
           const rotation = this.getDiscoveryRotationCount("korean");
@@ -2590,25 +2549,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const eligible: Channel[] = [];
       const seenNorms = new Set<string>();
 
-      // 1. Identify channels directly from Anime/Animation folders
-      for (const ch of folderPool) {
-        const cached = this.tmdbEnrichment.getEnrichmentSync(ch);
-        const isAnimeOrAnim =
-          this.isTmdbAnimeOrAnimation(cached) ||
-          this.hasAnimeNameTag(ch.name || "");
-        if (isAnimeOrAnim) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(ch.name))
-          );
-          if (!seenNorms.has(norm) && !this.koreanRowNorms.has(norm)) {
-            seenNorms.add(norm);
-            this.animeRowNorms.add(norm);
-            eligible.push(ch);
-          }
-        }
-      }
-
-      // 2. Discover Anime & Animation dynamically from TMDB
+      // Discover Anime & Animation from TMDB, then match only those candidates to IPTV.
       if (this.tmdbConfig.isEnabled()) {
         try {
           const rotation = this.getDiscoveryRotationCount("anime");
