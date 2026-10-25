@@ -49,7 +49,7 @@ import { EmbeddedPlayerService } from "../../services/embedded-player.service";
 import { AmbientBackgroundService } from "../../services/ambient-background.service";
 import { SplashScreenService } from "../../services/splash-screen.service";
 
-const BANNER_ROTATE_MS = 7000;
+const BANNER_ROTATE_MS = 30000;
 
 export type ContentPreference = 'all' | 'english' | 'hindi' | 'korean';
 export type HeroCategory = "english" | "hindi" | "korean" | "uk" | "anime";
@@ -147,6 +147,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     return item ? (item.id != null ? item.id : (item.url || item.name)) : _index;
   };
 
+  trackHeroBy = (_index: number, hero?: HeroItem): number | string => {
+    return hero?.channel?.id ?? hero?.cleanTitle ?? _index;
+  };
+
   // State tracking for row horizontal overflow / scroll arrows
   rowCanScrollRight: { [rowId: string]: boolean } = {};
   private resizeObserver?: ResizeObserver;
@@ -159,6 +163,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   allLoadedSeries: Channel[] = [];
   allRecommended: Channel[] = [];
   private transitionTimeout?: any;
+  private preloadedImages = new Set<HTMLImageElement>();
 
   // Continue Watching deduplication & state tracking
   groupedHistoryIds: Map<number, number[]> = new Map();
@@ -413,7 +418,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.ngZone.runOutsideAngular(() => {
       this.heroTimer = setInterval(() => {
         if (this.shouldPauseHeroTimer() || this.heroItems.length <= 1) return;
-        this.ngZone.run(() => this.nextHero());
+        this.ngZone.run(() => this.nextHero(true));
       }, BANNER_ROTATE_MS);
     });
   }
@@ -423,6 +428,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       clearInterval(this.heroTimer);
       this.heroTimer = undefined;
     }
+  }
+
+  private restartHeroTimer(): void {
+    this.stopHeroTimer();
+    this.startHeroTimer();
   }
 
   onHeroMouseEnter() {
@@ -474,14 +484,49 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
   }
 
+  private preloadImage(url?: string): void {
+    if (!url || typeof Image === "undefined") return;
+    const img = new Image();
+    this.preloadedImages.add(img);
+    img.onload = () => this.preloadedImages.delete(img);
+    img.onerror = () => this.preloadedImages.delete(img);
+    img.src = url;
+  }
+
   private preloadVisibleHeroImages(): void {
     if (typeof Image === "undefined" || this.heroItems.length === 0) return;
-    const nextIndex = (this.currentHeroIndex + 1) % this.heroItems.length;
-    for (const hero of [this.currentHero, this.heroItems[nextIndex]]) {
-      if (hero?.imageUrl) {
-        const image = new Image();
-        image.src = hero.imageUrl;
+    const len = this.heroItems.length;
+    const indices = [
+      this.currentHeroIndex,
+      (this.currentHeroIndex + 1) % len,
+      (this.currentHeroIndex + 2) % len,
+      (this.currentHeroIndex - 1 + len) % len,
+    ];
+    const seen = new Set<number>();
+
+    for (const idx of indices) {
+      if (seen.has(idx) || idx < 0 || idx >= len) continue;
+      seen.add(idx);
+      const hero = this.heroItems[idx];
+      if (!hero) continue;
+
+      if (hero.channel) {
+        const cached = this.tmdbEnrichment.getEnrichmentSync(hero.channel);
+        if (cached) {
+          if (!hero.logoUrl && cached.logoPath) {
+            hero.logoUrl = getTmdbLogoUrl(cached.logoPath, 'w500');
+          }
+          if (cached.backdropPath) {
+            const bd = getTmdbBackdropUrl(cached.backdropPath, 'original') || getTmdbBackdropUrl(cached.backdropPath, 'w1280');
+            if (bd) hero.imageUrl = bd;
+          }
+        } else if (this.tmdbConfig.isEnabled()) {
+          this.tmdbEnrichment.enqueue(hero.channel, 'high');
+        }
       }
+
+      this.preloadImage(hero.imageUrl);
+      this.preloadImage(hero.logoUrl);
     }
   }
 
@@ -496,20 +541,58 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   get currentHero(): HeroItem | undefined {
     if (this.heroItems.length === 0) return undefined;
-    return this.heroItems[this.currentHeroIndex];
+    const hero = this.heroItems[this.currentHeroIndex];
+    if (hero?.channel && (!hero.logoUrl || !hero.imageUrl)) {
+      const cached = this.tmdbEnrichment.getEnrichmentSync(hero.channel);
+      if (cached) {
+        if (!hero.logoUrl && cached.logoPath) {
+          hero.logoUrl = getTmdbLogoUrl(cached.logoPath, 'w500');
+        }
+        if (cached.backdropPath) {
+          const bd = getTmdbBackdropUrl(cached.backdropPath, 'original') || getTmdbBackdropUrl(cached.backdropPath, 'w1280');
+          if (bd) hero.imageUrl = bd;
+        }
+      }
+    }
+    return hero;
   }
 
   setHeroIndex(index: number) {
-    if (index >= 0 && index < this.heroItems.length) {
-      this.currentHeroIndex = index;
-      this.recordHeroShown(this.currentHero?.channel?.id);
-      this.updateAmbientBackground();
-      this.preloadVisibleHeroImages();
+    if (index >= 0 && index < this.heroItems.length && index !== this.currentHeroIndex) {
+      if (this.heroItems.length <= 1) {
+        this.currentHeroIndex = index;
+        return;
+      }
+      this.restartHeroTimer();
+      this.isTransitioning = true;
+
+      if (this.transitionTimeout) {
+        clearTimeout(this.transitionTimeout);
+      }
+
+      this.transitionTimeout = setTimeout(() => {
+        this.currentHeroIndex = index;
+        this.recordHeroShown(this.currentHero?.channel?.id);
+        this.updateAmbientBackground();
+        this.preloadVisibleHeroImages();
+
+        const active = this.currentHero;
+        if (active?.channel && this.tmdbConfig.isEnabled()) {
+          this.tmdbEnrichment.enqueue(active.channel, 'high');
+        }
+
+        setTimeout(() => {
+          this.isTransitioning = false;
+        }, 50);
+      }, 280);
     }
   }
 
-  nextHero() {
+  nextHero(isAuto: boolean = false) {
     if (this.heroItems.length <= 1) return;
+    if (!isAuto) {
+      this.restartHeroTimer();
+    }
     this.isTransitioning = true;
 
     if (this.transitionTimeout) {
@@ -551,12 +634,30 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   prevHero() {
-    if (this.heroItems.length > 0) {
+    if (this.heroItems.length <= 1) return;
+    this.restartHeroTimer();
+    this.isTransitioning = true;
+
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+    }
+
+    this.transitionTimeout = setTimeout(() => {
       this.currentHeroIndex =
         (this.currentHeroIndex - 1 + this.heroItems.length) % this.heroItems.length;
       this.recordHeroShown(this.currentHero?.channel?.id);
       this.updateAmbientBackground();
-    }
+      this.preloadVisibleHeroImages();
+
+      const active = this.currentHero;
+      if (active?.channel && this.tmdbConfig.isEnabled()) {
+        this.tmdbEnrichment.enqueue(active.channel, 'high');
+      }
+
+      setTimeout(() => {
+        this.isTransitioning = false;
+      }, 50);
+    }, 280);
   }
 
   @HostListener('window:resize')
@@ -3652,6 +3753,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
       if (enrichment.logoPath) {
         heroMatch.logoUrl = getTmdbLogoUrl(enrichment.logoPath, 'w500');
+        this.preloadImage(heroMatch.logoUrl);
       }
       if (enrichment.overview) {
         heroMatch.description = enrichment.overview;
@@ -3671,6 +3773,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (this.currentHero.imageUrl) {
         this.splashScreen.markHeroReady();
       }
+      this.cdr.markForCheck();
     }
   }
 

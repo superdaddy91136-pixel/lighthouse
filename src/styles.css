@@ -326,8 +326,8 @@ body::-webkit-scrollbar-thumb:active {
 }
 
 .hero-banner.hero-transitioning .hero-content {
-  opacity: 0.15;
-  transform: translateY(4px);
+  opacity: 0;
+  transform: translateY(6px);
 }
 
 /* Title / Logo */
@@ -343,6 +343,7 @@ body::-webkit-scrollbar-thumb:active {
   object-fit: contain;
   object-position: left bottom;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7)) drop-shadow(0 4px 16px rgba(0, 0, 0, 0.8));
+  transition: opacity 0.3s ease-in-out;
 }
 
 .hero-title {

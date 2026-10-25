@@ -63,18 +63,22 @@
       <div class="hero-content">
         <!-- Title / Logo Artwork -->
         <div class="hero-title-wrap mb-3">
+          <ng-container *ngFor="let hero of [currentHero]; trackBy: trackHeroBy">
           <img 
-            *ngIf="currentHero.logoUrl" 
-            [src]="currentHero.logoUrl" 
-            alt="{{ currentHero.cleanTitle }}" 
-            (error)="onHeroLogoError(currentHero)"
+            *ngIf="hero?.logoUrl" 
+            [src]="hero.logoUrl" 
+            alt="{{ hero.cleanTitle }}" 
+            (error)="onHeroLogoError(hero)"
+            loading="eager"
+            decoding="async"
             class="hero-title-logo" />
           <h1 
-            *ngIf="!currentHero.logoUrl && !isBollywood(currentHero.channel)"
+            *ngIf="!hero?.logoUrl && !isBollywood(hero?.channel)"
             class="hero-title mb-0" 
-            [title]="currentHero.cleanTitle">
-            {{ currentHero.cleanTitle }}
+            [title]="hero.cleanTitle">
+            {{ hero.cleanTitle }}
           </h1>
+          </ng-container>
         </div>
 
         <!-- Metadata Pills (Recommended, Year, Quality ONLY) -->
