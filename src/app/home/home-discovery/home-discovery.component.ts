@@ -3670,7 +3670,9 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     let genre = cleanCategoryTitle(rawGenre);
     const cleanTitle = cleanMediaTitle(channel.name);
     let description = selectSynopsis(channel);
-    let imageUrl = channel.image;
+    // A hero is backdrop-only. Provider artwork has no separate backdrop field,
+    // so use the existing neutral hero treatment until TMDB supplies a backdrop.
+    let imageUrl: string | undefined;
     let rating: number | undefined;
     let logoUrl: string | undefined;
 

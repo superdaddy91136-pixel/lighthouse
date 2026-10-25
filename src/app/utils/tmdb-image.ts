@@ -90,17 +90,17 @@ export function resolveMediaArtwork(
       if (url) return url;
     }
 
-    if (prefer === 'poster' && enrichment.posterPath) {
-      const url = getTmdbPosterUrl(enrichment.posterPath, 'w500');
-      if (url) return url;
+    // Backdrops must never fall through to TMDB poster artwork.
+    if (prefer === 'backdrop') {
+      return channel?.image || undefined;
     }
 
-    // Secondary fallback within enrichment
     if (enrichment.posterPath) {
       const url = getTmdbPosterUrl(enrichment.posterPath, 'w500');
       if (url) return url;
     }
 
+    // Poster contexts may use a backdrop only when no poster is available.
     if (enrichment.backdropPath) {
       const url = getTmdbBackdropUrl(enrichment.backdropPath, 'w780');
       if (url) return url;

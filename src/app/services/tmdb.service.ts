@@ -397,7 +397,7 @@ export class TmdbService {
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.release_date && raw.release_date.length >= 4 ? raw.release_date.substring(0, 4) : undefined;
     const logoPath = extractBestLogoPath(raw.images);
-    const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.images);
+    const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.poster_path, raw.images);
 
     return {
       providerItemId,
@@ -471,7 +471,7 @@ export class TmdbService {
     const releaseYear = raw.first_air_date && raw.first_air_date.length >= 4 ? raw.first_air_date.substring(0, 4) : undefined;
     const runtime = raw.episode_run_time && raw.episode_run_time.length > 0 ? raw.episode_run_time[0] : undefined;
     const logoPath = extractBestLogoPath(raw.images);
-    const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.images);
+    const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.poster_path, raw.images);
 
     return {
       providerItemId,
@@ -571,38 +571,57 @@ function extractBestLogoPath(images: any): string | undefined {
 }
 
 /**
- * Selects the best backdrop path from raw TMDB details.
- * Prefers raw.backdrop_path if available; otherwise falls back to the highest-scored
- * backdrop in raw.images?.backdrops (preferring English/neutral, high resolution, high vote).
+ * Selects the best cinematic backdrop from TMDB's backdrop collection only.
+ * Poster artwork is explicitly excluded, even when a malformed response reuses its path.
  */
-function extractBestBackdropPath(primaryBackdrop: any, images: any): string | undefined {
-  if (primaryBackdrop && typeof primaryBackdrop === 'string' && primaryBackdrop.trim() !== '') {
-    return primaryBackdrop;
-  }
+function extractBestBackdropPath(
+  primaryBackdrop: any,
+  posterPath: any,
+  images: any,
+): string | undefined {
   const backdrops: any[] = images?.backdrops;
-  if (!backdrops || !Array.isArray(backdrops) || backdrops.length === 0) {
-    return undefined;
+  const primaryPath = typeof primaryBackdrop === 'string' ? primaryBackdrop.trim() : '';
+  const excludedPosterPath = typeof posterPath === 'string' ? posterPath.trim() : '';
+  const candidates = Array.isArray(backdrops) ? [...backdrops] : [];
+
+  // The detail endpoint's primary backdrop is valid only as a last resort when
+  // TMDB did not return a collection to rank.
+  if (primaryPath && candidates.length === 0) {
+    candidates.push({ file_path: primaryPath });
   }
-  const valid = backdrops.filter(
-    (b) => b && typeof b.file_path === 'string' && b.file_path.trim() !== '',
-  );
+
+  const valid = candidates.filter((b) => {
+    if (!b || typeof b.file_path !== 'string' || b.file_path.trim() === '') return false;
+    if (excludedPosterPath && b.file_path.trim() === excludedPosterPath) return false;
+
+    // TMDB backdrops are normally 16:9; reject portrait and near-square artwork.
+    const width = Number(b.width);
+    const height = Number(b.height);
+    return !width || !height || width / height >= 1.5;
+  });
   if (valid.length === 0) return undefined;
 
   const scored = [...valid].sort((a, b) => {
-    // Prefer language-neutral or English backdrops
-    const aLang = !a.iso_639_1 ? 2 : (a.iso_639_1 === 'en' ? 1 : 0);
-    const bLang = !b.iso_639_1 ? 2 : (b.iso_639_1 === 'en' ? 1 : 0);
-    if (aLang !== bLang) return bLang - aLang;
+    // Prefer the wide cinematic aspect ratio before resolution and rating.
+    const aAspect = Number(a.width) && Number(a.height) ? Number(a.width) / Number(a.height) : 0;
+    const bAspect = Number(b.width) && Number(b.height) ? Number(b.width) / Number(b.height) : 0;
+    const aAspectScore = aAspect ? -Math.abs(aAspect - (16 / 9)) : -1;
+    const bAspectScore = bAspect ? -Math.abs(bAspect - (16 / 9)) : -1;
+    if (aAspectScore !== bAspectScore) return bAspectScore - aAspectScore;
 
-    // Prefer higher resolution (e.g. 1920 or 3840 wide)
-    const aWidth = a.width || 0;
-    const bWidth = b.width || 0;
-    if (aWidth !== bWidth) return bWidth - aWidth;
+    const aPixels = Number(a.width || 0) * Number(a.height || 0);
+    const bPixels = Number(b.width || 0) * Number(b.height || 0);
+    if (aPixels !== bPixels) return bPixels - aPixels;
 
     // Prefer higher vote score
     const aScore = (a.vote_average || 0) * (a.vote_count || 1);
     const bScore = (b.vote_average || 0) * (b.vote_count || 1);
-    return bScore - aScore;
+    if (aScore !== bScore) return bScore - aScore;
+
+    // Prefer language-neutral or English only after visual quality ties.
+    const aLang = !a.iso_639_1 ? 2 : (a.iso_639_1 === 'en' ? 1 : 0);
+    const bLang = !b.iso_639_1 ? 2 : (b.iso_639_1 === 'en' ? 1 : 0);
+    return bLang - aLang;
   });
 
   return scored[0]?.file_path || undefined;

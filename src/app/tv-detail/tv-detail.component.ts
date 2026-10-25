@@ -308,6 +308,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.showTrailerModal = false;
     this.imageError = false;
     this.backdropError = false;
+    this.backdropUrl = undefined;
+    this.isBackdropFallback = false;
     this.castImageErrors.clear();
     this.episodeImageErrors.clear();
     this.seasons = [];
@@ -336,21 +338,6 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     } else {
       if (cached) {
         this.applyEnrichment(cached);
-      }
-      if (!this.backdropUrl) {
-        const tmdbPoster = cached?.posterPath
-          ? (getTmdbPosterUrl(cached.posterPath, 'original') || getTmdbPosterUrl(cached.posterPath, 'w780'))
-          : undefined;
-        if (tmdbPoster) {
-          this.backdropUrl = tmdbPoster;
-          this.isBackdropFallback = true;
-        } else if (show.image) {
-          this.backdropUrl = show.image;
-          this.isBackdropFallback = true;
-        } else {
-          this.backdropUrl = undefined;
-          this.isBackdropFallback = false;
-        }
       }
     }
     this.updateAmbientBackground();
@@ -551,30 +538,16 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
               this.backdropError = false;
               this.updateAmbientBackground();
               this.cdr.markForCheck();
-            } else if (!this.backdropUrl) {
-              const p = enr.posterPath ? (getTmdbPosterUrl(enr.posterPath, 'original') || getTmdbPosterUrl(enr.posterPath, 'w780')) : undefined;
-              if (p) {
-                this.backdropUrl = p;
-                this.isBackdropFallback = true;
-              } else if (this.show?.image) {
-                this.backdropUrl = this.show.image;
-                this.isBackdropFallback = true;
-              }
+            } else {
+              this.backdropUrl = undefined;
+              this.isBackdropFallback = false;
+              this.backdropError = true;
               this.updateAmbientBackground();
               this.cdr.markForCheck();
             }
           };
           img.src = highResBackdrop;
         }
-      }
-    } else if (!this.backdropUrl) {
-      const p = enr.posterPath ? (getTmdbPosterUrl(enr.posterPath, 'original') || getTmdbPosterUrl(enr.posterPath, 'w780')) : undefined;
-      if (p) {
-        this.backdropUrl = p;
-        this.isBackdropFallback = true;
-      } else if (this.show?.image) {
-        this.backdropUrl = this.show.image;
-        this.isBackdropFallback = true;
       }
     }
 
@@ -1370,16 +1343,6 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           this.updateAmbientBackground();
           return;
         }
-      }
-      const posterFallback = this.enrichment?.posterPath
-        ? (getTmdbPosterUrl(this.enrichment.posterPath, 'w780') || getTmdbPosterUrl(this.enrichment.posterPath, 'w500'))
-        : this.show?.image;
-      if (posterFallback) {
-        this.backdropUrl = posterFallback;
-        this.isBackdropFallback = true;
-        this.backdropError = false;
-        this.updateAmbientBackground();
-        return;
       }
     }
     this.backdropError = true;

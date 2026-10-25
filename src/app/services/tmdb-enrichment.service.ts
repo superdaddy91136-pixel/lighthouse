@@ -553,7 +553,11 @@ export class TmdbEnrichmentService {
       matchConfidence: 0.95,
       overview: item.overview?.trim() || undefined,
       posterPath: item.poster_path || undefined,
-      backdropPath: item.backdrop_path || undefined,
+      // Discovery results contain only the primary backdrop, so reject it if a
+      // malformed response repeats the title poster path.
+      backdropPath: item.backdrop_path && item.backdrop_path !== item.poster_path
+        ? item.backdrop_path
+        : undefined,
       releaseDate: dateStr || undefined,
       releaseYear,
       genres,
