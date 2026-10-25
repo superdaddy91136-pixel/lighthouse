@@ -234,6 +234,17 @@ fn apply_migrations() -> Result<()> {
               ANALYZE;
             "#,
         ),
+        M::up(
+            r#"
+              ALTER TABLE channels ADD COLUMN favorite_added integer;
+              -- Historical favorites predate this field, so retain their stable
+              -- catalog order beneath favorites added after this migration.
+              UPDATE channels SET favorite_added = 0
+              WHERE favorite = 1 AND favorite_added IS NULL;
+              CREATE INDEX index_channels_favorite_added
+              ON channels(favorite, favorite_added DESC);
+            "#,
+        ),
     ]);
     migrations.to_latest(&mut sql)?;
     Ok(())
@@ -518,6 +529,8 @@ pub fn search(filters: Filters) -> Result<Vec<Channel>> {
     if filters.view_type == view_type::HISTORY {
         sql_query += "\nAND last_watched IS NOT NULL";
         sql_query += "\nORDER BY last_watched DESC";
+    } else if filters.view_type == view_type::FAVORITES {
+        sql_query += "\nORDER BY favorite_added DESC, id DESC";
     } else if filters.season.is_some() {
         sql_query += &format!("\nORDER BY episode_num {0}, name {0}", order)
     } else if filters.sort != sort_type::PROVIDER {
@@ -622,6 +635,16 @@ fn get_action_params(action: u8) -> Result<(&'static str, u8)> {
     }
 }
 
+fn favorite_update_assignment(field: &str, value: u8) -> String {
+    if field == bulk_action_type::FIELD_FAVORITE {
+        format!(
+            "favorite = {value}, favorite_added = CASE WHEN {value} = 1 THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END"
+        )
+    } else {
+        format!("{field} = {value}")
+    }
+}
+
 pub fn bulk_update(filters: Filters, action: u8) -> Result<()> {
     if filters.series_id.is_some() && filters.season.is_none() {
         return Ok(());
@@ -706,19 +729,19 @@ fn apply_bulk_hidden(filters: &Filters, field: &str, value: u8, keywords: &[Stri
     };
 
     let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+    let assignment = favorite_update_assignment(field, value);
 
     let sql_query_channels = format!(
         r#"
         UPDATE channels
-        SET {} = {}
+        SET {}
         WHERE ({})
         AND media_type IN ({})
         AND source_id IN ({})
         AND url IS NOT NULL
         AND hidden = 1
         "#,
-        field,
-        value,
+        assignment,
         get_keywords_sql(keywords.len()),
         generate_placeholders(media_types.len()),
         generate_placeholders(filters.source_ids.len())
@@ -768,18 +791,18 @@ fn apply_bulk_channels(
             .clone()
             .context("media types not found")?,
     };
+    let assignment = favorite_update_assignment(field, value);
 
     let mut sql_query = format!(
         r#"
         UPDATE channels
-        SET {} = {}
+        SET {}
         WHERE ({})
         AND media_type IN ({})
         AND source_id IN ({})
         AND url IS NOT NULL
         AND hidden = 0"#,
-        field,
-        value,
+        assignment,
         get_keywords_sql(keywords.len()),
         generate_placeholders(media_types.len()),
         generate_placeholders(filters.source_ids.len()),
@@ -1183,7 +1206,11 @@ pub fn favorite_channel(channel_id: i64, favorite: bool) -> Result<()> {
     sql.execute(
         r#"
         UPDATE channels
-        SET favorite = ?1
+        SET favorite = ?1,
+            favorite_added = CASE
+                WHEN ?1 = 1 THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+                ELSE NULL
+            END
         WHERE id = ?2
     "#,
         params![favorite, channel_id],
@@ -1743,7 +1770,7 @@ pub fn get_preserve(tx: &Transaction, source_id: i64) -> Result<Vec<ChannelPrese
     let mut channels: Vec<ChannelPreserve> = tx
         .prepare(
             r#"
-              SELECT name, favorite, last_watched, hidden
+              SELECT name, favorite, favorite_added, last_watched, hidden
               FROM channels
               WHERE (favorite = 1 OR last_watched IS NOT NULL OR hidden = 1)
               AND series_id IS NULL
@@ -1775,6 +1802,7 @@ fn row_to_channel_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error
     Ok(ChannelPreserve {
         name: row.get("name")?,
         favorite: row.get("favorite")?,
+        favorite_added: row.get("favorite_added")?,
         last_watched: row.get("last_watched")?,
         hidden: row.get("hidden")?,
         is_group: false,
@@ -1786,6 +1814,7 @@ fn row_to_group_preserve(row: &Row) -> Result<ChannelPreserve, rusqlite::Error> 
         name: row.get("name")?,
         hidden: row.get("hidden")?,
         favorite: false,
+        favorite_added: None,
         last_watched: None,
         is_group: true,
     })
@@ -1811,12 +1840,13 @@ pub fn restore_preserve(
             tx.execute(
                 r#"
                   UPDATE channels
-                  SET favorite = ?, last_watched = ?, hidden = ?
+                  SET favorite = ?, favorite_added = ?, last_watched = ?, hidden = ?
                   WHERE name = ?
                   AND source_id = ?
                 "#,
                 params![
                     item.favorite,
+                    item.favorite_added,
                     item.last_watched,
                     item.hidden,
                     item.name,

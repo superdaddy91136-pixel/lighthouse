@@ -208,6 +208,8 @@ pub struct NetworkInfo {
 pub struct ChannelPreserve {
     pub name: String,
     pub favorite: bool,
+    #[serde(default)]
+    pub favorite_added: Option<i64>,
     pub last_watched: Option<usize>,
     pub hidden: Option<bool>,
     #[serde(default)]
