@@ -190,6 +190,66 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   private subs: Subscription[] = [];
   private isDestroyed: boolean = false;
   private discoveryLoadRequestId = 0;
+  private inFlightCatalogMatches = new Map<string, Promise<Channel | null>>();
+  private negativeCatalogMatchKeys = new Set<string>();
+  private heroDiscoveryPromise?: Promise<{ item: any; isTv: boolean; category?: HeroCategory }[]>;
+
+  private getOrStartHeroTmdbDiscovery(): Promise<{ item: any; isTv: boolean; category?: HeroCategory }[]> {
+    if (!this.heroDiscoveryPromise) {
+      this.heroDiscoveryPromise = this.loadHeroTmdbDiscovery();
+    }
+    return this.heroDiscoveryPromise;
+  }
+
+  private async matchCandidatesConcurrently<T>(
+    items: T[],
+    batchSize: number,
+    matcher: (item: T) => Promise<Channel | null>,
+    maxMatches: number,
+    onMatchesUpdate?: (matches: Channel[]) => void,
+    shouldInclude?: (matched: Channel, item: T, currentCount: number) => boolean
+  ): Promise<Channel[]> {
+    const matchedChannels: Channel[] = [];
+    const seenNorms = new Set<string>();
+    const seenFranchises = new Set<string>();
+
+    for (let i = 0; i < items.length; i += batchSize) {
+      if (matchedChannels.length >= maxMatches) break;
+      const chunk = items.slice(i, i + batchSize);
+      const results = await Promise.all(chunk.map((item) => matcher(item)));
+
+      let addedAny = false;
+      for (let j = 0; j < results.length; j++) {
+        if (matchedChannels.length >= maxMatches) break;
+        const matched = results[j];
+        const origItem = chunk[j];
+        if (matched && matched.id) {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(matched.name))
+          );
+          if (seenNorms.has(norm)) continue;
+
+          const franchise = this.getFranchiseKey(matched.name);
+          if (seenFranchises.has(franchise)) continue;
+
+          if (shouldInclude && !shouldInclude(matched, origItem, matchedChannels.length)) {
+            continue;
+          }
+
+          seenNorms.add(norm);
+          seenFranchises.add(franchise);
+          matchedChannels.push(matched);
+          addedAny = true;
+        }
+      }
+
+      if (addedAny && onMatchesUpdate && matchedChannels.length >= 4) {
+        onMatchesUpdate([...matchedChannels]);
+      }
+    }
+
+    return matchedChannels;
+  }
 
   constructor(
     public memory: MemoryService,
@@ -244,8 +304,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.syncFromSnapshot(cachedSnapshot);
       this.loading = false;
       if (this.currentHero?.imageUrl) {
-        this.splashScreen.markHeroReady();
+        if (cachedSnapshot.tmdbRows && cachedSnapshot.tmdbRows.length > 0) {
+          this.splashScreen.markHomeReady();
+        } else {
+          this.splashScreen.markHeroReady();
+        }
       }
+    }
+
+    if (this.tmdbConfig.isEnabled()) {
+      this.getOrStartHeroTmdbDiscovery();
     }
 
     if (!this.discoveryState.isFresh()) {
@@ -579,6 +647,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         return;
       }
 
+      if (this.tmdbConfig.isEnabled()) {
+        this.getOrStartHeroTmdbDiscovery();
+      }
+
       // Check if sources changed; reset discovery state if source IDs changed
       this.discoveryState.checkSourceConsistency(enabledSourceIds);
 
@@ -593,14 +665,14 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         sort: SortType.alphabeticalAscending,
         use_keywords: false,
       }).then((categoriesRes) => {
-        if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return undefined;
+        if (this.isDestroyed) return [];
         this.groupsMap.clear();
-        for (const cat of categoriesRes) {
+        for (const cat of categoriesRes || []) {
           if (cat.id && cat.name) {
             this.groupsMap.set(cat.id, cat.name);
           }
         }
-        return categoriesRes;
+        return categoriesRes || [];
       });
 
       // 1. Fetch display-critical catalog results without waiting for category metadata.
@@ -651,19 +723,23 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       ];
       await this.tmdbCache.preloadChannels(initialCandidateIds);
 
-      const runPipelineWhenCategoriesReady = () => {
-        void categoriesReady.then((categoriesRes) => {
-          if (!categoriesRes || this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
-          this.triggerTmdbDiscoveryPipeline(
-            enabledSourceIds,
-            historyRes,
-            favoritesRes,
-            moviesRes,
-            seriesRes,
-            categoriesRes,
-          );
-        });
+      const runPipeline = (categories: Channel[] = []) => {
+        this.triggerTmdbDiscoveryPipeline(
+          enabledSourceIds,
+          historyRes,
+          favoritesRes,
+          moviesRes,
+          seriesRes,
+          categories,
+        );
       };
+
+      void categoriesReady.then((categoriesRes) => {
+        if (!categoriesRes || this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
+        if (this.tmdbConfig.isEnabled() && categoriesRes.length > 0) {
+          this.loadAnimeContentRows(enabledSourceIds, categoriesRes, this.allLoadedMovies, this.allLoadedSeries);
+        }
+      });
 
       // Cache loaded series for fast resolution and episode show title lookup
       this.loadedSeries = seriesRes || [];
@@ -770,16 +846,17 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
         this.loading = false;
       if (this.currentHero?.imageUrl) {
-        this.splashScreen.markHeroReady();
+        if (snapshot.tmdbRows && snapshot.tmdbRows.length > 0) {
+          this.splashScreen.markHomeReady();
+        } else {
+          this.splashScreen.markHeroReady();
+        }
       }
 
         // Background revalidation only if stale or forced refresh
         const shouldRevalidate = isManualRefresh || !this.discoveryState.isFresh();
         if (shouldRevalidate && this.tmdbConfig.isEnabled()) {
-          setTimeout(() => {
-            if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
-            runPipelineWhenCategoriesReady();
-          }, 0);
+          runPipeline();
         }
 
         this.enqueueVisibleCardsEnrichment();
@@ -820,17 +897,16 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
           this.tmdbCache.getEnrichmentSync(this.currentHero.channel?.id)?.backdropPath
         )
       );
-      if (hasCachedTmdbHero) {
+      if (!this.tmdbConfig.isEnabled()) {
+        this.splashScreen.markHomeReady();
+      } else if (hasCachedTmdbHero) {
         this.splashScreen.markHeroReady();
       }
 
       // 5. Start TMDB discovery behind the splash screen without waiting for all
       // background rows. SplashScreenService has its own safety timeout.
       if (this.tmdbConfig.isEnabled()) {
-        setTimeout(() => {
-          if (this.isDestroyed || requestId !== this.discoveryLoadRequestId) return;
-          runPipelineWhenCategoriesReady();
-        }, 0);
+        runPipeline();
       }
 
       // 6. Non-blocking progressive TMDB background enrichment if enabled
@@ -911,7 +987,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     favoritesRes: Channel[],
     initialMovies: Channel[],
     initialSeries: Channel[],
-    categoriesRes: Channel[]
+    categoriesRes: Channel[] = []
   ): void {
     if (this.discoveryState.isPipelineRunning()) {
       return;
@@ -1315,7 +1391,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     favoritesRes: Channel[],
     initialMovies: Channel[],
     initialSeries: Channel[],
-    categoriesRes: Channel[],
+    categoriesRes: Channel[] = [],
     runId?: number
   ): Promise<void> {
     if (runId !== undefined && runId !== this.discoveryState.getCurrentRunId()) {
@@ -1329,9 +1405,13 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     }
 
     try {
-      // 1. Expand in-memory catalog pool by fetching page 2 of movies & series in background
-      // This enables fast in-memory matching and minimizes repeated SQLite searches
-      const [page2Movies, page2Series] = await Promise.all([
+      const moviesPool = [...initialMovies];
+      const seriesPool = [...initialSeries];
+      this.allLoadedMovies = moviesPool;
+      this.allLoadedSeries = seriesPool;
+
+      // 1. Expand in-memory catalog pool in background without blocking initial row matching
+      const page2Promise = Promise.all([
         this.fetchSafe({
           source_ids: sourceIds,
           view_type: ViewMode.All,
@@ -1348,16 +1428,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
           sort: SortType.provider,
           use_keywords: false,
         }),
-      ]);
-
-      if (runId !== undefined && runId !== this.discoveryState.getCurrentRunId()) {
-        return;
-      }
-
-      const moviesPool = [...initialMovies, ...(page2Movies || [])];
-      const seriesPool = [...initialSeries, ...(page2Series || [])];
-      this.allLoadedMovies = moviesPool;
-      this.allLoadedSeries = seriesPool;
+      ]).then(([page2Movies, page2Series]) => {
+        if (page2Movies && page2Movies.length > 0) moviesPool.push(...page2Movies);
+        if (page2Series && page2Series.length > 0) seriesPool.push(...page2Series);
+      }).catch(() => {});
 
       // 2. Prioritize dynamic hero banner pool preparation concurrently with recommendation rows
       const heroPromise = this.refreshHeroPoolFromTmdbDiscovery(sourceIds).then(() => {
@@ -1376,6 +1450,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.loadTrendingTvRow(sourceIds, seriesPool),
         this.loadKoreanContentRows(sourceIds, seriesPool),
         this.loadAnimeContentRows(sourceIds, categoriesRes, moviesPool, seriesPool),
+        page2Promise,
       ]);
 
       if (runId !== undefined && runId !== this.discoveryState.getCurrentRunId()) {
@@ -1395,6 +1470,13 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.allLoadedMovies,
         this.allLoadedSeries
       );
+
+      if (tmdbRows.length > 0) {
+        this.splashScreen.markRowsReady();
+      }
+      if (this.currentHero?.imageUrl) {
+        this.splashScreen.markHeroReady();
+      }
     } catch (err) {
       console.warn("Error in TMDB discovery pipeline:", err);
       this.tmdbRecommendationsUnavailable = true;
@@ -1441,23 +1523,21 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       // 2. Harvest candidate pool from TMDB
       const candidateMap = new Map<number, { item: any; isTv: boolean; fromSeed: boolean }>();
 
-      // A. Seed-based recommendations & similar titles
-      if (seeds.length > 0) {
-        const seedRecommendations = await this.tmdbEnrichment.getRecommendationsForSeeds(seeds);
-        for (const item of seedRecommendations) {
+      const [seedRecommendations, topRatedMovies, topRatedTv, trendingMovies] = await Promise.allSettled([
+        seeds.length > 0 ? this.tmdbEnrichment.getRecommendationsForSeeds(seeds) : Promise.resolve([]),
+        this.tmdbEnrichment.getTopRatedMovies(1),
+        this.tmdbEnrichment.getTopRatedTv(1),
+        this.tmdbEnrichment.getTrendingMovies("week"),
+      ]);
+
+      if (seedRecommendations.status === "fulfilled" && Array.isArray(seedRecommendations.value)) {
+        for (const item of seedRecommendations.value) {
           if (item?.id && !candidateMap.has(item.id)) {
             const isTv = item.media_type === "tv" || !!item.first_air_date;
             candidateMap.set(item.id, { item, isTv, fromSeed: true });
           }
         }
       }
-
-      // B. Top Rated & Trending candidates for breadth & cold-start discovery
-      const [topRatedMovies, topRatedTv, trendingMovies] = await Promise.allSettled([
-        this.tmdbEnrichment.getTopRatedMovies(1),
-        this.tmdbEnrichment.getTopRatedTv(1),
-        this.tmdbEnrichment.getTrendingMovies("week"),
-      ]);
 
       if (topRatedMovies.status === "fulfilled" && Array.isArray(topRatedMovies.value)) {
         for (const item of topRatedMovies.value) {
@@ -1556,36 +1636,30 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       scoredList.sort((a, b) => b.score - a.score);
 
-      // 4. Match against IPTV catalog with franchise diversity
-      const matchedChannels: Channel[] = [];
-      const seenFranchises = new Set<string>();
-      const seenNorms = new Set<string>();
-
-      for (const cand of scoredList) {
-        if (matchedChannels.length >= 24) break;
-
-        const pool = cand.isTv ? seriesPool : moviesPool;
-        const matched = await this.matchTmdbItemToCatalog(
-          cand.item,
-          cand.isTv,
-          pool,
-          sourceIds
-        );
-
-        if (matched && matched.id) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(matched.name))
+      // 4. Match against IPTV catalog with franchise diversity concurrently
+      const matchedChannels = await this.matchCandidatesConcurrently(
+        scoredList,
+        6,
+        (cand) => {
+          const pool = cand.isTv ? seriesPool : moviesPool;
+          return this.matchTmdbItemToCatalog(
+            cand.item,
+            cand.isTv,
+            pool,
+            sourceIds
           );
-          if (seenNorms.has(norm)) continue;
-
-          const franchise = this.getFranchiseKey(matched.name);
-          if (seenFranchises.has(franchise)) continue;
-
-          seenNorms.add(norm);
-          seenFranchises.add(franchise);
-          matchedChannels.push(matched);
+        },
+        24,
+        (partial) => {
+          this.allRecommended = partial;
+          this.upsertDiscoveryRow({
+            id: "row-recommended",
+            title: "Recommended for You",
+            icon: "sparkles",
+            items: partial,
+          });
         }
-      }
+      );
 
       if (matchedChannels.length >= 4) {
         this.allRecommended = matchedChannels;
@@ -1625,39 +1699,29 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       candidates.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 
       const recommendedIds = new Set(this.allRecommended.map((r) => r.id));
-      const matchedMovies: Channel[] = [];
-      const seenFranchises = new Set<string>();
-      const seenNorms = new Set<string>();
 
-      for (const item of candidates) {
-        if (matchedMovies.length >= 32) break;
-
-        const matched = await this.matchTmdbItemToCatalog(
-          item,
-          false,
-          moviesPool,
-          sourceIds
-        );
-
-        if (matched && matched.id) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(matched.name))
-          );
-          if (seenNorms.has(norm)) continue;
-
-          const franchise = this.getFranchiseKey(matched.name);
-          if (seenFranchises.has(franchise)) continue;
-
-          // Avoid duplicate items with Recommended for You unless pool is small
-          if (recommendedIds.has(matched.id) && matchedMovies.length >= 12) {
-            continue;
+      const matchedMovies = await this.matchCandidatesConcurrently(
+        candidates,
+        6,
+        (item) => this.matchTmdbItemToCatalog(item, false, moviesPool, sourceIds),
+        32,
+        (partial) => {
+          if (partial.length >= 4) {
+            this.upsertDiscoveryRow({
+              id: "row-popular-movies",
+              title: "Popular Movies",
+              icon: "film",
+              items: partial.slice(0, 24),
+            });
           }
-
-          seenNorms.add(norm);
-          seenFranchises.add(franchise);
-          matchedMovies.push(matched);
+        },
+        (matched, item, count) => {
+          if (recommendedIds.has(matched.id) && count >= 12) {
+            return false;
+          }
+          return true;
         }
-      }
+      );
 
       if (matchedMovies.length >= 4) {
         // Session-to-session deterministic rotation offset
@@ -1704,38 +1768,29 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       candidates.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 
       const recommendedIds = new Set(this.allRecommended.map((r) => r.id));
-      const matchedSeries: Channel[] = [];
-      const seenFranchises = new Set<string>();
-      const seenNorms = new Set<string>();
 
-      for (const item of candidates) {
-        if (matchedSeries.length >= 32) break;
-
-        const matched = await this.matchTmdbItemToCatalog(
-          item,
-          true,
-          seriesPool,
-          sourceIds
-        );
-
-        if (matched && matched.id) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(matched.name))
-          );
-          if (seenNorms.has(norm)) continue;
-
-          const franchise = this.getFranchiseKey(matched.name);
-          if (seenFranchises.has(franchise)) continue;
-
-          if (recommendedIds.has(matched.id) && matchedSeries.length >= 12) {
-            continue;
+      const matchedSeries = await this.matchCandidatesConcurrently(
+        candidates,
+        6,
+        (item) => this.matchTmdbItemToCatalog(item, true, seriesPool, sourceIds),
+        32,
+        (partial) => {
+          if (partial.length >= 4) {
+            this.upsertDiscoveryRow({
+              id: "row-popular-series",
+              title: "Popular TV Shows",
+              icon: "tv",
+              items: partial.slice(0, 24),
+            });
           }
-
-          seenNorms.add(norm);
-          seenFranchises.add(franchise);
-          matchedSeries.push(matched);
+        },
+        (matched, item, count) => {
+          if (recommendedIds.has(matched.id) && count >= 12) {
+            return false;
+          }
+          return true;
         }
-      }
+      );
 
       if (matchedSeries.length >= 4) {
         const seed = this.getSessionSeed();
@@ -1762,31 +1817,41 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     const sIds = sourceIds && sourceIds.length > 0
       ? sourceIds
       : Array.from(this.memory.Sources.keys());
-    const heroDiscovery = await this.loadHeroTmdbDiscovery();
+    const heroDiscovery = await this.getOrStartHeroTmdbDiscovery();
     const heroCandidateMovies: Channel[] = [];
     const heroCandidateSeries: Channel[] = [];
 
-    for (const candidate of heroDiscovery) {
-      const pool = candidate.isTv ? this.allLoadedSeries : this.allLoadedMovies;
-      const matched = await this.matchTmdbItemToCatalog(
-        candidate.item,
-        candidate.isTv,
-        pool,
-        sIds
-      );
-      if (matched?.id) {
-        const isBolly = candidate.category === "hindi" || this.isBollywood(matched);
-        if (isBolly) {
-          const logoPath = await this.tmdbEnrichment.resolveChannelLogo(
-            matched,
-            candidate.item?.id,
-            candidate.isTv
+    for (let i = 0; i < heroDiscovery.length; i += 6) {
+      const chunk = heroDiscovery.slice(i, i + 6);
+      const matchedResults = await Promise.all(
+        chunk.map((candidate) => {
+          const pool = candidate.isTv ? this.allLoadedSeries : this.allLoadedMovies;
+          return this.matchTmdbItemToCatalog(
+            candidate.item,
+            candidate.isTv,
+            pool,
+            sIds
           );
-          if (!logoPath) {
-            continue;
+        })
+      );
+
+      for (let j = 0; j < chunk.length; j++) {
+        const candidate = chunk[j];
+        const matched = matchedResults[j];
+        if (matched?.id) {
+          const isBolly = candidate.category === "hindi" || this.isBollywood(matched);
+          if (isBolly) {
+            const logoPath = await this.tmdbEnrichment.resolveChannelLogo(
+              matched,
+              candidate.item?.id,
+              candidate.isTv
+            );
+            if (!logoPath) {
+              continue;
+            }
           }
+          (candidate.isTv ? heroCandidateSeries : heroCandidateMovies).push(matched);
         }
-        (candidate.isTv ? heroCandidateSeries : heroCandidateMovies).push(matched);
       }
     }
 
@@ -1985,30 +2050,20 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const trending = await this.tmdbEnrichment.getTrendingMovies("week");
       if (!trending || trending.length === 0) return;
 
-      const matchedChannels: Channel[] = [];
-      const seenNorms = new Set<string>();
-      const seenFranchises = new Set<string>();
-
-      for (const item of trending) {
-        if (matchedChannels.length >= 24) break;
-        const matched = await this.matchTmdbItemToCatalog(
-          item,
-          false,
-          moviesPool,
-          sourceIds
-        );
-        if (matched && matched.id) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(matched.name))
-          );
-          const franchise = this.getFranchiseKey(matched.name);
-          if (!seenNorms.has(norm) && !seenFranchises.has(franchise)) {
-            seenNorms.add(norm);
-            seenFranchises.add(franchise);
-            matchedChannels.push(matched);
-          }
+      const matchedChannels = await this.matchCandidatesConcurrently(
+        trending,
+        6,
+        (item) => this.matchTmdbItemToCatalog(item, false, moviesPool, sourceIds),
+        24,
+        (partial) => {
+          this.upsertDiscoveryRow({
+            id: "row-trending-movies",
+            title: "Top Trending Movies",
+            icon: "film",
+            items: partial,
+          });
         }
-      }
+      );
 
       if (matchedChannels.length >= 4) {
         this.upsertDiscoveryRow({
@@ -2031,30 +2086,20 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const trending = await this.tmdbEnrichment.getTrendingTv("week");
       if (!trending || trending.length === 0) return;
 
-      const matchedChannels: Channel[] = [];
-      const seenNorms = new Set<string>();
-      const seenFranchises = new Set<string>();
-
-      for (const item of trending) {
-        if (matchedChannels.length >= 24) break;
-        const matched = await this.matchTmdbItemToCatalog(
-          item,
-          true,
-          seriesPool,
-          sourceIds
-        );
-        if (matched && matched.id) {
-          const norm = this.versionMatching.normalizeNumberTokens(
-            normalizeForComparison(cleanMediaTitle(matched.name))
-          );
-          const franchise = this.getFranchiseKey(matched.name);
-          if (!seenNorms.has(norm) && !seenFranchises.has(franchise)) {
-            seenNorms.add(norm);
-            seenFranchises.add(franchise);
-            matchedChannels.push(matched);
-          }
+      const matchedChannels = await this.matchCandidatesConcurrently(
+        trending,
+        6,
+        (item) => this.matchTmdbItemToCatalog(item, true, seriesPool, sourceIds),
+        24,
+        (partial) => {
+          this.upsertDiscoveryRow({
+            id: "row-trending-series",
+            title: "Top Trending TV Shows",
+            icon: "tv",
+            items: partial,
+          });
         }
-      }
+      );
 
       if (matchedChannels.length >= 4) {
         this.upsertDiscoveryRow({
@@ -2085,95 +2130,123 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     }
 
-    // 1. Check hot memory cache by TMDB ID
-    if (item.id) {
-      const cached = this.tmdbCache.getEnrichmentByTmdbIdSync(item.id);
-      if (cached?.providerItemId) {
-        const poolMatch = inMemoryPool.find((c) => c.id === cached.providerItemId);
-        if (poolMatch) {
-          this.discoveryState.setCachedCatalogMatch(item.id, isTv, poolMatch);
-          return poolMatch;
-        }
-      }
+    const matchKey = `${isTv ? "tv" : "movie"}_${item.id || cleanMediaTitle(item.name || item.title || "")}`;
+    if (this.negativeCatalogMatchKeys.has(matchKey)) {
+      return null;
     }
 
-    const candidateTitles: string[] = [];
-    if (isTv) {
-      if (item.name) candidateTitles.push(item.name);
-      if (item.original_name && item.original_name !== item.name) {
-        candidateTitles.push(item.original_name);
-      }
-    } else {
-      if (item.title) candidateTitles.push(item.title);
-      if (item.original_title && item.original_title !== item.title) {
-        candidateTitles.push(item.original_title);
-      }
+    const inFlight = this.inFlightCatalogMatches.get(matchKey);
+    if (inFlight) {
+      return await inFlight;
     }
 
-    if (candidateTitles.length === 0) return null;
-
-    const dateStr = item.release_date || item.first_air_date;
-    const targetYear =
-      dateStr && dateStr.length >= 4
-        ? parseInt(dateStr.substring(0, 4), 10)
-        : undefined;
-
-    for (const rawTitle of candidateTitles) {
-      const clean = cleanMediaTitle(rawTitle);
-      const norm = this.versionMatching.normalizeNumberTokens(
-        normalizeForComparison(clean)
-      );
-
-      // 2. Try matching from in-memory pool first
-      const poolMatch = this.findBestCatalogMatch(
-        norm,
-        clean,
-        targetYear,
-        inMemoryPool,
-        isTv
-      );
-      if (poolMatch) {
-        this.tmdbEnrichment.seedEnrichmentFromTmdbItem(poolMatch, item);
-        if (item.id) {
-          this.discoveryState.setCachedCatalogMatch(item.id, isTv, poolMatch);
-        }
-        return poolMatch;
-      }
-
-      // 3. Query SQLite via fetchSafe
-      try {
-        const searchResults = await this.fetchSafe({
-          source_ids: sourceIds,
-          view_type: ViewMode.All,
-          media_types: isTv ? [MediaType.serie] : [MediaType.movie],
-          query: clean,
-          page: 1,
-          sort: SortType.alphabeticalAscending,
-          use_keywords: false,
-        });
-
-        if (searchResults && searchResults.length > 0) {
-          const dbMatch = this.findBestCatalogMatch(
-            norm,
-            clean,
-            targetYear,
-            searchResults,
-            isTv
-          );
-          if (dbMatch) {
-            this.tmdbEnrichment.seedEnrichmentFromTmdbItem(dbMatch, item);
-            if (item.id) {
-              this.discoveryState.setCachedCatalogMatch(item.id, isTv, dbMatch);
-            }
-            return dbMatch;
+    const matchPromise = (async () => {
+      // 1. Check hot memory cache by TMDB ID
+      if (item.id) {
+        const cached = this.tmdbCache.getEnrichmentByTmdbIdSync(item.id);
+        if (cached?.providerItemId) {
+          const poolMatch = inMemoryPool.find((c) => c.id === cached.providerItemId);
+          if (poolMatch) {
+            this.discoveryState.setCachedCatalogMatch(item.id, isTv, poolMatch);
+            return poolMatch;
           }
         }
-      } catch {
-        // ignore
       }
-    }
 
-    return null;
+      const candidateTitles: string[] = [];
+      if (isTv) {
+        if (item.name) candidateTitles.push(item.name);
+        if (item.original_name && item.original_name !== item.name) {
+          candidateTitles.push(item.original_name);
+        }
+      } else {
+        if (item.title) candidateTitles.push(item.title);
+        if (item.original_title && item.original_title !== item.title) {
+          candidateTitles.push(item.original_title);
+        }
+      }
+
+      if (candidateTitles.length === 0) {
+        this.negativeCatalogMatchKeys.add(matchKey);
+        return null;
+      }
+
+      const dateStr = item.release_date || item.first_air_date;
+      const targetYear =
+        dateStr && dateStr.length >= 4
+          ? parseInt(dateStr.substring(0, 4), 10)
+          : undefined;
+
+      const seenCleanTitles = new Set<string>();
+
+      for (const rawTitle of candidateTitles) {
+        const clean = cleanMediaTitle(rawTitle);
+        if (!clean || seenCleanTitles.has(clean.toLowerCase())) continue;
+        seenCleanTitles.add(clean.toLowerCase());
+
+        const norm = this.versionMatching.normalizeNumberTokens(
+          normalizeForComparison(clean)
+        );
+
+        // 2. Try matching from in-memory pool first
+        const poolMatch = this.findBestCatalogMatch(
+          norm,
+          clean,
+          targetYear,
+          inMemoryPool,
+          isTv
+        );
+        if (poolMatch) {
+          this.tmdbEnrichment.seedEnrichmentFromTmdbItem(poolMatch, item);
+          if (item.id) {
+            this.discoveryState.setCachedCatalogMatch(item.id, isTv, poolMatch);
+          }
+          return poolMatch;
+        }
+
+        // 3. Query SQLite via fetchSafe
+        try {
+          const searchResults = await this.fetchSafe({
+            source_ids: sourceIds,
+            view_type: ViewMode.All,
+            media_types: isTv ? [MediaType.serie] : [MediaType.movie],
+            query: clean,
+            page: 1,
+            sort: SortType.alphabeticalAscending,
+            use_keywords: false,
+          });
+
+          if (searchResults && searchResults.length > 0) {
+            const dbMatch = this.findBestCatalogMatch(
+              norm,
+              clean,
+              targetYear,
+              searchResults,
+              isTv
+            );
+            if (dbMatch) {
+              this.tmdbEnrichment.seedEnrichmentFromTmdbItem(dbMatch, item);
+              if (item.id) {
+                this.discoveryState.setCachedCatalogMatch(item.id, isTv, dbMatch);
+              }
+              return dbMatch;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      this.negativeCatalogMatchKeys.add(matchKey);
+      return null;
+    })();
+
+    this.inFlightCatalogMatches.set(matchKey, matchPromise);
+    try {
+      return await matchPromise;
+    } finally {
+      this.inFlightCatalogMatches.delete(matchKey);
+    }
   }
 
   private async matchTrendingItemToCatalog(
@@ -2368,6 +2441,13 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.applyContentPreferences();
       this.cdr.markForCheck();
     }
+    if (
+      newRow.id !== "row-continue-watching" &&
+      newRow.id !== "row-favorites" &&
+      newRow.items?.length > 0
+    ) {
+      this.splashScreen.markRowsReady();
+    }
   }
 
   private syncFromSnapshot(snapshot: HomeDiscoverySnapshot): void {
@@ -2436,13 +2516,27 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         /\b(korean|k-drama|kdrama|korea|asia\s*series|asian\s*series|doramas?)\b/i,
       ];
 
-      // Scan IPTV categories matching Korean patterns (plus keyword search if needed)
-      const categoryIds = await this.findCategoryIdsMatching(
-        sourceIds,
-        [MediaType.serie],
-        koreanPatterns,
-        ["korean", "k-drama", "asia series"]
-      );
+      if (!this.tmdbConfig.isEnabled()) return;
+
+      const rotation = this.getDiscoveryRotationCount("korean");
+      const pageA = (rotation % 3) + 1; // 1, 2, or 3
+      const pageB = pageA === 3 ? 1 : pageA + 1;
+
+      // Discover Korean series from TMDB concurrently with category lookups
+      const [tmdbPages, categoryIds] = await Promise.all([
+        Promise.allSettled([
+          this.tmdbEnrichment.getKoreanTv(pageA, "popularity.desc"),
+          this.tmdbEnrichment.getKoreanTv(pageB, "vote_average.desc", {
+            "vote_count.gte": 50,
+          }),
+        ]),
+        this.findCategoryIdsMatching(
+          sourceIds,
+          [MediaType.serie],
+          koreanPatterns,
+          ["korean", "k-drama", "asia series"]
+        ),
+      ]);
 
       let folderPool: Channel[] = [];
       if (categoryIds.length > 0) {
@@ -2454,56 +2548,43 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
 
       const combinedPool = [...activeSeriesPool, ...folderPool];
-      const eligible: Channel[] = [];
-      const seenNorms = new Set<string>();
-
-      // Discover Korean series from TMDB, then match only those candidates to IPTV.
-      if (this.tmdbConfig.isEnabled()) {
-        try {
-          const rotation = this.getDiscoveryRotationCount("korean");
-          const pageA = (rotation % 3) + 1; // 1, 2, or 3
-          const pageB = pageA === 3 ? 1 : pageA + 1;
-
-          // Fetch popular Korean TV and critically acclaimed (top-rated) Korean TV
-          const tmdbPages = await Promise.allSettled([
-            this.tmdbEnrichment.getKoreanTv(pageA, "popularity.desc"),
-            this.tmdbEnrichment.getKoreanTv(pageB, "vote_average.desc", {
-              "vote_count.gte": 50,
-            }),
-          ]);
-
-          const tmdbItems: any[] = [];
-          for (const res of tmdbPages) {
-            if (res.status === "fulfilled" && Array.isArray(res.value)) {
-              tmdbItems.push(...res.value);
-            }
-          }
-
-          // Match discovered items against IPTV catalog (in-memory pool & SQLite search)
-          for (const item of tmdbItems) {
-            if (eligible.length >= 36) break;
-            const matched = await this.matchTmdbItemToCatalog(
-              item,
-              true,
-              combinedPool,
-              sourceIds
-            );
-            if (matched && matched.id) {
-              const norm = this.versionMatching.normalizeNumberTokens(
-                normalizeForComparison(cleanMediaTitle(matched.name))
-              );
-              if (!seenNorms.has(norm) && !this.animeRowNorms.has(norm)) {
-                seenNorms.add(norm);
-                this.koreanRowNorms.add(norm);
-                eligible.push(matched);
-                this.tmdbEnrichment.seedEnrichmentFromTrending(matched, item);
-              }
-            }
-          }
-        } catch (tmdbErr) {
-          console.warn("TMDB Korean series lookup error:", tmdbErr);
+      const tmdbItems: any[] = [];
+      for (const res of tmdbPages) {
+        if (res.status === "fulfilled" && Array.isArray(res.value)) {
+          tmdbItems.push(...res.value);
         }
       }
+
+      const eligible = await this.matchCandidatesConcurrently(
+        tmdbItems,
+        6,
+        (item) => this.matchTmdbItemToCatalog(item, true, combinedPool, sourceIds),
+        36,
+        (partial) => {
+          if (partial.length >= 8) {
+            const shuffled = this.shuffleRowSelection(
+              partial,
+              "lighthouse_shuffled_korean_series",
+              24
+            );
+            this.upsertDiscoveryRow({
+              id: "row-korean-series",
+              title: "Korean Series",
+              icon: "tv",
+              items: shuffled,
+            });
+          }
+        },
+        (matched, item) => {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(matched.name))
+          );
+          if (this.animeRowNorms.has(norm)) return false;
+          this.koreanRowNorms.add(norm);
+          this.tmdbEnrichment.seedEnrichmentFromTrending(matched, item);
+          return true;
+        }
+      );
 
       if (eligible.length >= 8) {
         const shuffled = this.shuffleRowSelection(
@@ -2548,13 +2629,30 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       const activeSeriesPool = seriesPool || this.allLoadedSeries;
       const animePatterns = [/\b(anime|animation|animated)\b/i];
 
-      // Scan IPTV categories matching Anime/Animation patterns
-      const categoryIds = await this.findCategoryIdsMatching(
-        sourceIds,
-        [MediaType.movie, MediaType.serie],
-        animePatterns,
-        ["anime", "animation"]
-      );
+      if (!this.tmdbConfig.isEnabled()) return;
+
+      const rotation = this.getDiscoveryRotationCount("anime");
+      const pageOffset = (rotation % 3) + 1; // 1, 2, or 3
+      const altSort =
+        rotation % 2 === 1 ? "vote_average.desc" : "popularity.desc";
+      const voteParams =
+        altSort === "vote_average.desc" ? { "vote_count.gte": 50 } : {};
+
+      // Discover diverse pool: Anime TV, Anime Movies, Global Animation TV, Global Animation Movies concurrently with categories
+      const [tmdbQueries, categoryIds] = await Promise.all([
+        Promise.allSettled([
+          this.tmdbEnrichment.getAnimeTv(pageOffset, altSort, voteParams),
+          this.tmdbEnrichment.getAnimeMovies(pageOffset, altSort, voteParams),
+          this.tmdbEnrichment.getAnimationTv(1, "popularity.desc"),
+          this.tmdbEnrichment.getAnimationMovies(1, "popularity.desc"),
+        ]),
+        this.findCategoryIdsMatching(
+          sourceIds,
+          [MediaType.movie, MediaType.serie],
+          animePatterns,
+          ["anime", "animation"]
+        ),
+      ]);
 
       let folderPool: Channel[] = [];
       if (categoryIds.length > 0) {
@@ -2573,70 +2671,61 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         ...activeSeriesPool,
         ...folderPool.filter((c) => this.isTvShow(c)),
       ];
-      const eligible: Channel[] = [];
-      const seenNorms = new Set<string>();
 
-      // Discover Anime & Animation from TMDB, then match only those candidates to IPTV.
-      if (this.tmdbConfig.isEnabled()) {
-        try {
-          const rotation = this.getDiscoveryRotationCount("anime");
-          const pageOffset = (rotation % 3) + 1; // 1, 2, or 3
-          const altSort =
-            rotation % 2 === 1 ? "vote_average.desc" : "popularity.desc";
-          const voteParams =
-            altSort === "vote_average.desc" ? { "vote_count.gte": 50 } : {};
-
-          // Discover diverse pool: Anime TV, Anime Movies, Global Animation TV, Global Animation Movies
-          const tmdbQueries = await Promise.allSettled([
-            this.tmdbEnrichment.getAnimeTv(pageOffset, altSort, voteParams),
-            this.tmdbEnrichment.getAnimeMovies(pageOffset, altSort, voteParams),
-            this.tmdbEnrichment.getAnimationTv(1, "popularity.desc"),
-            this.tmdbEnrichment.getAnimationMovies(1, "popularity.desc"),
-          ]);
-
-          const tmdbCandidates: { item: any; isTv: boolean }[] = [];
-          for (let i = 0; i < tmdbQueries.length; i++) {
-            const res = tmdbQueries[i];
-            if (res.status === "fulfilled" && Array.isArray(res.value)) {
-              // i = 0 (Anime TV), i = 1 (Anime Movie), i = 2 (Animation TV), i = 3 (Animation Movie)
-              const isTv = i === 0 || i === 2;
-              for (const item of res.value) {
-                tmdbCandidates.push({ item, isTv });
-              }
-            }
+      const tmdbCandidates: { item: any; isTv: boolean }[] = [];
+      for (let i = 0; i < tmdbQueries.length; i++) {
+        const res = tmdbQueries[i];
+        if (res.status === "fulfilled" && Array.isArray(res.value)) {
+          const isTv = i === 0 || i === 2;
+          for (const item of res.value) {
+            tmdbCandidates.push({ item, isTv });
           }
-
-          // Match discovered items against IPTV catalog
-          for (const cand of tmdbCandidates) {
-            if (eligible.length >= 36) break;
-            const targetPool = cand.isTv
-              ? combinedSeriesPool
-              : combinedMoviePool;
-            const matched = await this.matchTmdbItemToCatalog(
-              cand.item,
-              cand.isTv,
-              targetPool,
-              sourceIds
-            );
-            if (matched && matched.id) {
-              const norm = this.versionMatching.normalizeNumberTokens(
-                normalizeForComparison(cleanMediaTitle(matched.name))
-              );
-              if (!seenNorms.has(norm) && !this.koreanRowNorms.has(norm)) {
-                seenNorms.add(norm);
-                this.animeRowNorms.add(norm);
-                eligible.push(matched);
-                this.tmdbEnrichment.seedEnrichmentFromTrending(
-                  matched,
-                  cand.item
-                );
-              }
-            }
-          }
-        } catch (tmdbErr) {
-          console.warn("TMDB Anime and Animation lookup error:", tmdbErr);
         }
       }
+
+      const eligible = await this.matchCandidatesConcurrently(
+        tmdbCandidates,
+        6,
+        (cand) => {
+          const targetPool = cand.isTv
+            ? combinedSeriesPool
+            : combinedMoviePool;
+          return this.matchTmdbItemToCatalog(
+            cand.item,
+            cand.isTv,
+            targetPool,
+            sourceIds
+          );
+        },
+        36,
+        (partial) => {
+          if (partial.length >= 8) {
+            const shuffled = this.shuffleRowSelection(
+              partial,
+              "lighthouse_shuffled_anime_animation",
+              24
+            );
+            this.upsertDiscoveryRow({
+              id: "row-anime-animation",
+              title: "Anime and Animation",
+              icon: "bookmark",
+              items: shuffled,
+            });
+          }
+        },
+        (matched, cand) => {
+          const norm = this.versionMatching.normalizeNumberTokens(
+            normalizeForComparison(cleanMediaTitle(matched.name))
+          );
+          if (this.koreanRowNorms.has(norm)) return false;
+          this.animeRowNorms.add(norm);
+          this.tmdbEnrichment.seedEnrichmentFromTrending(
+            matched,
+            cand.item
+          );
+          return true;
+        }
+      );
 
       if (eligible.length >= 8) {
         const shuffled = this.shuffleRowSelection(
@@ -2739,45 +2828,20 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     categoryIds: number[],
     mediaType: MediaType
   ): Promise<Channel[]> {
-    const allChannels: Channel[] = [];
-    for (const catId of categoryIds) {
-      const page1 = await this.fetchSafe({
-        source_ids: sourceIds,
-        view_type: ViewMode.All,
-        group_id: catId,
-        media_types: [mediaType],
-        page: 1,
-        sort: SortType.provider,
-        use_keywords: false,
-      });
-
-      if (!page1 || page1.length === 0) continue;
-      allChannels.push(...page1);
-
-      if (page1.length >= 36) {
-        const pagePromises: Promise<Channel[]>[] = [];
-        for (let p = 2; p <= 3; p++) {
-          pagePromises.push(
-            this.fetchSafe({
-              source_ids: sourceIds,
-              view_type: ViewMode.All,
-              group_id: catId,
-              media_types: [mediaType],
-              page: p,
-              sort: SortType.provider,
-              use_keywords: false,
-            })
-          );
-        }
-        const remaining = await Promise.all(pagePromises);
-        for (const batch of remaining) {
-          if (batch && batch.length > 0) {
-            allChannels.push(...batch);
-          }
-        }
-      }
-    }
-    return allChannels;
+    const results = await Promise.all(
+      categoryIds.slice(0, 3).map((catId) =>
+        this.fetchSafe({
+          source_ids: sourceIds,
+          view_type: ViewMode.All,
+          group_id: catId,
+          media_types: [mediaType],
+          page: 1,
+          sort: SortType.provider,
+          use_keywords: false,
+        })
+      )
+    );
+    return results.flat();
   }
 
   private matchItemToFolderPool(

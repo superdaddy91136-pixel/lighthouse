@@ -11,13 +11,16 @@ export class SplashScreenService {
   public fadingOut: boolean = false;
 
   /** Maximum duration before safety timeout dismisses splash screen */
-  private readonly SAFETY_TIMEOUT_MS = 3500;
+  private readonly SAFETY_TIMEOUT_MS = 6000;
 
   /** Transition duration matching CSS transition (350ms + small buffer) */
   private readonly TRANSITION_DURATION_MS = 380;
 
   private dismissed: boolean = false;
   private timeoutId: any = null;
+
+  private heroReady: boolean = false;
+  private rowsReady: boolean = false;
 
   constructor() {
     // Safety timeout ensures user is never stuck on splash screen indefinitely
@@ -33,7 +36,33 @@ export class SplashScreenService {
    */
   public markHeroReady(): void {
     if (this.dismissed || this.fadingOut) return;
-    this.dismiss('hero_ready');
+    this.heroReady = true;
+    this.checkHomeReady();
+  }
+
+  /**
+   * Called as soon as initial TMDB recommendation rows are populated.
+   */
+  public markRowsReady(): void {
+    if (this.dismissed || this.fadingOut) return;
+    this.rowsReady = true;
+    this.checkHomeReady();
+  }
+
+  /**
+   * Called when both hero and recommendation rows are ready (e.g. from cached snapshot or fallback).
+   */
+  public markHomeReady(): void {
+    if (this.dismissed || this.fadingOut) return;
+    this.heroReady = true;
+    this.rowsReady = true;
+    this.checkHomeReady();
+  }
+
+  private checkHomeReady(): void {
+    if (this.heroReady && this.rowsReady) {
+      this.dismiss('home_ready');
+    }
   }
 
   /**
