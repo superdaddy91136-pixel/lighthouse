@@ -3,9 +3,9 @@ import { MediaType } from "../models/mediaType";
 
 export const VIDEO_EXTENSIONS = /\.(mkv|mp4|avi|ts|m2ts|mov|wmv|iso|flv|webm|m4v|vob|mpg|mpeg)$/i;
 
-export const BRAND_PREFIX_REGEX = /^[\ [\(|]?\s*(?:4K-)?(?:D\+|P\+|C\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(?:\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(?:\s*VIDEO)?|DSNP|HMAX|MAX|HBO(?:\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i;
+export const BRAND_PREFIX_REGEX = /^[\ [\(|]?\s*(?:4K-)?(?:A\s*\+|D\s*\+|P\s*\+|C\s*\+|MGM\+|CANAL\+|PARAMOUNT\+?|DISNEY\+?|APPLE(?:\s*TV\+?)?|NF|NETFLIX|ATVP|AMZN|PRIME(?:\s*VIDEO)?|DSNP|HMAX|MAX|HBO(?:\s*MAX)?|HULU|PEACOCK|BBC|SKY|CRUNCHYROLL|CR|STARZ|SHOWTIME)\s*[\]\)|]?\s*[-:|–—\/]?\s*/i;
 
-export const CATEGORY_PREFIX_REGEX = /^(?:[\ [\(|]\s*(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA|MOVIES?)\s*[\]\)|]\s*[-:|–—\/]?|(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA|MOVIES?)\s*[-:|–—\/])\s*/i;
+export const CATEGORY_PREFIX_REGEX = /^(?:[\ [\(|]\s*(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA|MOVIES?|S|M)\s*[\]\)|]\s*[-:|–—\/]?|(?:TOP|VIP|NEW|EXCLUSIVE|PREMIUM|VOD|SERIES?|TV|SHOWS?|FILMS?|CINEMA|MOVIES?|S|M)\s*[-:|–—\/])\s*/i;
 
 export const RESOLUTION_PREFIX_REGEX = /^[-*#~_+=|\s]*(\[?(?:4K(?:\s*UHD)?|UHD|2160p|1080p|1080i|FHD|720p|HD|SD|480p)\]?)\s*[-:|–—\/]?\s*/i;
 

@@ -62,6 +62,13 @@ describe('MediaPresentationUtils', () => {
     it('should preserve non-English titles and characters', () => {
       expect(cleanMediaTitle('Amélie (2001)')).toBe('Amélie');
       expect(cleanMediaTitle('D+ - Moving (KR) - S01E08 - Black')).toBe('Moving');
+      expect(cleanMediaTitle('A+ - Ted Lasso')).toBe('Ted Lasso');
+      expect(cleanMediaTitle('A+ - Severance (2022)')).toBe('Severance');
+      expect(cleanMediaTitle('S- Severance')).toBe('Severance');
+      expect(cleanMediaTitle('S - The Bear')).toBe('The Bear');
+      expect(cleanMediaTitle('S-The Bear')).toBe('The Bear');
+      expect(cleanMediaTitle('[S] The Bear')).toBe('The Bear');
+      expect(cleanMediaTitle('M- Inception (2010)')).toBe('Inception');
       expect(cleanMediaTitle('千と千尋の神隠し (2001)')).toBe('千と千尋の神隠し');
     });
 
