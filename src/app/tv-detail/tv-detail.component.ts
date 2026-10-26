@@ -353,14 +353,18 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     });
 
-    // 3. Load Seasons and Episodes from provider catalog
-    this.loadSeasonsAndEpisodes(show);
+    // 3. Render cached provider seasons and episodes before version discovery.
+    // Version discovery can select a different provider entry; starting it in
+    // parallel used to invalidate this first local query and delay the list
+    // until the version lookup completed.
+    void this.loadSeasonsAndEpisodes(show).then(() => {
+      if (this.show === show) {
+        void this.loadVersions(show);
+      }
+    });
 
     // 4. Load Similar Shows
     this.loadSimilarShows(show);
-
-    // 5. Load alternative versions from provider catalog
-    this.loadVersions(show);
 
     this.checkSynopsisLength();
   }
