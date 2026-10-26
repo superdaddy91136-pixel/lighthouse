@@ -592,7 +592,16 @@ export class TmdbEnrichmentService {
     if (!channel?.id || !this.configService.isEnabled()) return undefined;
 
     const cached = this.getEnrichmentSync(channel);
-    if (cached?.logoPath && typeof cached.logoPath === 'string' && cached.logoPath.trim() !== '') {
+    const cachedIsHindiTitle = cached?.originalLanguage?.toLowerCase().split('-')[0] === 'hi';
+    // Cached enrichment does not record the selected logo's language. Re-resolve
+    // Hindi titles so artwork cached before the Hindi-first selection policy is
+    // corrected instead of persisting until the normal metadata TTL expires.
+    if (
+      !cachedIsHindiTitle &&
+      cached?.logoPath &&
+      typeof cached.logoPath === 'string' &&
+      cached.logoPath.trim() !== ''
+    ) {
       return cached.logoPath;
     }
 

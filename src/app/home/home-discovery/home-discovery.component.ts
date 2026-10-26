@@ -195,6 +195,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   private subs: Subscription[] = [];
   private isDestroyed: boolean = false;
   private discoveryLoadRequestId = 0;
+  private continueWatchingRefreshId = 0;
   private inFlightCatalogMatches = new Map<string, Promise<Channel | null>>();
   private negativeCatalogMatchKeys = new Set<string>();
   private heroDiscoveryPromise?: Promise<{ item: any; isTv: boolean; category?: HeroCategory }[]>;
@@ -323,6 +324,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
     if (!this.discoveryState.isFresh()) {
       this.loadDiscovery();
+    } else {
+      // Continue Watching is intentionally not part of the cached discovery
+      // snapshot. Refresh its local history whenever Home is recreated so
+      // playback completed on a detail route is immediately reflected.
+      this.refreshContinueWatching();
     }
     this.updateAmbientBackground();
 
@@ -1022,6 +1028,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
   public async refreshContinueWatching(): Promise<void> {
     if (this.isDestroyed) return;
+    const refreshId = ++this.continueWatchingRefreshId;
     this.cachedWatchProgressStore = null;
     this.cwTitleCache.clear();
     this.cwArtworkCache.clear();
@@ -1038,9 +1045,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         use_keywords: false,
       });
 
-      if (this.isDestroyed) return;
+      if (this.isDestroyed || refreshId !== this.continueWatchingRefreshId) return;
       this.cwTitleCache.clear();
       const deduplicatedHistory = await this.deduplicateContinueWatching(historyRes);
+      if (this.isDestroyed || refreshId !== this.continueWatchingRefreshId) return;
 
       const cwRowIndex = this.masterDiscoveryRows.findIndex(
         (r) => r.id === "row-continue-watching"
@@ -3257,18 +3265,26 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       }
     }
 
-    // Filter out completed movies from Continue Watching (95% completion threshold)
+    // Only show titles with persisted progress. Completed TV episodes can still
+    // contribute their next episode card, but completed series and untouched
+    // history entries are excluded.
     const activeGroups: GroupCandidate[] = [];
     for (const g of groups) {
       if (g.isTv) {
-        activeGroups.push(g);
+        const isNextEpisode = g.representative.id != null && this.nextEpisodeCardIds.has(g.representative.id);
+        if (
+          isNextEpisode ||
+          (this.hasMeaningfulWatchProgress(g.representative) && !this.embeddedPlayer.isEpisodeCompleted(g.representative))
+        ) {
+          activeGroups.push(g);
+        }
       } else {
         const isCompleted = this.embeddedPlayer.isMovieCompleted(
           g.representative,
           undefined,
           g.allHistoryIds
         );
-        if (!isCompleted) {
+        if (!isCompleted && this.hasMeaningfulWatchProgress(g.representative, g.allHistoryIds)) {
           activeGroups.push(g);
         }
       }
@@ -4204,6 +4220,22 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       // ignore
     }
     return 0;
+  }
+
+  private hasMeaningfulWatchProgress(channel: Channel, alternateIds: number[] = []): boolean {
+    if (this.getWatchProgress(channel) > 0) return true;
+
+    try {
+      const storeRaw = localStorage.getItem("fred_tv_watch_progress");
+      const store = storeRaw ? JSON.parse(storeRaw) : undefined;
+      const ids = [channel.id, ...alternateIds];
+      return ids.some((id) => {
+        const entry = id != null ? store?.[id] : undefined;
+        return typeof entry === "object" && entry !== null && Number(entry.time) > 5;
+      });
+    } catch {
+      return false;
+    }
   }
 
   getCardYear(channel: Channel): string | undefined {

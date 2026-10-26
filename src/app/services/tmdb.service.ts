@@ -396,7 +396,7 @@ export class TmdbService {
 
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.release_date && raw.release_date.length >= 4 ? raw.release_date.substring(0, 4) : undefined;
-    const logoPath = extractBestLogoPath(raw.images);
+    const logoPath = extractBestLogoPath(raw.images, raw.original_language);
     const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.poster_path, raw.images);
 
     return {
@@ -470,7 +470,7 @@ export class TmdbService {
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.first_air_date && raw.first_air_date.length >= 4 ? raw.first_air_date.substring(0, 4) : undefined;
     const runtime = raw.episode_run_time && raw.episode_run_time.length > 0 ? raw.episode_run_time[0] : undefined;
-    const logoPath = extractBestLogoPath(raw.images);
+    const logoPath = extractBestLogoPath(raw.images, raw.original_language);
     const backdropPath = extractBestBackdropPath(raw.backdrop_path, raw.poster_path, raw.images);
 
     return {
@@ -542,9 +542,10 @@ export class TmdbService {
 
 /**
  * Selects the best title logo path from TMDB raw.images?.logos.
- * Prefers English ('en') or language-neutral logos, followed by vote/rating score.
+ * Hindi titles use Hindi -> English -> neutral/default artwork; other titles
+ * retain the English -> neutral/default preference.
  */
-function extractBestLogoPath(images: any): string | undefined {
+function extractBestLogoPath(images: any, originalLanguage?: string): string | undefined {
   const logos: any[] = images?.logos;
   if (!logos || !Array.isArray(logos) || logos.length === 0) {
     return undefined;
@@ -554,10 +555,24 @@ function extractBestLogoPath(images: any): string | undefined {
   );
   if (valid.length === 0) return undefined;
 
+  const isHindiLanguage = (language: unknown): boolean =>
+    typeof language === 'string' && language.toLowerCase().split('-')[0] === 'hi';
+  const isHindiTitle = isHindiLanguage(originalLanguage);
+  const languagePriority = (logo: any): number => {
+    const language = typeof logo.iso_639_1 === 'string'
+      ? logo.iso_639_1.toLowerCase()
+      : '';
+
+    // TMDB logo records normally use ISO 639-1 ('hi'); accept hi-IN too.
+    if (isHindiTitle && isHindiLanguage(language)) return 4;
+    if (language === 'en') return 3;
+    if (!language) return 2;
+    return 1;
+  };
+
   const scored = [...valid].sort((a, b) => {
-    // Language priority: English ('en') = 3, language-neutral/null = 2, other language = 1
-    const aLang = a.iso_639_1 === 'en' ? 3 : (!a.iso_639_1 ? 2 : 1);
-    const bLang = b.iso_639_1 === 'en' ? 3 : (!b.iso_639_1 ? 2 : 1);
+    const aLang = languagePriority(a);
+    const bLang = languagePriority(b);
     if (aLang !== bLang) return bLang - aLang;
 
     const aScore = (a.vote_average || 0) * (a.vote_count || 1);

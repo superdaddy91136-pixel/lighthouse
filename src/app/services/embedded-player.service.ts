@@ -160,6 +160,15 @@ export class EmbeddedPlayerService implements OnDestroy {
       });
   }
 
+  private async markLastWatched(channelId: number): Promise<void> {
+    try {
+      await invoke('add_last_watched', { id: channelId });
+      this.lastWatchedUpdated$.next(channelId);
+    } catch (err) {
+      console.warn('Failed to record playback history:', err);
+    }
+  }
+
   private async initGlobalListeners(): Promise<void> {
     // Listen for stream started (captures stream info even if started outside service, e.g. movie screen)
     this.unlistenPlayerStarted = await listen('embedded-player-started', (event: any) => {
@@ -234,8 +243,7 @@ export class EmbeddedPlayerService implements OnDestroy {
       const chId = targetChannel?.id || episodeId;
 
       if (chId) {
-        invoke('add_last_watched', { id: chId }).catch(console.warn);
-        this.lastWatchedUpdated$.next(chId);
+        this.markLastWatched(chId).catch(console.warn);
       }
 
       if (!targetEp && targetChannel) {
@@ -708,8 +716,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     options?: EmbeddedPlayerOptions,
   ): Promise<void> {
     if (channel?.id) {
-      invoke('add_last_watched', { id: channel.id }).catch(console.warn);
-      this.lastWatchedUpdated$.next(channel.id);
+      await this.markLastWatched(channel.id);
     }
 
     const wasAlreadyPlaying = this.isPlayingEmbedded;
@@ -1085,8 +1092,7 @@ export class EmbeddedPlayerService implements OnDestroy {
     if (!channel || channel.id == null) return;
     this.currentChannel = channel;
     if (channel.id) {
-      invoke('add_last_watched', { id: channel.id }).catch(console.warn);
-      this.lastWatchedUpdated$.next(channel.id);
+      await this.markLastWatched(channel.id);
     }
     if (channel.group_id != null) {
       this.currentGroupId = channel.group_id;
