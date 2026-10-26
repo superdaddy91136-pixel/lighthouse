@@ -108,9 +108,12 @@
       <!-- Hover Overlay -->
       <div class="card-hover-overlay">
         <button type="button" class="hover-play-circle" [class.folder-hover-circle]="isGroup()"
-          (click)="onPlayClick($event)" [attr.aria-label]="isGroup() ? 'Open folder' : 'Play'" [title]="isGroup() ? 'Open' : 'Play'">
-          <svg *ngIf="!isGroup()" viewBox="0 0 24 24" fill="currentColor">
+          (click)="onPlayClick($event)" [disabled]="starting" [attr.aria-label]="isGroup() ? 'Open folder' : (starting ? 'Starting playback' : 'Play')" [title]="isGroup() ? 'Open' : (starting ? 'Starting playback...' : 'Play')">
+          <svg *ngIf="!isGroup() && !starting" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+          </svg>
+          <svg *ngIf="!isGroup() && starting" class="play-loading-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="30 20" />
           </svg>
           <svg *ngIf="isGroup()" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" />

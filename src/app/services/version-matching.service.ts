@@ -22,6 +22,9 @@ import {
   providedIn: 'root',
 })
 export class VersionMatchingService {
+  private versionCache = new Map<string, MediaVersion[]>();
+  private versionRequests = new Map<string, Promise<MediaVersion[]>>();
+
   constructor(private memory: MemoryService) {}
 
   /**
@@ -236,6 +239,32 @@ export class VersionMatchingService {
    * representing the same movie or TV show.
    */
   async findVersions(channel: Channel, knownYear?: string): Promise<MediaVersion[]> {
+    if (!channel) return [];
+
+    const key = this.getGroupedTitleKey(channel, knownYear);
+    const cached = this.versionCache.get(key);
+    if (cached) return cached;
+
+    const inFlight = this.versionRequests.get(key);
+    if (inFlight) return inFlight;
+
+    const request = this.findVersionsUncached(channel, knownYear);
+    this.versionRequests.set(key, request);
+    try {
+      const versions = await request;
+      this.versionCache.set(key, versions);
+      return versions;
+    } finally {
+      this.versionRequests.delete(key);
+    }
+  }
+
+  getCachedVersions(channel: Channel, knownYear?: string): MediaVersion[] | undefined {
+    if (!channel) return undefined;
+    return this.versionCache.get(this.getGroupedTitleKey(channel, knownYear));
+  }
+
+  private async findVersionsUncached(channel: Channel, knownYear?: string): Promise<MediaVersion[]> {
     if (!channel) return [];
 
     const rawName = channel.name || '';
@@ -658,5 +687,38 @@ export class VersionMatchingService {
     }
 
     return undefined;
+  }
+
+  /**
+   * Returns a saved preferred source when it contains enough stream metadata
+   * to begin playback without waiting for a catalog-wide version lookup.
+   */
+  getStoredPreferredChannel(channel: Channel, knownYear?: string): Channel | undefined {
+    if (!channel) return undefined;
+    try {
+      const raw = localStorage.getItem(this.getGroupedTitleKey(channel, knownYear));
+      if (!raw) return undefined;
+
+      const stored = JSON.parse(raw);
+      if (
+        stored?.channelId == null ||
+        !stored.url ||
+        stored.sourceId == null
+      ) {
+        return undefined;
+      }
+
+      return {
+        ...channel,
+        id: stored.channelId,
+        name: stored.rawName || channel.name,
+        url: stored.url,
+        source_id: stored.sourceId,
+        favorite: !!channel.favorite,
+      };
+    } catch (err) {
+      console.warn('Failed to read saved preferred version for playback:', err);
+      return undefined;
+    }
   }
 }

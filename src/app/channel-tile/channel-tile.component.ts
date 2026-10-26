@@ -126,6 +126,8 @@ export class ChannelTileComponent implements OnInit, OnDestroy, AfterViewInit, O
       try {
         const canvas = this.embeddedPlayer.resolveVideoCanvasId();
         await this.embeddedPlayer.playMediaDirectly(this.channel, canvas);
+      } catch (e) {
+        this.error.handleError(e, 'Failed to start playback');
       } finally {
         this.starting = false;
       }

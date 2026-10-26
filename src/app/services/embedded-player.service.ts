@@ -20,6 +20,7 @@ import {
 } from '../utils/media-presentation';
 import { isInputFocused } from '../utils';
 import { VersionMatchingService } from './version-matching.service';
+import { MediaVersion } from '../models/version';
 import { MovieDetailService } from './movie-detail.service';
 import { TvDetailService } from './tv-detail.service';
 import { HomeDiscoveryStateService } from './home-discovery-state.service';
@@ -1850,20 +1851,13 @@ export class EmbeddedPlayerService implements OnDestroy {
   }
 
   private async playMovieDirectly(channel: Channel, canvas: string): Promise<void> {
-    let playChannel: Channel = channel;
-    try {
-      const versions = await this.versionMatching.findVersions(channel);
-      if (versions && versions.length > 0) {
-        const preferred =
-          this.versionMatching.getPreferredVersion(channel, versions) ||
-          this.versionMatching.getDefaultVersion(versions, channel);
-        if (preferred?.channel) {
-          playChannel = { ...preferred.channel, favorite: !!channel.favorite };
-          this.versionMatching.savePreferredVersion(channel, preferred);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to find versions for movie in playMediaDirectly:', e);
+    let playChannel = this.getImmediatePlaybackChannel(channel);
+
+    // Version discovery searches the full local catalog and can take several
+    // seconds. Only wait for it when the card did not include a playable
+    // source; otherwise start the selected/default source immediately.
+    if (!this.hasPlayableStream(playChannel)) {
+      playChannel = await this.resolvePlayableVersion(channel, 'movie');
     }
 
     if (!playChannel.url || !playChannel.source_id) {
@@ -1888,6 +1882,10 @@ export class EmbeddedPlayerService implements OnDestroy {
       }
     }
 
+    if (!this.hasPlayableStream(playChannel)) {
+      throw new Error('No playable movie source is available.');
+    }
+
     const startPos = this.getSavedPosition(playChannel.id, playChannel);
     await this.startPlayer(playChannel, canvas, {
       title: cleanMediaTitle(playChannel.name),
@@ -1896,22 +1894,63 @@ export class EmbeddedPlayerService implements OnDestroy {
     });
   }
 
-  private async playSeriesDirectly(channel: Channel, canvas: string): Promise<void> {
-    let seriesChannel: Channel = channel;
+  private getImmediatePlaybackChannel(channel: Channel): Channel {
+    const cachedVersions = this.versionMatching.getCachedVersions(channel);
+    if (cachedVersions?.length) {
+      const preferred = this.getEnglishPreferredVersion(channel, cachedVersions);
+      if (preferred?.channel) {
+        return { ...preferred.channel, favorite: !!channel.favorite };
+      }
+    }
+
+    const savedPreferred = this.versionMatching.getStoredPreferredChannel(channel);
+    if (savedPreferred && this.versionMatching.isEnglishVersion(savedPreferred)) {
+      return savedPreferred;
+    }
+
+    return { ...channel, favorite: !!channel.favorite };
+  }
+
+  private async resolvePlayableVersion(
+    channel: Channel,
+    mediaLabel: 'movie' | 'series',
+  ): Promise<Channel> {
     try {
       const versions = await this.versionMatching.findVersions(channel);
-      if (versions && versions.length > 0) {
-        const preferred =
-          this.versionMatching.getPreferredVersion(channel, versions) ||
-          this.versionMatching.getDefaultVersion(versions, channel);
-        if (preferred?.channel) {
-          seriesChannel = preferred.channel;
-          this.versionMatching.savePreferredVersion(channel, preferred);
-        }
+      const preferred = this.getEnglishPreferredVersion(channel, versions);
+      if (preferred?.channel) {
+        this.versionMatching.savePreferredVersion(channel, preferred);
+        return { ...preferred.channel, favorite: !!channel.favorite };
       }
     } catch (e) {
-      console.warn('Failed to find versions for series in playMediaDirectly:', e);
+      console.warn(`Failed to resolve a playable ${mediaLabel} version:`, e);
     }
+
+    return { ...channel, favorite: !!channel.favorite };
+  }
+
+  private getEnglishPreferredVersion(
+    channel: Channel,
+    versions: MediaVersion[],
+  ): MediaVersion | undefined {
+    const savedPreferred = this.versionMatching.getPreferredVersion(channel, versions);
+    if (savedPreferred && this.versionMatching.isEnglishVersion(savedPreferred)) {
+      return savedPreferred;
+    }
+
+    return (
+      versions.find((version) => this.versionMatching.isEnglishVersion(version)) ||
+      savedPreferred ||
+      this.versionMatching.getDefaultVersion(versions, channel)
+    );
+  }
+
+  private hasPlayableStream(channel: Channel): boolean {
+    return !!channel?.url && channel.source_id != null;
+  }
+
+  private async playSeriesDirectly(channel: Channel, canvas: string): Promise<void> {
+    const seriesChannel = this.getImmediatePlaybackChannel(channel);
 
     const seriesId =
       seriesChannel.series_id ||
