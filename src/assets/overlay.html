@@ -1147,6 +1147,40 @@
       opacity: 1;
     }
 
+    .track-actions-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .track-remove-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.45);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      pointer-events: auto !important;
+    }
+
+    .track-remove-btn:hover {
+      color: #ff5252;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .track-remove-btn svg {
+      width: 13px;
+      height: 13px;
+      display: block;
+    }
+
     .track-empty {
       font-size: 12px;
       color: rgba(255, 255, 255, 0.88);
@@ -2089,6 +2123,7 @@
     .box-nerd-stats,
     .nerd-close-btn,
     .track-option,
+    .track-remove-btn,
     .episode-card,
     .channel-row,
     .netflix-select,
@@ -2884,6 +2919,8 @@
       let cachedDuration = 0;
       let cachedEnd = null;
       let currentActiveChannelId = null;
+      let currentActiveMediaKey = null;
+      let loadedExternalSubtitles = [];
       let lastProgressSaveTime = 0;
       let pendingResumeTime = 0;
       let hasResumedForCurrentMedia = false;
@@ -4158,6 +4195,104 @@
         return await tauriInvoke('plugin:dialog|open', { options });
       }
 
+      function computeStableMediaKeyForCurrent() {
+        if (currentContentMode === 'movie') {
+          const raw = currentRawTitle || '';
+          const clean = sanitizeShowTitle(raw).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+          const yMatch = raw.match(/\b(19\d\d|20\d\d)\b/);
+          const year = yMatch ? yMatch[1] : '';
+          return `movie_${clean}${year ? '_' + year : ''}`;
+        }
+        if (currentContentMode === 'episode') {
+          const sTitle = episodesData.seriesTitle || '';
+          const clean = sanitizeShowTitle(sTitle).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+          const sNum = episodesData.currentSeasonNum || 1;
+          let epNum = 1;
+          if (episodesData.episodes && currentActiveChannelId) {
+            const ep = episodesData.episodes.find((e) => e.id === currentActiveChannelId);
+            if (ep && ep.episodeNum) epNum = ep.episodeNum;
+          }
+          return `episode_${clean}_s${sNum}_e${epNum}`;
+        }
+        return currentActiveChannelId ? `channel_${currentActiveChannelId}` : '';
+      }
+
+      async function attachSavedExternalSubtitles() {
+        if (!currentActiveMediaKey) {
+          currentActiveMediaKey = computeStableMediaKeyForCurrent();
+        }
+        if (!currentActiveMediaKey && !currentActiveChannelId) return;
+
+        try {
+          const subs = await tauriInvoke('get_saved_external_subtitles', {
+            mediaKey: currentActiveMediaKey || '',
+            channelId: currentActiveChannelId || null
+          });
+
+          if (Array.isArray(subs) && subs.length > 0) {
+            loadedExternalSubtitles = subs;
+            const pref = getSavedSubtitlePreference();
+            const shouldSelect = !pref || !pref.off;
+
+            subs.forEach((s, idx) => {
+              const alreadyAdded = tracks.some(
+                (t) =>
+                  t['external-filename'] === s.managed_path ||
+                  (t.title && t.title.trim().toLowerCase() === s.file_name.trim().toLowerCase())
+              );
+              if (!alreadyAdded) {
+                const reqId = ++trackRequestIdSeq;
+                pendingTrackRequests[reqId] = {
+                  type: 'sub-add',
+                  filePath: s.managed_path,
+                  fileName: s.file_name,
+                  isSaved: true
+                };
+                const flag = (idx === 0 && shouldSelect) ? 'select' : 'auto';
+                sendMpv(['sub-add', s.managed_path, flag, s.file_name], reqId);
+              }
+            });
+          }
+        } catch (err) {
+          console.warn('[overlay] Failed to attach saved external subtitles:', err);
+        }
+      }
+
+      async function handleRemoveSubtitle(track) {
+        if (!track) return;
+        const trackId = track.id;
+        const filePath = track['external-filename'] || '';
+        const title = track.title || '';
+
+        sendMpv(['sub-remove', trackId]);
+
+        if (String(currentSid) === String(trackId)) {
+          currentSid = 'no';
+          saveSubtitlePreference('off');
+        }
+
+        try {
+          const matched = loadedExternalSubtitles.find(
+            (s) =>
+              (filePath && s.managed_path === filePath) ||
+              (title && s.file_name.trim().toLowerCase() === title.trim().toLowerCase())
+          );
+          await tauriInvoke('remove_external_subtitle', {
+            id: matched ? matched.id : '',
+            managedPath: matched ? matched.managed_path : (filePath || '')
+          });
+          if (matched) {
+            loadedExternalSubtitles = loadedExternalSubtitles.filter((s) => s.id !== matched.id);
+          }
+        } catch (err) {
+          console.warn('[overlay] Error removing external subtitle:', err);
+        }
+
+        tracks = tracks.filter((t) => t.id !== trackId);
+        renderTracks();
+        requestTrackInfo();
+      }
+
       async function handleAddExternalSubtitles() {
         try {
           isFileDialogOpen = true;
@@ -4197,13 +4332,37 @@
           const fileName = filePath.split(/[/\\]/).pop() || filePath;
           hasAppliedSubPreferenceForCurrentMedia = true;
 
+          if (!currentActiveMediaKey) {
+            currentActiveMediaKey = computeStableMediaKeyForCurrent();
+          }
+
+          let managedPath = filePath;
+          let subRecord = null;
+          try {
+            subRecord = await tauriInvoke('save_external_subtitle', {
+              sourcePath: filePath,
+              fileName: fileName,
+              mediaKey: currentActiveMediaKey || '',
+              channelId: currentActiveChannelId || null
+            });
+            if (subRecord && subRecord.managed_path) {
+              managedPath = subRecord.managed_path;
+              loadedExternalSubtitles = loadedExternalSubtitles.filter(
+                (s) => s.file_name.toLowerCase() !== fileName.toLowerCase()
+              );
+              loadedExternalSubtitles.push(subRecord);
+            }
+          } catch (saveErr) {
+            console.warn('[overlay] Failed to save managed subtitle in app-data:', saveErr);
+          }
+
           const reqId = ++trackRequestIdSeq;
           pendingTrackRequests[reqId] = {
             type: 'sub-add',
-            filePath: filePath,
+            filePath: managedPath,
             fileName: fileName
           };
-          sendMpv(['sub-add', filePath, 'select', fileName], reqId);
+          sendMpv(['sub-add', managedPath, 'select', fileName], reqId);
         } catch (err) {
           isFileDialogOpen = false;
           showControls();
@@ -4297,10 +4456,36 @@
         } else {
           subTracks.forEach((t) => {
             const isSelected = !subsDisabled && (String(t.id) === String(activeSid) || (activeSid == null && t.selected));
+            const isExternal = !!(t.external || t['external-filename']);
             const btn = document.createElement('button');
-            btn.className = `track-option ${isSelected ? 'selected' : ''}`;
+            btn.className = `track-option ${isSelected ? 'selected' : ''} ${isExternal ? 'track-external' : ''}`;
             const label = formatTrackLabel(t, 'Subtitle');
-            btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+
+            if (isExternal) {
+              btn.innerHTML = `
+                <span>${label}</span>
+                <div class="track-actions-group">
+                  <svg class="track-check" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                  </svg>
+                  <button class="track-remove-btn" type="button" title="Remove saved subtitle">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  </button>
+                </div>
+              `;
+              const removeBtn = btn.querySelector('.track-remove-btn');
+              if (removeBtn) {
+                removeBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  handleRemoveSubtitle(t);
+                });
+              }
+            } else {
+              btn.innerHTML = `<span>${label}</span><svg class="track-check" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+            }
+
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
               selectSubtitleTrack(t.id, t);
@@ -6220,8 +6405,10 @@
 
             if (pending.type === 'sub-add') {
               if (parsed.error && parsed.error !== 'success') {
-                console.error('[overlay] Failed to load external subtitle:', parsed.error);
-                showTrackError(`Failed to load subtitle file: ${parsed.error === 'generic error' ? 'Invalid or unsupported format' : parsed.error}`);
+                if (!pending.isSaved) {
+                  console.error('[overlay] Failed to load external subtitle:', parsed.error);
+                  showTrackError(`Failed to load subtitle file: ${parsed.error === 'generic error' ? 'Invalid or unsupported format' : parsed.error}`);
+                }
               } else {
                 hasAppliedSubPreferenceForCurrentMedia = true;
                 requestTrackInfo();
@@ -6248,6 +6435,7 @@
           if (parsed.event === 'file-loaded') {
             hideSeekToast();
             requestTrackInfo();
+            attachSavedExternalSubtitles();
             if (!hasAppliedSubPreferenceForCurrentMedia) {
               applySubtitlePreferences();
             }
@@ -6691,6 +6879,8 @@
           if (event.payload.nextEpisode !== undefined) {
             upNextState.nextEpisode = event.payload.nextEpisode;
           }
+          currentActiveMediaKey = computeStableMediaKeyForCurrent();
+          attachSavedExternalSubtitles();
           renderEpisodes();
         }
       });
@@ -6761,6 +6951,13 @@
         tracks = [];
         currentAid = null;
         currentSid = 'no';
+        if (event.payload?.stableMediaKey) {
+          currentActiveMediaKey = event.payload.stableMediaKey;
+        } else {
+          currentActiveMediaKey = computeStableMediaKeyForCurrent();
+        }
+        loadedExternalSubtitles = [];
+        attachSavedExternalSubtitles();
         renderTracks();
         requestTrackInfo();
         sendMpv(['observe_property', 14, 'speed']);
@@ -6806,6 +7003,8 @@
         tracks = [];
         currentAid = null;
         currentSid = 'no';
+        currentActiveMediaKey = null;
+        loadedExternalSubtitles = [];
         renderTracks();
         updateSpeedUI(1.0);
         currentTime = 0;

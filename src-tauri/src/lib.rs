@@ -114,7 +114,10 @@ pub fn run() {
             embedded_poc::get_embedded_player_info,
             embedded_poc::toggle_player_fullscreen,
             embedded_poc::set_main_window_fullscreen,
-            embedded_poc::get_overlay_top_crop
+            embedded_poc::get_overlay_top_crop,
+            embedded_poc::save_external_subtitle,
+            embedded_poc::get_saved_external_subtitles,
+            embedded_poc::remove_external_subtitle
         ])
         .setup(|app| {
             app.manage(Mutex::new(AppState {

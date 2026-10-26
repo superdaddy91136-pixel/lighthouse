@@ -16,6 +16,7 @@ import {
   sanitizeShowTitle,
   sanitizeEpisodeTitle,
   formatPlayerEpisodeLabel,
+  extractYear,
 } from '../utils/media-presentation';
 import { isInputFocused } from '../utils';
 import { VersionMatchingService } from './version-matching.service';
@@ -835,11 +836,14 @@ export class EmbeddedPlayerService implements OnDestroy {
         zOrder: 'top',
       });
 
+      const stableMediaKey = this.computeStableMediaKey(playChannel, options);
       emit('embedded-player-started', {
         name: options?.title || channel.name,
         channel_id: channel.id,
         channelId: channel.id,
         startTime: startPos,
+        mode: this.currentMode,
+        stableMediaKey: stableMediaKey,
       }).catch(console.warn);
       emit('embedded-player-mode', { mode: this.currentMode, channelId: channel.id }).catch(console.warn);
       emit('overlay-top-crop', { crop: 32 }).catch(console.warn);
@@ -1167,6 +1171,24 @@ export class EmbeddedPlayerService implements OnDestroy {
     } catch (e) {
       console.warn('Failed to load episodes for season in embedded player:', e);
     }
+  }
+
+  public computeStableMediaKey(channel?: Channel, options?: any): string {
+    if (!channel) return '';
+    if (this.currentMode === 'movie' || channel.media_type === MediaType.movie) {
+      const raw = options?.title || channel.name || '';
+      const clean = cleanMediaTitle(raw).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const year = extractYear(raw) || '';
+      return `movie_${clean}${year ? '_' + year : ''}`;
+    }
+    if (this.currentMode === 'episode' || channel.season_id != null || channel.episode_num != null) {
+      const sTitle = options?.seriesTitle || this.seriesTitle || this.extractSeriesTitle(channel) || '';
+      const clean = cleanMediaTitle(sTitle).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const sNum = options?.currentSeasonNum || this.currentSeasonNum || this.extractSeasonNumber(channel);
+      const eNum = channel.episode_num ?? this.extractEpisodeNumber(channel.name);
+      return `episode_${clean}_s${sNum}_e${eNum}`;
+    }
+    return `channel_${channel.id}`;
   }
 
   public extractSeasonNumber(channel?: Channel): number {

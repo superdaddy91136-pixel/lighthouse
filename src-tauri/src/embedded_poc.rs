@@ -2087,3 +2087,163 @@ pub async fn set_main_window_fullscreen(
         Err("Main window not found".to_string())
     }
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SavedSubtitleRecord {
+    pub id: String,
+    pub media_key: String,
+    pub channel_id: Option<i64>,
+    pub file_name: String,
+    pub managed_path: String,
+    pub added_at: i64,
+}
+
+fn get_subtitles_dir() -> Result<std::path::PathBuf, String> {
+    let proj = directories::ProjectDirs::from("dev", "fredol", "open-tv")
+        .ok_or_else(|| "Failed to get project dirs".to_string())?;
+    let dir = proj.data_dir().join("subtitles");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create subtitles directory: {}", e))?;
+    }
+    Ok(dir)
+}
+
+fn get_subtitles_manifest_path() -> Result<std::path::PathBuf, String> {
+    let dir = get_subtitles_dir()?;
+    Ok(dir.join("subtitles.json"))
+}
+
+fn load_subtitles_manifest() -> Vec<SavedSubtitleRecord> {
+    if let Ok(path) = get_subtitles_manifest_path() {
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(records) = serde_json::from_str::<Vec<SavedSubtitleRecord>>(&content) {
+                    return records;
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn save_subtitles_manifest(records: &[SavedSubtitleRecord]) -> Result<(), String> {
+    let path = get_subtitles_manifest_path()?;
+    let json = serde_json::to_string_pretty(records)
+        .map_err(|e| format!("Serialization error: {}", e))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to write subtitles manifest: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_external_subtitle(
+    source_path: String,
+    file_name: String,
+    media_key: String,
+    channel_id: Option<i64>,
+) -> Result<SavedSubtitleRecord, String> {
+    let src = std::path::Path::new(&source_path);
+    if !src.exists() || !src.is_file() {
+        return Err("Source subtitle file does not exist".to_string());
+    }
+
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !["srt", "ass", "ssa", "vtt"].contains(&ext.as_str()) {
+        return Err(format!("Unsupported subtitle format: .{}", ext));
+    }
+
+    let dir = get_subtitles_dir()?;
+    let clean_name: String = file_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let sub_id = format!("{}_{}", chrono::Utc::now().timestamp_millis(), clean_name);
+    let dest_path = dir.join(&sub_id);
+
+    std::fs::copy(src, &dest_path)
+        .map_err(|e| format!("Failed to copy subtitle file to app-data directory: {}", e))?;
+
+    let mut records = load_subtitles_manifest();
+
+    // Avoid duplicate entries: if the same media has a subtitle with the same file name, replace it
+    records.retain(|r| {
+        let same_media = (!media_key.is_empty() && r.media_key == media_key)
+            || (channel_id.is_some() && r.channel_id.is_some() && r.channel_id == channel_id);
+        let same_name = r.file_name.eq_ignore_ascii_case(&file_name);
+        if same_media && same_name {
+            let old_file = std::path::PathBuf::from(&r.managed_path);
+            if old_file.starts_with(&dir) && old_file.exists() {
+                let _ = std::fs::remove_file(&old_file);
+            }
+            return false;
+        }
+        true
+    });
+
+    let record = SavedSubtitleRecord {
+        id: sub_id,
+        media_key,
+        channel_id,
+        file_name,
+        managed_path: dest_path.to_string_lossy().to_string(),
+        added_at: chrono::Utc::now().timestamp_millis(),
+    };
+
+    records.push(record.clone());
+    save_subtitles_manifest(&records)?;
+
+    Ok(record)
+}
+
+#[tauri::command]
+pub async fn get_saved_external_subtitles(
+    media_key: String,
+    channel_id: Option<i64>,
+) -> Result<Vec<SavedSubtitleRecord>, String> {
+    let records = load_subtitles_manifest();
+    let mut matched = Vec::new();
+    for rec in records {
+        let key_match = !media_key.is_empty() && rec.media_key == media_key;
+        let ch_match = channel_id.is_some() && rec.channel_id.is_some() && rec.channel_id == channel_id;
+        if key_match || ch_match {
+            // Gracefully ignore missing subtitle files
+            if std::path::Path::new(&rec.managed_path).exists() {
+                matched.push(rec);
+            }
+        }
+    }
+    Ok(matched)
+}
+
+#[tauri::command]
+pub async fn remove_external_subtitle(
+    id: String,
+    managed_path: String,
+) -> Result<(), String> {
+    if let Ok(dir) = get_subtitles_dir() {
+        let p = std::path::PathBuf::from(&managed_path);
+        // Never delete the user's original file: only delete files inside Lighthouse's managed subtitles directory!
+        if p.starts_with(&dir) && p.exists() {
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+
+    let mut records = load_subtitles_manifest();
+    records.retain(|r| {
+        if !id.is_empty() && r.id == id {
+            return false;
+        }
+        if !managed_path.is_empty() && r.managed_path == managed_path {
+            return false;
+        }
+        true
+    });
+    save_subtitles_manifest(&records)?;
+
+    Ok(())
+}
