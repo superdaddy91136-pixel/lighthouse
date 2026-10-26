@@ -306,7 +306,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     );
 
     const cachedSnapshot = this.discoveryState.getSnapshot();
-    if (cachedSnapshot?.masterHeroItems.length) {
+    if (cachedSnapshot && this.discoveryState.hasCachedContent(cachedSnapshot)) {
       this.syncFromSnapshot(cachedSnapshot);
       this.loading = false;
       if (this.currentHero?.imageUrl) {
@@ -325,10 +325,8 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (!this.discoveryState.isFresh()) {
       this.loadDiscovery();
     } else {
-      // Continue Watching is intentionally not part of the cached discovery
-      // snapshot. Refresh its local history whenever Home is recreated so
-      // playback completed on a detail route is immediately reflected.
       this.refreshContinueWatching();
+      this.refreshFavorites();
     }
     this.updateAmbientBackground();
 
@@ -925,6 +923,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         this.masterDiscoveryRows = rows.sort(
           (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
         );
+        this.cacheLocalRows();
         this.applyContentPreferences();
 
         // Select an active hero title avoiding recently displayed titles
@@ -989,6 +988,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       this.masterDiscoveryRows = rows.sort(
         (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
       );
+      this.cacheLocalRows();
       this.applyContentPreferences();
       this.hasAnyContent =
         this.heroItems.length > 0 ||
@@ -1083,11 +1083,66 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
 
       this.applyContentPreferences();
       this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
-    this.updateAmbientBackground();
+      this.cacheLocalRows();
+      this.updateAmbientBackground();
       this.cdr.markForCheck();
     } catch (err) {
       console.warn("Failed to refresh continue watching:", err);
     }
+  }
+
+  private async refreshFavorites(): Promise<void> {
+    if (this.isDestroyed) return;
+    try {
+      const enabledSourceIds = Array.from(this.memory.Sources.keys());
+      if (enabledSourceIds.length === 0) return;
+
+      const favorites = await this.fetchSafe({
+        source_ids: enabledSourceIds,
+        view_type: ViewMode.Favorites,
+        media_types: [MediaType.movie, MediaType.serie],
+        page: 1,
+        sort: SortType.alphabeticalAscending,
+        use_keywords: false,
+      });
+
+      if (this.isDestroyed) return;
+      const rowIndex = this.masterDiscoveryRows.findIndex((row) => row.id === "row-favorites");
+      if (favorites.length > 0) {
+        const favoritesRow: DiscoveryRow = {
+          id: "row-favorites",
+          title: "Your Favorites",
+          icon: "star",
+          badge: `${favorites.length}`,
+          items: favorites,
+        };
+        if (rowIndex !== -1) {
+          this.masterDiscoveryRows[rowIndex] = favoritesRow;
+        } else {
+          this.masterDiscoveryRows.push(favoritesRow);
+          this.masterDiscoveryRows.sort(
+            (a, b) => this.getRowPriority(a.id) - this.getRowPriority(b.id)
+          );
+        }
+      } else if (rowIndex !== -1) {
+        this.masterDiscoveryRows.splice(rowIndex, 1);
+      }
+
+      this.applyContentPreferences();
+      this.hasAnyContent = this.heroItems.length > 0 || this.discoveryRows.length > 0;
+      this.cacheLocalRows();
+      this.cdr.markForCheck();
+    } catch (err) {
+      console.warn("Failed to refresh favorites:", err);
+    }
+  }
+
+  private cacheLocalRows(): void {
+    this.discoveryState.setLocalRows(
+      this.masterDiscoveryRows.filter(
+        (row) => row.id === "row-continue-watching" || row.id === "row-favorites"
+      )
+    );
   }
 
   private triggerTmdbDiscoveryPipeline(
@@ -2574,13 +2629,10 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     this.currentHeroIndex = this.discoveryState.getActiveHeroIndex(this.heroItems);
     this.preloadVisibleHeroImages();
 
-    // Preserve fresh local rows: Continue Watching & Favorites
-    const cwRow = this.masterDiscoveryRows.find((r) => r.id === "row-continue-watching");
-    const favRow = this.masterDiscoveryRows.find((r) => r.id === "row-favorites");
-
-    const mergedRows: DiscoveryRow[] = [];
-    if (cwRow) mergedRows.push(cwRow);
-    if (favRow) mergedRows.push(favRow);
+    const mergedRows: DiscoveryRow[] = (snapshot.localRows || []).map((row) => ({
+      ...row,
+      items: [...row.items],
+    }));
 
     for (const tmdbRow of snapshot.tmdbRows) {
       if (tmdbRow.id !== "row-continue-watching" && tmdbRow.id !== "row-favorites") {

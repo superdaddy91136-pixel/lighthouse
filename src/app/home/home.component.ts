@@ -1419,6 +1419,13 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
             sessionStorage.setItem("refreshedOnStart", "true");
             this.refreshOnStart().then((_) => _);
           }
+          if (this.isHomeDiscoveryMode) {
+            const savedHomeScroll = this.memory.homeDiscoveryScrollPosition;
+            if (savedHomeScroll && savedHomeScroll > 0) {
+              this.restoreScrollPosition(savedHomeScroll);
+            }
+            return;
+          }
           this.load().then(async () => {
             if (this.filters?.view_type === ViewMode.Categories && !this.filters?.group_id) {
               const savedCatScroll = this.memory.categoryScrollPositions.get(currentTab);
@@ -2114,7 +2121,9 @@ export class HomeComponent implements AfterViewInit, OnDestroy {
     if (isCatalog) {
       this.loadAvailableCategories();
     }
-    this.load();
+    if (tab !== NavTab.Home) {
+      this.load();
+    }
     window.scrollTo({ top: 0, behavior: "instant" });
   }
 

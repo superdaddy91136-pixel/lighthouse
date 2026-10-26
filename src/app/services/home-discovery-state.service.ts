@@ -8,6 +8,7 @@ export type DiscoveryPipelineStatus = 'idle' | 'loading' | 'success' | 'refreshi
 export interface HomeDiscoverySnapshot {
   recommendationSource: 'tmdb';
   tmdbRows: DiscoveryRow[];
+  localRows?: DiscoveryRow[];
   masterHeroItems: HeroItem[];
   allRecommended: Channel[];
   allLoadedMovies: Channel[];
@@ -52,8 +53,7 @@ export class HomeDiscoveryStateService {
         if (
           parsed &&
           parsed.recommendationSource === 'tmdb' &&
-          Array.isArray(parsed.masterHeroItems) &&
-          parsed.masterHeroItems.length > 0 &&
+          this.hasCachedContent(parsed) &&
           Date.now() - parsed.timestamp < this.CACHE_TTL_MS
         ) {
           this.snapshot = parsed;
@@ -84,12 +84,21 @@ export class HomeDiscoveryStateService {
     return hasRows;
   }
 
+  public hasCachedContent(snapshot: HomeDiscoverySnapshot | null = this.snapshot): boolean {
+    return !!snapshot && (
+      (Array.isArray(snapshot.masterHeroItems) && snapshot.masterHeroItems.length > 0) ||
+      (Array.isArray(snapshot.tmdbRows) && snapshot.tmdbRows.length > 0) ||
+      (Array.isArray(snapshot.localRows) && snapshot.localRows.length > 0)
+    );
+  }
+
   /**
    * Checks if the cached TMDB data is within the freshness threshold.
    */
   public isFresh(maxAgeMs: number = this.CACHE_TTL_MS): boolean {
-    if (!this.snapshot || !this.hasValidTmdbData()) return false;
-    return Date.now() - this.snapshot.timestamp < maxAgeMs;
+    const snapshot = this.snapshot;
+    if (!snapshot || !this.hasCachedContent(snapshot)) return false;
+    return Date.now() - snapshot.timestamp < maxAgeMs;
   }
 
   /**
@@ -208,6 +217,25 @@ export class HomeDiscoveryStateService {
     }
   }
 
+  public setLocalRows(rows: DiscoveryRow[]): void {
+    if (!this.snapshot) {
+      this.snapshot = {
+        recommendationSource: 'tmdb',
+        tmdbRows: [],
+        localRows: [],
+        masterHeroItems: [],
+        allRecommended: [],
+        allLoadedMovies: [],
+        allLoadedSeries: [],
+        timestamp: Date.now(),
+        status: 'refreshing',
+      };
+    }
+
+    this.snapshot.localRows = rows.map((row) => ({ ...row, items: [...row.items] }));
+    this.persistSnapshot();
+  }
+
   /**
    * Commits a successful pipeline execution, updates the timestamp, and notifies subscribers.
    */
@@ -221,6 +249,7 @@ export class HomeDiscoveryStateService {
     this.snapshot = {
       recommendationSource: 'tmdb',
       tmdbRows: tmdbRows.map((r) => ({ ...r, items: [...r.items] })),
+      localRows: this.snapshot?.localRows?.map((r) => ({ ...r, items: [...r.items] })) || [],
       masterHeroItems: [...heroPool],
       allRecommended: [...recommended],
       allLoadedMovies: [...movies],
@@ -228,12 +257,17 @@ export class HomeDiscoveryStateService {
       timestamp: Date.now(),
       status: 'success',
     };
+    this.persistSnapshot();
+    this.discoveryUpdated$.next(this.snapshot);
+  }
+
+  private persistSnapshot(): void {
+    if (!this.snapshot) return;
     try {
       localStorage.setItem('lighthouse_home_discovery_snapshot', JSON.stringify(this.snapshot));
     } catch {
       // ignore storage errors
     }
-    this.discoveryUpdated$.next(this.snapshot);
   }
 
   /**
