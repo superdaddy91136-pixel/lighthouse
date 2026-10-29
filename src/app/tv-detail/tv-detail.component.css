@@ -28,3 +28,55 @@
   height: 100%;
   background: transparent;
 }
+
+/* Favorite Icon Button & Immediate Tooltip */
+.btn-detail-favorite {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.detail-btn-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(18, 20, 26, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  line-height: 1.2;
+}
+
+.detail-btn-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px 4px 0 4px;
+  border-style: solid;
+  border-color: rgba(18, 20, 26, 0.96) transparent transparent transparent;
+}
+
+.btn-detail-favorite:hover .detail-btn-tooltip,
+.btn-detail-favorite:focus-visible .detail-btn-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
