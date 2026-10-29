@@ -77,6 +77,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   cleanTitle: string = '';
   backdropUrl?: string;
+  currentBackdropPath?: string;
 
   private updateAmbientBackground(): void {
     const art = (!this.backdropError && this.backdropUrl) ? this.backdropUrl : (this.posterUrl || this.show?.image);
@@ -310,6 +311,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.backdropError = false;
     this.backdropUrl = undefined;
     this.isBackdropFallback = false;
+    this.currentBackdropPath = undefined;
+    this.backdropRotationApplied = false;
     this.castImageErrors.clear();
     this.episodeImageErrors.clear();
     this.seasons = [];
@@ -331,14 +334,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    if (cached?.backdropPath) {
-      this.backdropUrl = getTmdbBackdropUrl(cached.backdropPath, 'original') || getTmdbBackdropUrl(cached.backdropPath, 'w1280');
-      this.isBackdropFallback = false;
-      this.applyEnrichment(cached);
-    } else {
-      if (cached) {
-        this.applyEnrichment(cached);
+    if (cached) {
+      const chosen = this.pickRotatedBackdrop(cached);
+      if (chosen) {
+        this.currentBackdropPath = chosen;
+        this.backdropUrl = getTmdbBackdropUrl(chosen, 'original') || getTmdbBackdropUrl(chosen, 'w1280');
+        this.isBackdropFallback = false;
       }
+      this.applyEnrichment(cached);
     }
     this.updateAmbientBackground();
 
@@ -517,11 +520,69 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     await this.loadSeasonsAndEpisodes(this.show);
   }
 
+  /** Tracks whether backdrop rotation index has been chosen for the current visit */
+  private backdropRotationApplied: boolean = false;
+
+  /**
+   * Picks a rotated backdrop path for this detail-screen visit.
+   * Rotates through backdropPaths on each new visit, persisting the index and path per TMDB ID.
+   * Returns the chosen path or falls back to the single backdropPath.
+   */
+  private pickRotatedBackdrop(enr: TmdbMediaEnrichment): string | undefined {
+    if (!enr.backdropPath) return undefined;
+    const paths = enr.backdropPaths;
+    if (!paths || paths.length <= 1) {
+      this.currentBackdropPath = enr.backdropPath;
+      return enr.backdropPath;
+    }
+
+    const storageKey = `lh_backdrop_idx_${enr.tmdbId}`;
+    const pathKey = `lh_backdrop_path_${enr.tmdbId}`;
+
+    if (!this.backdropRotationApplied) {
+      this.backdropRotationApplied = true;
+      try {
+        const prev = localStorage.getItem(storageKey);
+        const prevIdx = prev != null ? parseInt(prev, 10) : -1;
+        const nextIdx = (isNaN(prevIdx) || prevIdx < 0) ? 0 : (prevIdx + 1) % paths.length;
+        const chosen = paths[nextIdx] || enr.backdropPath;
+        localStorage.setItem(storageKey, String(nextIdx));
+        localStorage.setItem(pathKey, chosen);
+        this.currentBackdropPath = chosen;
+        return chosen;
+      } catch {
+        this.currentBackdropPath = enr.backdropPath;
+        return enr.backdropPath;
+      }
+    }
+
+    if (this.currentBackdropPath) {
+      return this.currentBackdropPath;
+    }
+
+    try {
+      const persistedPath = localStorage.getItem(pathKey);
+      if (persistedPath && paths.includes(persistedPath)) {
+        this.currentBackdropPath = persistedPath;
+        return persistedPath;
+      }
+      const idx = parseInt(localStorage.getItem(storageKey) || '0', 10);
+      const chosen = paths[isNaN(idx) ? 0 : idx % paths.length] || enr.backdropPath;
+      this.currentBackdropPath = chosen;
+      return chosen;
+    } catch {
+      this.currentBackdropPath = enr.backdropPath;
+      return enr.backdropPath;
+    }
+  }
+
   applyEnrichment(enr: TmdbMediaEnrichment): void {
     this.enrichment = enr;
 
-    if (enr.backdropPath) {
-      const highResBackdrop = getTmdbBackdropUrl(enr.backdropPath, 'original') || getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+    const chosenBackdrop = this.pickRotatedBackdrop(enr);
+    if (chosenBackdrop) {
+      this.currentBackdropPath = chosenBackdrop;
+      const highResBackdrop = getTmdbBackdropUrl(chosenBackdrop, 'original') || getTmdbBackdropUrl(chosenBackdrop, 'w1280');
       if (highResBackdrop) {
         if (this.backdropUrl === highResBackdrop && !this.backdropError) {
           this.isBackdropFallback = false;
@@ -535,7 +596,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
             this.cdr.markForCheck();
           };
           img.onerror = () => {
-            const w1280 = getTmdbBackdropUrl(enr.backdropPath, 'w1280');
+            const w1280 = getTmdbBackdropUrl(chosenBackdrop, 'w1280');
             if (w1280 && w1280 !== highResBackdrop) {
               this.backdropUrl = w1280;
               this.isBackdropFallback = false;
@@ -1338,8 +1399,9 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   onBackdropError(): void {
     if (this.backdropUrl && !this.isBackdropFallback) {
-      if (this.enrichment?.backdropPath && this.backdropUrl.includes('/original/')) {
-        const w1280 = getTmdbBackdropUrl(this.enrichment.backdropPath, 'w1280');
+      const path = this.currentBackdropPath || this.enrichment?.backdropPath;
+      if (path && this.backdropUrl.includes('/original/')) {
+        const w1280 = getTmdbBackdropUrl(path, 'w1280');
         if (w1280 && w1280 !== this.backdropUrl) {
           this.backdropUrl = w1280;
           this.isBackdropFallback = false;
