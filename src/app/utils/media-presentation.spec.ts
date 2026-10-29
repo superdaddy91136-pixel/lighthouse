@@ -50,6 +50,9 @@ describe('MediaPresentationUtils', () => {
       expect(extractYear('1917 (2019)')).toBe('2019');
 
       expect(cleanMediaTitle('Se7en (1995)')).toBe('Se7en');
+      expect(cleanMediaTitle('Crystal')).toBe('Crystal');
+      expect(cleanMediaTitle('Creed III')).toBe('Creed III');
+      expect(cleanMediaTitle('Skyfall')).toBe('Skyfall');
       expect(cleanMediaTitle("Ocean's 11 (2001)")).toBe("Ocean's 11");
     });
 
