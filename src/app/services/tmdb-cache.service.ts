@@ -13,6 +13,8 @@ const STORE_SEASONS = 'season_details';
 
 const DEFAULT_STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const DEFAULT_FAILED_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+export const CURRENT_LOGO_ALGO_VERSION = 2;
+const LOGO_VERSION_STORAGE_KEY = 'lh_tmdb_logo_version';
 
 @Injectable({
   providedIn: 'root',
@@ -63,11 +65,74 @@ export class TmdbCacheService {
         }
       };
 
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = async () => {
+        const db = req.result;
+        try {
+          await this.cleanseLegacyLogos(db);
+        } catch (e) {
+          console.warn('Error during logo cleansing:', e);
+        }
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
     });
 
     return this.dbPromise;
+  }
+
+  /**
+   * One-time migration to cleanse legacy unverified logos (e.g. Spanish logos) from IndexedDB.
+   */
+  private async cleanseLegacyLogos(db: IDBDatabase): Promise<void> {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    if (localStorage.getItem(LOGO_VERSION_STORAGE_KEY) === String(CURRENT_LOGO_ALGO_VERSION)) {
+      return;
+    }
+
+    try {
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE_MEDIA, 'readwrite');
+        const store = tx.objectStore(STORE_MEDIA);
+        const cursorReq = store.openCursor();
+
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (cursor) {
+            const item = cursor.value as TmdbMediaEnrichment;
+            if (item && item.logoPath && item.logoVersion !== CURRENT_LOGO_ALGO_VERSION) {
+              const updated: TmdbMediaEnrichment = {
+                ...item,
+                logoPath: undefined,
+                logoLanguage: undefined,
+                logoVersion: undefined,
+              };
+              cursor.update(updated);
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+
+        cursorReq.onerror = () => resolve();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+
+      localStorage.setItem(LOGO_VERSION_STORAGE_KEY, String(CURRENT_LOGO_ALGO_VERSION));
+    } catch (e) {
+      console.warn('Failed to cleanse legacy TMDB logos in IndexedDB:', e);
+    }
+  }
+
+  private sanitizeEnrichment(item?: TmdbMediaEnrichment): TmdbMediaEnrichment | undefined {
+    if (!item) return undefined;
+    if (item.logoPath && item.logoVersion !== CURRENT_LOGO_ALGO_VERSION) {
+      item.logoPath = undefined;
+      item.logoLanguage = undefined;
+      item.logoVersion = undefined;
+    }
+    return item;
   }
 
   /**
@@ -76,7 +141,7 @@ export class TmdbCacheService {
    */
   getEnrichmentSync(providerItemId?: number): TmdbMediaEnrichment | undefined {
     if (!providerItemId) return undefined;
-    return this.memoryCache.get(providerItemId);
+    return this.sanitizeEnrichment(this.memoryCache.get(providerItemId));
   }
 
   /**
@@ -84,7 +149,7 @@ export class TmdbCacheService {
    */
   getEnrichmentByTmdbIdSync(tmdbId?: number): TmdbMediaEnrichment | undefined {
     if (!tmdbId) return undefined;
-    return this.tmdbIdMemoryCache.get(tmdbId);
+    return this.sanitizeEnrichment(this.tmdbIdMemoryCache.get(tmdbId));
   }
 
   /**
@@ -95,7 +160,7 @@ export class TmdbCacheService {
     if (!providerItemId) return undefined;
 
     if (this.memoryCache.has(providerItemId)) {
-      return this.memoryCache.get(providerItemId);
+      return this.sanitizeEnrichment(this.memoryCache.get(providerItemId));
     }
 
     try {
@@ -106,7 +171,7 @@ export class TmdbCacheService {
         const req = store.get(providerItemId);
 
         req.onsuccess = () => {
-          const result = req.result as TmdbMediaEnrichment | undefined;
+          const result = this.sanitizeEnrichment(req.result as TmdbMediaEnrichment | undefined);
           if (result) {
             this.memoryCache.set(providerItemId, result);
             if (result.tmdbId) {
@@ -142,7 +207,7 @@ export class TmdbCacheService {
         for (const id of missingIds) {
           const req = store.get(id);
           req.onsuccess = () => {
-            const result = req.result as TmdbMediaEnrichment | undefined;
+            const result = this.sanitizeEnrichment(req.result as TmdbMediaEnrichment | undefined);
             if (result) {
               this.memoryCache.set(id, result);
               if (result.tmdbId) {
@@ -173,7 +238,8 @@ export class TmdbCacheService {
         const req = index.getAll(tmdbId);
 
         req.onsuccess = () => {
-          const results = (req.result as TmdbMediaEnrichment[]) || [];
+          const rawResults = (req.result as TmdbMediaEnrichment[]) || [];
+          const results = rawResults.map((r) => this.sanitizeEnrichment(r)!);
           for (const res of results) {
             if (res.providerItemId) {
               this.memoryCache.set(res.providerItemId, res);

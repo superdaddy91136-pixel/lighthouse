@@ -339,7 +339,7 @@ export class TmdbService {
   async getMovieDetails(movieId: number): Promise<any | null> {
     return await this.safeGet<any>(`/movie/${movieId}`, {
       append_to_response: 'credits,videos,images',
-      include_image_language: 'en,null,ja,ko,es,fr,de,it,pt,zh,hi',
+      include_image_language: 'en,hi,null,ja,ko,es,fr,de,it,pt,zh',
     });
   }
 
@@ -349,7 +349,7 @@ export class TmdbService {
   async getTvDetails(tvId: number): Promise<any | null> {
     return await this.safeGet<any>(`/tv/${tvId}`, {
       append_to_response: 'credits,videos,images',
-      include_image_language: 'en,null,ja,ko,es,fr,de,it,pt,zh,hi',
+      include_image_language: 'en,hi,null,ja,ko,es,fr,de,it,pt,zh',
     });
   }
 
@@ -396,7 +396,9 @@ export class TmdbService {
 
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.release_date && raw.release_date.length >= 4 ? raw.release_date.substring(0, 4) : undefined;
-    const logoPath = extractBestLogoPath(raw.images, raw.original_language);
+    const logoResult = extractBestLogo(raw.images, raw.original_language);
+    const logoPath = logoResult?.path;
+    const logoLanguage = logoResult?.language;
     const backdropResult = extractBestBackdropPath(raw.backdrop_path, raw.poster_path, raw.images);
     const backdropPath = backdropResult.best;
     const backdropPaths = backdropResult.all.length > 1 ? backdropResult.all : undefined;
@@ -414,6 +416,8 @@ export class TmdbService {
       backdropPath,
       backdropPaths,
       logoPath,
+      logoLanguage,
+      logoVersion: 2,
       releaseDate: raw.release_date || undefined,
       releaseYear,
       genres: genres.length > 0 ? genres : undefined,
@@ -473,7 +477,9 @@ export class TmdbService {
     const genres: string[] = (raw.genres || []).map((g: any) => g.name);
     const releaseYear = raw.first_air_date && raw.first_air_date.length >= 4 ? raw.first_air_date.substring(0, 4) : undefined;
     const runtime = raw.episode_run_time && raw.episode_run_time.length > 0 ? raw.episode_run_time[0] : undefined;
-    const logoPath = extractBestLogoPath(raw.images, raw.original_language);
+    const logoResult = extractBestLogo(raw.images, raw.original_language);
+    const logoPath = logoResult?.path;
+    const logoLanguage = logoResult?.language;
     const backdropResult = extractBestBackdropPath(raw.backdrop_path, raw.poster_path, raw.images);
     const backdropPath = backdropResult.best;
     const backdropPaths = backdropResult.all.length > 1 ? backdropResult.all : undefined;
@@ -491,6 +497,8 @@ export class TmdbService {
       backdropPath,
       backdropPaths,
       logoPath,
+      logoLanguage,
+      logoVersion: 2,
       releaseDate: raw.first_air_date || undefined,
       releaseYear,
       genres: genres.length > 0 ? genres : undefined,
@@ -546,12 +554,24 @@ export class TmdbService {
   }
 }
 
+export interface ExtractedLogo {
+  path: string;
+  language?: string;
+}
+
 /**
- * Selects the best title logo path from TMDB raw.images?.logos.
- * Hindi titles use Hindi -> English -> neutral/default artwork; other titles
- * retain the English -> neutral/default preference.
+ * Selects the best title logo artwork from TMDB raw.images?.logos.
+ *
+ * Strict Localization Policy:
+ * 1. English ("en")
+ * 2. Hindi ("hi")
+ * 3. Language-neutral artwork (no language specified / null)
+ * 4. Sensible fallback: Authentic original language of the title (if neither en, hi, nor neutral exists)
+ *
+ * Unrelated foreign language versions (such as Spanish "es" for non-Spanish titles)
+ * are disqualified to prevent displaying inappropriate localized artwork.
  */
-function extractBestLogoPath(images: any, originalLanguage?: string): string | undefined {
+function extractBestLogo(images: any, originalLanguage?: string): ExtractedLogo | undefined {
   const logos: any[] = images?.logos;
   if (!logos || !Array.isArray(logos) || logos.length === 0) {
     return undefined;
@@ -561,34 +581,59 @@ function extractBestLogoPath(images: any, originalLanguage?: string): string | u
   );
   if (valid.length === 0) return undefined;
 
-  const isHindiLanguage = (language: unknown): boolean =>
-    typeof language === 'string' && language.toLowerCase().split('-')[0] === 'hi';
-  const isHindiTitle = isHindiLanguage(originalLanguage);
-  const languagePriority = (logo: any): number => {
-    const language = typeof logo.iso_639_1 === 'string'
-      ? logo.iso_639_1.toLowerCase()
-      : '';
-
-    // TMDB logo records normally use ISO 639-1 ('hi'); accept hi-IN too.
-    if (isHindiTitle && isHindiLanguage(language)) return 4;
-    if (language === 'en') return 3;
-    if (!language) return 2;
-    return 1;
+  const normalizeLang = (val: unknown): string => {
+    if (typeof val !== 'string') return '';
+    const trimmed = val.trim().toLowerCase();
+    if (trimmed === 'null' || trimmed === 'undefined' || trimmed === 'xx') return '';
+    return trimmed.split(/[-_]/)[0];
   };
 
-  const scored = [...valid].sort((a, b) => {
-    const aLang = languagePriority(a);
-    const bLang = languagePriority(b);
-    if (aLang !== bLang) return bLang - aLang;
+  const normOrigLang = normalizeLang(originalLanguage);
 
-    const aScore = (a.vote_average || 0) * (a.vote_count || 1);
-    const bScore = (b.vote_average || 0) * (b.vote_count || 1);
+  const getLanguageTier = (logo: any): number => {
+    const lang = normalizeLang(logo.iso_639_1);
+    // 1. English ("en")
+    if (lang === 'en') return 4;
+    // 2. Hindi ("hi")
+    if (lang === 'hi') return 3;
+    // 3. Language-neutral (no language specified, e.g. null, empty, "null")
+    if (!lang) return 2;
+    // 4. Sensible fallback: authentic original language of the title
+    if (normOrigLang && lang === normOrigLang) return 1;
+    // Disqualified: unrelated foreign language (e.g. Spanish for Hindi/English titles)
+    return 0;
+  };
+
+  const eligible = valid.filter((logo) => getLanguageTier(logo) > 0);
+  if (eligible.length === 0) {
+    return undefined;
+  }
+
+  const scored = [...eligible].sort((a, b) => {
+    const aTier = getLanguageTier(a);
+    const bTier = getLanguageTier(b);
+    if (aTier !== bTier) return bTier - aTier;
+
+    // Within the same tier, sort by community rating quality (vote_average * vote_count)
+    const aScore = (Number(a.vote_average) || 0) * (Number(a.vote_count) || 1);
+    const bScore = (Number(b.vote_average) || 0) * (Number(b.vote_count) || 1);
     if (aScore !== bScore) return bScore - aScore;
 
-    return (b.width || 0) - (a.width || 0);
+    // Then prefer higher resolution (width)
+    return (Number(b.width) || 0) - (Number(a.width) || 0);
   });
 
-  return scored[0]?.file_path || undefined;
+  const best = scored[0];
+  if (!best?.file_path) return undefined;
+
+  return {
+    path: best.file_path,
+    language: normalizeLang(best.iso_639_1) || undefined,
+  };
+}
+
+function extractBestLogoPath(images: any, originalLanguage?: string): string | undefined {
+  return extractBestLogo(images, originalLanguage)?.path;
 }
 
 /**

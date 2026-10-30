@@ -78,6 +78,8 @@ export interface TmdbMediaEnrichment {
   /** All valid landscape backdrop paths, quality-sorted (best first). Used for detail-screen rotation. */
   backdropPaths?: string[];
   logoPath?: string;
+  logoLanguage?: string;
+  logoVersion?: number;
   releaseDate?: string;
   releaseYear?: string;
   genres?: string[];

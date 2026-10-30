@@ -517,7 +517,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
       if (hero.channel) {
         const cached = this.tmdbEnrichment.getEnrichmentSync(hero.channel);
         if (cached) {
-          if (!hero.logoUrl && cached.logoPath) {
+          if (!hero.logoUrl && cached.logoPath && cached.logoVersion === 2) {
             hero.logoUrl = getTmdbLogoUrl(cached.logoPath, 'w500');
           }
           if (cached.backdropPath) {
@@ -549,7 +549,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
     if (hero?.channel && (!hero.logoUrl || !hero.imageUrl)) {
       const cached = this.tmdbEnrichment.getEnrichmentSync(hero.channel);
       if (cached) {
-        if (!hero.logoUrl && cached.logoPath) {
+        if (!hero.logoUrl && cached.logoPath && cached.logoVersion === 2) {
           hero.logoUrl = getTmdbLogoUrl(cached.logoPath, 'w500');
         }
         if (cached.backdropPath) {
@@ -2180,7 +2180,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
   isEligibleHeroChannel(channel: Channel): boolean {
     const metadata = this.tmdbEnrichment.getEnrichmentSync(channel);
     if (!metadata) return false;
-    if (this.isBollywood(channel, metadata) && (!metadata.logoPath || metadata.logoPath.trim() === "")) {
+    if (this.isBollywood(channel, metadata) && (!metadata.logoPath || metadata.logoPath.trim() === "" || metadata.logoVersion !== 2)) {
       return false;
     }
     return this.isEligibleHeroTmdbItem(
@@ -3751,7 +3751,7 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         const bd = getTmdbBackdropUrl(cached.backdropPath, 'original') || getTmdbBackdropUrl(cached.backdropPath, 'w1280');
         if (bd) imageUrl = bd;
       }
-      if (cached.logoPath) {
+      if (cached.logoPath && cached.logoVersion === 2) {
         logoUrl = getTmdbLogoUrl(cached.logoPath, 'w500');
       }
       if (cached.overview) {
@@ -3821,9 +3821,11 @@ export class HomeDiscoveryComponent implements OnInit, AfterViewInit, OnDestroy 
         const bd = getTmdbBackdropUrl(enrichment.backdropPath, 'original') || getTmdbBackdropUrl(enrichment.backdropPath, 'w1280');
         if (bd) heroMatch.imageUrl = bd;
       }
-      if (enrichment.logoPath) {
+      if (enrichment.logoPath && enrichment.logoVersion === 2) {
         heroMatch.logoUrl = getTmdbLogoUrl(enrichment.logoPath, 'w500');
         this.preloadImage(heroMatch.logoUrl);
+      } else {
+        heroMatch.logoUrl = undefined;
       }
       if (enrichment.overview) {
         heroMatch.description = enrichment.overview;
