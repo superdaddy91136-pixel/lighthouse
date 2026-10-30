@@ -113,6 +113,9 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   private boundScrollHandler = () => this.syncVideoBounds();
 
   private subs: Subscription[] = [];
+  private enrichmentLoadRequestId = 0;
+  private versionLoadRequestId = 0;
+  private similarLoadRequestId = 0;
   @ViewChild('similarTrack') similarTrack?: ElementRef<HTMLDivElement>;
 
   constructor(
@@ -191,15 +194,25 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     // Listen for background TMDB updates
     this.subs.push(
       this.tmdbEnrichment.enrichmentUpdated$.subscribe((updated) => {
-        const isMatch =
-          (this.movie && Number(updated.providerItemId) === Number(this.movie.id)) ||
-          (this.enrichment?.tmdbId && updated.tmdbId === this.enrichment.tmdbId) ||
-          (this.versions && this.versions.some((v) => Number(v.channel.id) === Number(updated.providerItemId))) ||
-          (this.movie && cleanMediaTitle(this.movie.name).toLowerCase() === (updated.normalizedTitle || '').toLowerCase());
+        if (!this.movie) return;
+
+        const matchesProviderId = Number(updated.providerItemId) === Number(this.movie.id);
+        const matchesVersion =
+          this.versions?.length > 0 &&
+          this.versions.some((v) => Number(v.channel.id) === Number(updated.providerItemId));
+        const matchesTmdbId = !!this.enrichment?.tmdbId && updated.tmdbId === this.enrichment.tmdbId;
+        const currentCleanTitle = cleanMediaTitle(this.movie.name).toLowerCase();
+        const updatedNormTitle = (updated.normalizedTitle || '').toLowerCase();
+        const matchesTitle =
+          currentCleanTitle.length > 0 &&
+          currentCleanTitle === updatedNormTitle &&
+          (!this.releaseYear || !updated.releaseYear || this.releaseYear === updated.releaseYear);
+
+        const isMatch = matchesProviderId || matchesVersion || matchesTmdbId || matchesTitle;
 
         if (isMatch) {
           this.loadingEnrichment = false;
-          this.applyEnrichment(updated);
+          this.applyEnrichment(updated, this.movie.id);
           if (this.movie?.id && Number(updated.providerItemId) !== Number(this.movie.id)) {
             this.tmdbCache.saveEnrichment({ ...updated, providerItemId: this.movie.id });
           }
@@ -367,19 +380,32 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   initMovie(movie: Channel): void {
+    const enrichmentReqId = ++this.enrichmentLoadRequestId;
+    const versionReqId = ++this.versionLoadRequestId;
     this.resetScrollPosition();
+    this.showVersionsMenu = false;
+
+    // Reset previous title state completely to prevent stale backdrop/metadata leakage
     this.movie = movie;
     this.cleanTitle = cleanMediaTitle(movie.name);
     this.releaseYear = extractYear(movie.name);
     this.qualityBadge = extractQuality(movie.name);
     this.synopsis = selectSynopsis(movie);
     this.posterUrl = movie.image;
+    this.enrichment = undefined;
+    this.versions = [];
+    this.selectedVersion = undefined;
+    this.similarMovies = [];
+    this.loadingSimilar = true;
+    this.loadingVersions = true;
     this.genres = [];
     this.rating = undefined;
     this.voteCount = undefined;
     this.director = undefined;
     this.cast = [];
     this.trailer = undefined;
+    this.safeTrailerUrl = undefined;
+    this.showTrailerModal = false;
     this.imageError = false;
     this.backdropError = false;
     this.backdropUrl = undefined;
@@ -389,24 +415,21 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.castImageErrors.clear();
     this.hasWatchProgress = false;
 
-    // 1. Synchronous cache read: check movie ID, or any grouped version if available
+    // 1. Synchronous cache read: check movie ID, or cached versions for THIS movie
     let cached = this.tmdbEnrichment.getEnrichmentSync(movie);
-    if (!cached && this.versions?.length) {
-      for (const v of this.versions) {
-        cached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
-        if (cached?.backdropPath) break;
+    if (!cached) {
+      const cachedVersions = this.versionMatching.getCachedVersions(movie, this.releaseYear);
+      if (cachedVersions?.length) {
+        for (const v of cachedVersions) {
+          cached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
+          if (cached?.backdropPath) break;
+        }
       }
     }
 
     if (cached) {
       this.loadingEnrichment = false;
-      const chosen = this.pickRotatedBackdrop(cached);
-      if (chosen) {
-        this.currentBackdropPath = chosen;
-        this.backdropUrl = getTmdbBackdropUrl(chosen, 'original') || getTmdbBackdropUrl(chosen, 'w1280');
-        this.isBackdropFallback = false;
-      }
-      this.applyEnrichment(cached);
+      this.applyEnrichment(cached, movie.id);
     } else {
       this.loadingEnrichment = true;
     }
@@ -420,7 +443,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     if (this.loadingEnrichment) {
       this.enrichmentTimeout = setTimeout(() => {
-        if (this.loadingEnrichment && this.movie?.id === currentInitMovieId) {
+        if (this.loadingEnrichment && this.movie?.id === currentInitMovieId && enrichmentReqId === this.enrichmentLoadRequestId) {
           this.loadingEnrichment = false;
           this.cdr.markForCheck();
         }
@@ -429,16 +452,16 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.tmdbEnrichment.getEnrichment(movie, true, 'high')
       .then((res) => {
-        if (this.movie?.id !== currentInitMovieId) return;
+        if (this.movie?.id !== currentInitMovieId || enrichmentReqId !== this.enrichmentLoadRequestId) return;
         if (res) {
-          this.applyEnrichment(res);
+          this.applyEnrichment(res, currentInitMovieId);
         }
       })
       .catch((err) => {
         console.warn('Failed to retrieve enrichment for movie:', err);
       })
       .finally(() => {
-        if (this.movie?.id === currentInitMovieId) {
+        if (this.movie?.id === currentInitMovieId && enrichmentReqId === this.enrichmentLoadRequestId) {
           this.loadingEnrichment = false;
           this.cdr.markForCheck();
         }
@@ -456,12 +479,14 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async loadVersions(movie: Channel): Promise<void> {
+    const requestId = ++this.versionLoadRequestId;
     this.loadingVersions = true;
     try {
       const vers = await this.versionMatching.findVersions(
         movie,
         this.enrichment?.releaseYear,
       );
+      if (this.movie?.id !== movie.id || requestId !== this.versionLoadRequestId) return;
       this.versions = vers;
 
       // Check for previously saved version preference or playback history
@@ -480,13 +505,14 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           (v) => (v.isSelected = v.channel.id === targetVersion.channel.id),
         );
         if (this.movie && this.movie.id !== targetVersion.channel.id) {
+          if (this.movie?.id !== movie.id || requestId !== this.versionLoadRequestId) return;
           this.movie = targetVersion.channel;
           this.qualityBadge =
             targetVersion.qualityBadge || extractQuality(targetVersion.channel.name);
           if (!this.enrichment || !this.enrichment.backdropPath) {
             const verCached = this.tmdbEnrichment.getEnrichmentSync(targetVersion.channel);
             if (verCached) {
-              this.applyEnrichment(verCached);
+              this.applyEnrichment(verCached, this.movie.id);
             }
           }
         }
@@ -503,18 +529,22 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         for (const v of this.versions) {
           const vCached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
           if (vCached?.backdropPath) {
-            this.applyEnrichment(vCached);
+            this.applyEnrichment(vCached, this.movie?.id);
             break;
           }
         }
       }
     } catch (err) {
+      if (this.movie?.id !== movie.id || requestId !== this.versionLoadRequestId) return;
       console.warn('Failed to discover versions for movie:', err);
       this.versions = [this.versionMatching.channelToVersion(movie, true)];
       this.selectedVersion = this.versions[0];
     } finally {
-      this.loadingVersions = false;
-      this.updateWatchProgress();
+      if (this.movie?.id === movie.id && requestId === this.versionLoadRequestId) {
+        this.loadingVersions = false;
+        this.updateWatchProgress();
+        this.cdr.markForCheck();
+      }
     }
   }
 
@@ -551,12 +581,12 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Preserve existing enrichment for the newly selected version
     if (this.enrichment) {
-      this.applyEnrichment(this.enrichment);
+      this.applyEnrichment(this.enrichment, this.movie?.id);
       this.tmdbCache.saveEnrichment({ ...this.enrichment, providerItemId: ver.channel.id });
     } else {
       const verCached = this.tmdbEnrichment.getEnrichmentSync(ver.channel);
       if (verCached) {
-        this.applyEnrichment(verCached);
+        this.applyEnrichment(verCached, this.movie?.id);
       }
     }
 
@@ -620,43 +650,20 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  applyEnrichment(enr: TmdbMediaEnrichment): void {
+  applyEnrichment(enr: TmdbMediaEnrichment, forMovieId?: number): void {
+    if (forMovieId != null && this.movie?.id !== forMovieId) return;
     this.enrichment = enr;
     this.loadingEnrichment = false;
 
     const chosenBackdrop = this.pickRotatedBackdrop(enr);
     if (chosenBackdrop) {
-      const highResBackdrop = getTmdbBackdropUrl(chosenBackdrop, 'original') || getTmdbBackdropUrl(chosenBackdrop, 'w1280');
-      if (highResBackdrop) {
-        if (this.backdropUrl === highResBackdrop && !this.backdropError) {
-          this.isBackdropFallback = false;
-        } else {
-          const img = new Image();
-          img.onload = () => {
-            this.backdropUrl = highResBackdrop;
-            this.isBackdropFallback = false;
-            this.backdropError = false;
-            this.updateAmbientBackground();
-            this.cdr.markForCheck();
-          };
-          img.onerror = () => {
-            const w1280 = getTmdbBackdropUrl(chosenBackdrop, 'w1280');
-            if (w1280 && w1280 !== highResBackdrop) {
-              this.backdropUrl = w1280;
-              this.isBackdropFallback = false;
-              this.backdropError = false;
-              this.updateAmbientBackground();
-              this.cdr.markForCheck();
-            } else {
-              this.backdropUrl = undefined;
-              this.isBackdropFallback = false;
-              this.backdropError = true;
-              this.updateAmbientBackground();
-              this.cdr.markForCheck();
-            }
-          };
-          img.src = highResBackdrop;
-        }
+      // Prioritize w1280 first for instantaneous progressive loading, fall back to original
+      const backdropUrl = getTmdbBackdropUrl(chosenBackdrop, 'w1280') || getTmdbBackdropUrl(chosenBackdrop, 'original');
+      if (backdropUrl) {
+        this.backdropUrl = backdropUrl;
+        this.isBackdropFallback = false;
+        this.backdropError = false;
+        this.updateAmbientBackground();
       }
     }
 
@@ -1086,6 +1093,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async loadSimilarMovies(movie: Channel): Promise<void> {
+    const requestId = ++this.similarLoadRequestId;
     this.loadingSimilar = true;
     try {
       const sourceIds = movie.source_id
@@ -1104,6 +1112,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       };
 
       let results = (await invoke('search', { filters })) as Channel[];
+      if (this.movie?.id !== movie.id || requestId !== this.similarLoadRequestId) return;
       let filtered = (results || []).filter((m) => m.id !== movie.id);
 
       // If category has few items, fallback to general movies from provider
@@ -1117,16 +1126,21 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           sort: SortType.provider,
         };
         const fallbackRes = (await invoke('search', { filters: fallbackFilters })) as Channel[];
+        if (this.movie?.id !== movie.id || requestId !== this.similarLoadRequestId) return;
         const extra = (fallbackRes || []).filter((m) => m.id !== movie.id && !filtered.some(f => f.id === m.id));
         filtered = filtered.concat(extra);
       }
 
       this.similarMovies = filtered.slice(0, 18);
     } catch (e) {
+      if (this.movie?.id !== movie.id || requestId !== this.similarLoadRequestId) return;
       console.warn('Failed to load similar movies', e);
       this.similarMovies = [];
     } finally {
-      this.loadingSimilar = false;
+      if (this.movie?.id === movie.id && requestId === this.similarLoadRequestId) {
+        this.loadingSimilar = false;
+        this.cdr.markForCheck();
+      }
     }
   }
 
@@ -1142,8 +1156,8 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isPlayingEmbedded) {
       this.stopEmbedded();
     }
+    this.movieDetailService.setSelectedMovie(channel);
     this.initMovie(channel);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   scrollSimilar(direction: 'left' | 'right'): void {
@@ -1184,11 +1198,11 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   onBackdropError(): void {
     if (this.backdropUrl && !this.isBackdropFallback) {
       const path = this.currentBackdropPath || this.enrichment?.backdropPath;
-      if (path && this.backdropUrl.includes('/original/')) {
-        const w1280 = getTmdbBackdropUrl(path, 'w1280');
-        if (w1280 && w1280 !== this.backdropUrl) {
-          this.backdropUrl = w1280;
-          this.isBackdropFallback = false;
+      if (path && this.backdropUrl.includes('/w1280/')) {
+        const orig = getTmdbBackdropUrl(path, 'original');
+        if (orig && orig !== this.backdropUrl) {
+          this.backdropUrl = orig;
+          this.isBackdropFallback = true;
           this.backdropError = false;
           this.updateAmbientBackground();
           return;

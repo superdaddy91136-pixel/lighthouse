@@ -145,6 +145,9 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   private subs: Subscription[] = [];
   private seasonLoadRequestId = 0;
   private episodeLoadRequestId = 0;
+  private enrichmentLoadRequestId = 0;
+  private versionLoadRequestId = 0;
+  private similarLoadRequestId = 0;
   @ViewChild('similarTrack') similarTrack?: ElementRef<HTMLDivElement>;
   @ViewChild('seasonSelectorTrack') seasonSelectorTrack?: ElementRef<HTMLDivElement>;
   @ViewChild(EpisodeSwitcherComponent) episodeSwitcher?: EpisodeSwitcherComponent;
@@ -200,15 +203,25 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     // Listen for reactive TMDB background enrichment updates
     this.subs.push(
       this.tmdbEnrichment.enrichmentUpdated$.subscribe((updated) => {
-        const isMatch =
-          (this.show && Number(updated.providerItemId) === Number(this.show.id)) ||
-          (this.enrichment?.tmdbId && updated.tmdbId === this.enrichment.tmdbId) ||
-          (this.versions && this.versions.some((v) => Number(v.channel.id) === Number(updated.providerItemId))) ||
-          (this.show && cleanMediaTitle(this.show.name).toLowerCase() === (updated.normalizedTitle || '').toLowerCase());
+        if (!this.show) return;
+
+        const matchesProviderId = Number(updated.providerItemId) === Number(this.show.id);
+        const matchesVersion =
+          this.versions?.length > 0 &&
+          this.versions.some((v) => Number(v.channel.id) === Number(updated.providerItemId));
+        const matchesTmdbId = !!this.enrichment?.tmdbId && updated.tmdbId === this.enrichment.tmdbId;
+        const currentCleanTitle = cleanMediaTitle(this.show.name).toLowerCase();
+        const updatedNormTitle = (updated.normalizedTitle || '').toLowerCase();
+        const matchesTitle =
+          currentCleanTitle.length > 0 &&
+          currentCleanTitle === updatedNormTitle &&
+          (!this.releaseYear || !updated.releaseYear || this.releaseYear === updated.releaseYear);
+
+        const isMatch = matchesProviderId || matchesVersion || matchesTmdbId || matchesTitle;
 
         if (isMatch) {
           this.loadingEnrichment = false;
-          this.applyEnrichment(updated);
+          this.applyEnrichment(updated, this.show.id);
           if (this.show?.id && Number(updated.providerItemId) !== Number(this.show.id)) {
             this.tmdbCache.saveEnrichment({ ...updated, providerItemId: this.show.id });
           }
@@ -292,8 +305,13 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   initShow(show: Channel): void {
     this.seasonLoadRequestId++;
     this.episodeLoadRequestId++;
+    const enrichmentReqId = ++this.enrichmentLoadRequestId;
+    const versionReqId = ++this.versionLoadRequestId;
     this.resetScrollPosition();
     this.showSeasonMenu = false;
+    this.showVersionsMenu = false;
+
+    // Reset previous title state completely to prevent stale backdrop/metadata leakage
     this.show = show;
     if (this.show.media_type == null || Number(this.show.media_type) !== MediaType.serie) {
       this.show.media_type = MediaType.serie;
@@ -303,6 +321,12 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.qualityBadge = extractQuality(show.name);
     this.synopsis = selectSynopsis(show);
     this.posterUrl = show.image;
+    this.enrichment = undefined;
+    this.versions = [];
+    this.selectedVersion = undefined;
+    this.similarShows = [];
+    this.loadingSimilar = true;
+    this.loadingVersions = true;
     this.genres = [];
     this.rating = undefined;
     this.voteCount = undefined;
@@ -335,24 +359,21 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     this.lastWatchedEpisode = undefined;
     this.highlightedEpisodeId = undefined;
 
-    // 1. Synchronous cache read: check show ID, or any grouped version if available
+    // 1. Synchronous cache read: check show ID, or cached versions for THIS show
     let cached = this.tmdbEnrichment.getEnrichmentSync(show);
-    if (!cached && this.versions?.length) {
-      for (const v of this.versions) {
-        cached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
-        if (cached?.backdropPath) break;
+    if (!cached) {
+      const cachedVersions = this.versionMatching.getCachedVersions(show, this.releaseYear);
+      if (cachedVersions?.length) {
+        for (const v of cachedVersions) {
+          cached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
+          if (cached?.backdropPath) break;
+        }
       }
     }
 
     if (cached) {
       this.loadingEnrichment = false;
-      const chosen = this.pickRotatedBackdrop(cached);
-      if (chosen) {
-        this.currentBackdropPath = chosen;
-        this.backdropUrl = getTmdbBackdropUrl(chosen, 'original') || getTmdbBackdropUrl(chosen, 'w1280');
-        this.isBackdropFallback = false;
-      }
-      this.applyEnrichment(cached);
+      this.applyEnrichment(cached, show.id);
     } else {
       this.loadingEnrichment = true;
     }
@@ -365,7 +386,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     if (this.loadingEnrichment) {
       this.enrichmentTimeout = setTimeout(() => {
-        if (this.loadingEnrichment && this.show?.id === currentInitShowId) {
+        if (this.loadingEnrichment && this.show?.id === currentInitShowId && enrichmentReqId === this.enrichmentLoadRequestId) {
           this.loadingEnrichment = false;
           this.cdr.markForCheck();
         }
@@ -375,9 +396,9 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     // 2. Cache-first async retrieval / background enrichment
     this.tmdbEnrichment.getEnrichment(show, true, 'high')
       .then((res) => {
-        if (this.show?.id !== currentInitShowId) return;
+        if (this.show?.id !== currentInitShowId || enrichmentReqId !== this.enrichmentLoadRequestId) return;
         if (res) {
-          this.applyEnrichment(res);
+          this.applyEnrichment(res, currentInitShowId);
           if (this.selectedSeason) {
             this.reEnrichEpisodes();
           }
@@ -387,18 +408,15 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         console.warn('Failed to retrieve enrichment for TV show:', err);
       })
       .finally(() => {
-        if (this.show?.id === currentInitShowId) {
+        if (this.show?.id === currentInitShowId && enrichmentReqId === this.enrichmentLoadRequestId) {
           this.loadingEnrichment = false;
           this.cdr.markForCheck();
         }
       });
 
     // 3. Render cached provider seasons and episodes before version discovery.
-    // Version discovery can select a different provider entry; starting it in
-    // parallel used to invalidate this first local query and delay the list
-    // until the version lookup completed.
     void this.loadSeasonsAndEpisodes(show).then(() => {
-      if (this.show === show) {
+      if (this.show?.id === currentInitShowId && versionReqId === this.versionLoadRequestId) {
         void this.loadVersions(show);
       }
     });
@@ -410,12 +428,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async loadVersions(show: Channel): Promise<void> {
+    const requestId = ++this.versionLoadRequestId;
     this.loadingVersions = true;
     try {
       const vers = await this.versionMatching.findVersions(
         show,
         this.enrichment?.releaseYear,
       );
+      if (this.show?.id !== show.id || requestId !== this.versionLoadRequestId) return;
       this.versions = vers;
 
       // Check for previously saved version preference or playback history
@@ -437,6 +457,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         // If the target version is different from the currently loaded series,
         // switch to the target series and reload seasons & episodes!
         if (this.show && this.show.id !== targetVersion.channel.id) {
+          if (this.show?.id !== show.id || requestId !== this.versionLoadRequestId) return;
           this.show = targetVersion.channel;
           if (
             this.show.media_type == null ||
@@ -450,7 +471,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           if (!this.enrichment || !this.enrichment.backdropPath) {
             const verCached = this.tmdbEnrichment.getEnrichmentSync(targetVersion.channel);
             if (verCached) {
-              this.applyEnrichment(verCached);
+              this.applyEnrichment(verCached, this.show.id);
             }
           }
 
@@ -474,17 +495,21 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         for (const v of this.versions) {
           const vCached = this.tmdbEnrichment.getEnrichmentSync(v.channel);
           if (vCached?.backdropPath) {
-            this.applyEnrichment(vCached);
+            this.applyEnrichment(vCached, this.show?.id);
             break;
           }
         }
       }
     } catch (err) {
+      if (this.show?.id !== show.id || requestId !== this.versionLoadRequestId) return;
       console.warn('Failed to discover versions for TV show:', err);
       this.versions = [this.versionMatching.channelToVersion(show, true)];
       this.selectedVersion = this.versions[0];
     } finally {
-      this.loadingVersions = false;
+      if (this.show?.id === show.id && requestId === this.versionLoadRequestId) {
+        this.loadingVersions = false;
+        this.cdr.markForCheck();
+      }
     }
   }
 
@@ -538,12 +563,12 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Preserve existing enrichment for the newly selected version
     if (this.enrichment) {
-      this.applyEnrichment(this.enrichment);
+      this.applyEnrichment(this.enrichment, this.show?.id);
       this.tmdbCache.saveEnrichment({ ...this.enrichment, providerItemId: ver.channel.id });
     } else {
       const verCached = this.tmdbEnrichment.getEnrichmentSync(ver.channel);
       if (verCached) {
-        this.applyEnrichment(verCached);
+        this.applyEnrichment(verCached, this.show?.id);
       }
     }
 
@@ -613,44 +638,21 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  applyEnrichment(enr: TmdbMediaEnrichment): void {
+  applyEnrichment(enr: TmdbMediaEnrichment, forShowId?: number): void {
+    if (forShowId != null && this.show?.id !== forShowId) return;
     this.enrichment = enr;
     this.loadingEnrichment = false;
 
     const chosenBackdrop = this.pickRotatedBackdrop(enr);
     if (chosenBackdrop) {
       this.currentBackdropPath = chosenBackdrop;
-      const highResBackdrop = getTmdbBackdropUrl(chosenBackdrop, 'original') || getTmdbBackdropUrl(chosenBackdrop, 'w1280');
-      if (highResBackdrop) {
-        if (this.backdropUrl === highResBackdrop && !this.backdropError) {
-          this.isBackdropFallback = false;
-        } else {
-          const img = new Image();
-          img.onload = () => {
-            this.backdropUrl = highResBackdrop;
-            this.isBackdropFallback = false;
-            this.backdropError = false;
-            this.updateAmbientBackground();
-            this.cdr.markForCheck();
-          };
-          img.onerror = () => {
-            const w1280 = getTmdbBackdropUrl(chosenBackdrop, 'w1280');
-            if (w1280 && w1280 !== highResBackdrop) {
-              this.backdropUrl = w1280;
-              this.isBackdropFallback = false;
-              this.backdropError = false;
-              this.updateAmbientBackground();
-              this.cdr.markForCheck();
-            } else {
-              this.backdropUrl = undefined;
-              this.isBackdropFallback = false;
-              this.backdropError = true;
-              this.updateAmbientBackground();
-              this.cdr.markForCheck();
-            }
-          };
-          img.src = highResBackdrop;
-        }
+      // Prioritize w1280 first for instantaneous progressive loading, fall back to original
+      const backdropUrl = getTmdbBackdropUrl(chosenBackdrop, 'w1280') || getTmdbBackdropUrl(chosenBackdrop, 'original');
+      if (backdropUrl) {
+        this.backdropUrl = backdropUrl;
+        this.isBackdropFallback = false;
+        this.backdropError = false;
+        this.updateAmbientBackground();
       }
     }
 
@@ -1004,11 +1006,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private async reEnrichEpisodes(): Promise<void> {
     if (!this.enrichment?.tmdbId || this.episodes.length === 0) return;
+    const currentEpisodeRequestId = this.episodeLoadRequestId;
+    const currentShowId = this.show?.id;
     try {
       const tmdbSeason = await this.tmdbEnrichment.getSeasonDetails(
         this.enrichment.tmdbId,
         this.selectedSeasonNumber,
       );
+      if (this.show?.id !== currentShowId || this.episodeLoadRequestId !== currentEpisodeRequestId) return;
       if (tmdbSeason) {
         this.mapEnrichedEpisodes(tmdbSeason);
         this.updateContinueEpisode();
@@ -1338,6 +1343,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // More Like This
   // -------------------------------------------------------------
   async loadSimilarShows(show: Channel): Promise<void> {
+    const requestId = ++this.similarLoadRequestId;
     this.loadingSimilar = true;
     try {
       const sourceIds = show.source_id
@@ -1356,6 +1362,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
       };
 
       let results = (await invoke('search', { filters })) as Channel[];
+      if (this.show?.id !== show.id || requestId !== this.similarLoadRequestId) return;
       let filtered = (results || []).filter((s) => s.id !== show.id);
 
       // If category has few items, fallback to general series
@@ -1369,6 +1376,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           sort: SortType.provider,
         };
         const fallbackRes = (await invoke('search', { filters: fallbackFilters })) as Channel[];
+        if (this.show?.id !== show.id || requestId !== this.similarLoadRequestId) return;
         const extra = (fallbackRes || []).filter(
           (s) => s.id !== show.id && !filtered.some((f) => f.id === s.id),
         );
@@ -1377,10 +1385,14 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.similarShows = filtered.slice(0, 18);
     } catch (e) {
+      if (this.show?.id !== show.id || requestId !== this.similarLoadRequestId) return;
       console.warn('Failed to load similar shows', e);
       this.similarShows = [];
     } finally {
-      this.loadingSimilar = false;
+      if (this.show?.id === show.id && requestId === this.similarLoadRequestId) {
+        this.loadingSimilar = false;
+        this.cdr.markForCheck();
+      }
     }
   }
 
@@ -1396,8 +1408,8 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.embeddedPlayer.isPlayingEmbedded) {
       this.embeddedPlayer.stopPlayer().catch(console.warn);
     }
+    this.tvDetailService.setSelectedShow(channel);
     this.initShow(channel);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   scrollSimilar(direction: 'left' | 'right'): void {
@@ -1438,11 +1450,11 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   onBackdropError(): void {
     if (this.backdropUrl && !this.isBackdropFallback) {
       const path = this.currentBackdropPath || this.enrichment?.backdropPath;
-      if (path && this.backdropUrl.includes('/original/')) {
-        const w1280 = getTmdbBackdropUrl(path, 'w1280');
-        if (w1280 && w1280 !== this.backdropUrl) {
-          this.backdropUrl = w1280;
-          this.isBackdropFallback = false;
+      if (path && this.backdropUrl.includes('/w1280/')) {
+        const orig = getTmdbBackdropUrl(path, 'original');
+        if (orig && orig !== this.backdropUrl) {
+          this.backdropUrl = orig;
+          this.isBackdropFallback = true;
           this.backdropError = false;
           this.updateAmbientBackground();
           return;
