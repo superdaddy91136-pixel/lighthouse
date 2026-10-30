@@ -91,6 +91,10 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   similarMovies: Channel[] = [];
   loadingSimilar: boolean = false;
+  loadingEnrichment: boolean = false;
+  skeletonCastPlaceholders: number[] = [1, 2, 3, 4, 5, 6, 7];
+  skeletonSimilarPlaceholders: number[] = [1, 2, 3, 4, 5, 6];
+  private enrichmentTimeout?: any;
   isStartingPlayback: boolean = false;
   imageError: boolean = false;
   backdropError: boolean = false;
@@ -194,6 +198,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           (this.movie && cleanMediaTitle(this.movie.name).toLowerCase() === (updated.normalizedTitle || '').toLowerCase());
 
         if (isMatch) {
+          this.loadingEnrichment = false;
           this.applyEnrichment(updated);
           if (this.movie?.id && Number(updated.providerItemId) !== Number(this.movie.id)) {
             this.tmdbCache.saveEnrichment({ ...updated, providerItemId: this.movie.id });
@@ -242,6 +247,10 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
+    if (this.enrichmentTimeout) {
+      clearTimeout(this.enrichmentTimeout);
+      this.enrichmentTimeout = undefined;
+    }
     if (this.unlistenStopped) {
       this.unlistenStopped();
       this.unlistenStopped = undefined;
@@ -390,6 +399,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (cached) {
+      this.loadingEnrichment = false;
       const chosen = this.pickRotatedBackdrop(cached);
       if (chosen) {
         this.currentBackdropPath = chosen;
@@ -397,15 +407,42 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isBackdropFallback = false;
       }
       this.applyEnrichment(cached);
+    } else {
+      this.loadingEnrichment = true;
     }
     this.updateAmbientBackground();
 
     // 2. Cache-first async retrieval / background enrichment
-    this.tmdbEnrichment.getEnrichment(movie, true, 'high').then((res) => {
-      if (res) {
-        this.applyEnrichment(res);
-      }
-    });
+    const currentInitMovieId = movie.id;
+    if (this.enrichmentTimeout) {
+      clearTimeout(this.enrichmentTimeout);
+      this.enrichmentTimeout = undefined;
+    }
+    if (this.loadingEnrichment) {
+      this.enrichmentTimeout = setTimeout(() => {
+        if (this.loadingEnrichment && this.movie?.id === currentInitMovieId) {
+          this.loadingEnrichment = false;
+          this.cdr.markForCheck();
+        }
+      }, 7000);
+    }
+
+    this.tmdbEnrichment.getEnrichment(movie, true, 'high')
+      .then((res) => {
+        if (this.movie?.id !== currentInitMovieId) return;
+        if (res) {
+          this.applyEnrichment(res);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to retrieve enrichment for movie:', err);
+      })
+      .finally(() => {
+        if (this.movie?.id === currentInitMovieId) {
+          this.loadingEnrichment = false;
+          this.cdr.markForCheck();
+        }
+      });
 
     // 3. Load "More Like This" from existing local catalog
     this.loadSimilarMovies(movie);
@@ -585,6 +622,7 @@ export class MovieDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   applyEnrichment(enr: TmdbMediaEnrichment): void {
     this.enrichment = enr;
+    this.loadingEnrichment = false;
 
     const chosenBackdrop = this.pickRotatedBackdrop(enr);
     if (chosenBackdrop) {

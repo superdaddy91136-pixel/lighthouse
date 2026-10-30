@@ -130,6 +130,11 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
   // Similar Shows
   similarShows: Channel[] = [];
   loadingSimilar: boolean = false;
+  loadingEnrichment: boolean = false;
+  skeletonCastPlaceholders: number[] = [1, 2, 3, 4, 5, 6, 7];
+  skeletonSimilarPlaceholders: number[] = [1, 2, 3, 4, 5, 6];
+  skeletonEpisodePlaceholders: number[] = [1, 2, 3, 4];
+  private enrichmentTimeout?: any;
   isStartingPlayback: boolean = false;
   imageError: boolean = false;
   backdropError: boolean = false;
@@ -202,6 +207,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
           (this.show && cleanMediaTitle(this.show.name).toLowerCase() === (updated.normalizedTitle || '').toLowerCase());
 
         if (isMatch) {
+          this.loadingEnrichment = false;
           this.applyEnrichment(updated);
           if (this.show?.id && Number(updated.providerItemId) !== Number(this.show.id)) {
             this.tmdbCache.saveEnrichment({ ...updated, providerItemId: this.show.id });
@@ -228,6 +234,10 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
+    if (this.enrichmentTimeout) {
+      clearTimeout(this.enrichmentTimeout);
+      this.enrichmentTimeout = undefined;
+    }
     if (this.embeddedPlayer.isPlayingEmbedded) {
       this.embeddedPlayer.stopPlayer().catch(console.warn);
     }
@@ -335,6 +345,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (cached) {
+      this.loadingEnrichment = false;
       const chosen = this.pickRotatedBackdrop(cached);
       if (chosen) {
         this.currentBackdropPath = chosen;
@@ -342,19 +353,45 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isBackdropFallback = false;
       }
       this.applyEnrichment(cached);
+    } else {
+      this.loadingEnrichment = true;
     }
     this.updateAmbientBackground();
 
-    // 2. Cache-first async retrieval / background enrichment
-    this.tmdbEnrichment.getEnrichment(show, true, 'high').then((res) => {
-      if (this.show !== show) return;
-      if (res) {
-        this.applyEnrichment(res);
-        if (this.selectedSeason) {
-          this.reEnrichEpisodes();
+    const currentInitShowId = show.id;
+    if (this.enrichmentTimeout) {
+      clearTimeout(this.enrichmentTimeout);
+      this.enrichmentTimeout = undefined;
+    }
+    if (this.loadingEnrichment) {
+      this.enrichmentTimeout = setTimeout(() => {
+        if (this.loadingEnrichment && this.show?.id === currentInitShowId) {
+          this.loadingEnrichment = false;
+          this.cdr.markForCheck();
         }
-      }
-    });
+      }, 7000);
+    }
+
+    // 2. Cache-first async retrieval / background enrichment
+    this.tmdbEnrichment.getEnrichment(show, true, 'high')
+      .then((res) => {
+        if (this.show?.id !== currentInitShowId) return;
+        if (res) {
+          this.applyEnrichment(res);
+          if (this.selectedSeason) {
+            this.reEnrichEpisodes();
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to retrieve enrichment for TV show:', err);
+      })
+      .finally(() => {
+        if (this.show?.id === currentInitShowId) {
+          this.loadingEnrichment = false;
+          this.cdr.markForCheck();
+        }
+      });
 
     // 3. Render cached provider seasons and episodes before version discovery.
     // Version discovery can select a different provider entry; starting it in
@@ -578,6 +615,7 @@ export class TvDetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
   applyEnrichment(enr: TmdbMediaEnrichment): void {
     this.enrichment = enr;
+    this.loadingEnrichment = false;
 
     const chosenBackdrop = this.pickRotatedBackdrop(enr);
     if (chosenBackdrop) {

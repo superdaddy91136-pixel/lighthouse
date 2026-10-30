@@ -2641,6 +2641,235 @@ body::-webkit-scrollbar-thumb:active {
 }
 
 /* ==========================================================================
+/* ==========================================================================
+   DARK SKELETON UI & SHIMMER LOADING ANIMATION (Movie & TV Show Detail)
+   ========================================================================== */
+
+@keyframes detail-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.05) 80%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: detail-shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.progressive-fade-in {
+  animation: detailContentFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes detailContentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.skeleton-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(15, 17, 23, 0.7) 0%,
+    rgba(255, 255, 255, 0.02) 20%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.02) 80%,
+    rgba(15, 17, 23, 0.7) 100%
+  );
+  background-size: 200% 100%;
+  animation: detail-shimmer 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border: none;
+}
+
+.skeleton-poster {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+}
+
+.skeleton-badge {
+  display: inline-block;
+  height: 22px;
+  border-radius: 9999px;
+  vertical-align: middle;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 4px;
+}
+
+.skeleton-title {
+  height: clamp(2rem, 3.5vw, 2.75rem);
+  width: min(480px, 80%);
+  border-radius: 8px;
+  margin: 6px 0;
+}
+
+.skeleton-tagline {
+  height: 14px;
+  width: 220px;
+  border-radius: 4px;
+  margin: 4px 0 6px;
+}
+
+.skeleton-director-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  margin: 2px 0;
+}
+
+.skeleton-genres-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.skeleton-genre {
+  display: inline-block;
+  height: 24px;
+  border-radius: 9999px;
+}
+
+.skeleton-synopsis-box {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.skeleton-button {
+  display: inline-block;
+  border-radius: 9999px;
+  vertical-align: middle;
+}
+
+.btn-detail-play.skeleton-play-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  cursor: wait;
+}
+
+.skeleton-icon-placeholder {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.skeleton-text-placeholder {
+  display: inline-block;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.skeleton-cast-card {
+  pointer-events: none;
+}
+
+.skeleton-avatar {
+  border-radius: 50% !important;
+}
+
+.cast-name-skeleton {
+  width: 72px;
+  height: 12px;
+  margin: 6px auto 4px;
+}
+
+.cast-role-skeleton {
+  width: 52px;
+  height: 10px;
+  margin: 0 auto;
+}
+
+.season-dropdown-skeleton {
+  width: 130px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-block;
+}
+
+.skeleton-episode-card {
+  pointer-events: none;
+  cursor: default !important;
+}
+.skeleton-episode-card:hover {
+  transform: none !important;
+}
+
+.skeleton-thumb {
+  border-radius: 10px;
+}
+
+.ep-title-skeleton {
+  width: min(280px, 50%);
+  height: 16px;
+}
+
+.ep-badge-skeleton {
+  width: 55px;
+  height: 18px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.ep-desc-skeleton-1 {
+  width: 95%;
+  height: 12px;
+  margin-top: 4px;
+}
+
+.ep-desc-skeleton-2 {
+  width: 70%;
+  height: 12px;
+  margin-top: 4px;
+}
+
+.skeleton-media-card {
+  pointer-events: none;
+  cursor: default !important;
+}
+.skeleton-media-card:hover {
+  transform: none !important;
+}
+
+.card-title-skeleton {
+  width: 80%;
+  height: 14px;
+  margin-bottom: 6px;
+}
+
+.card-year-skeleton {
+  width: 40%;
+  height: 12px;
+}
+
    NEUTRAL LIQUID-GLASS UI CONTROLS & OVERRIDES (Replacing Generic Blue Accents)
    ========================================================================== */
 

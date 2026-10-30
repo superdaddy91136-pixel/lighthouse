@@ -20,12 +20,15 @@
   <section class="movie-hero-banner">
     <!-- Backdrop Layer -->
     <div class="movie-backdrop-wrap">
+      <!-- Dark Skeleton Backdrop with shimmer while loading enrichment -->
+      <div class="skeleton-backdrop skeleton-shimmer" *ngIf="(!backdropUrl || isBackdropFallback) && loadingEnrichment && !backdropError"></div>
+
       <img 
         *ngIf="backdropUrl && !backdropError" 
         [src]="backdropUrl" 
         (error)="onBackdropError()" 
         alt="{{ cleanTitle }}" 
-        class="movie-backdrop-img"
+        class="movie-backdrop-img progressive-fade-in"
         [class.is-fallback]="isBackdropFallback" />
       <div class="movie-backdrop-gradient"></div>
       <div class="movie-backdrop-vignette"></div>
@@ -38,13 +41,16 @@
         <!-- Movie Poster -->
         <div class="hero-poster-col">
           <div class="movie-poster-card">
+            <!-- Skeleton Poster while loading -->
+            <div class="skeleton-poster skeleton-shimmer" *ngIf="!posterUrl && loadingEnrichment && !imageError"></div>
+
             <img 
               *ngIf="posterUrl && !imageError" 
               [src]="posterUrl" 
               (error)="onImageError()" 
               alt="{{ cleanTitle }}" 
-              class="movie-poster-img" />
-            <div *ngIf="!posterUrl || imageError" class="movie-poster-fallback">
+              class="movie-poster-img progressive-fade-in" />
+            <div *ngIf="(!posterUrl && !loadingEnrichment) || imageError" class="movie-poster-fallback">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18,4L20,8H17L15,4H13L15,8H12L10,4H8L10,8H7L5,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V4H18M4,10V6H5.2L7.2,10H4M10.2,10L8.2,6H11.2L13.2,10H10.2M16.2,10L14.2,6H17.2L19.2,10H16.2M20,18H4V12H20V18Z" />
               </svg>
@@ -61,18 +67,23 @@
           <div class="hero-badges">
             <span class="detail-badge badge-type">MOVIE</span>
             <span class="detail-badge badge-year" *ngIf="releaseYear">{{ releaseYear }}</span>
-            <span class="detail-badge badge-runtime" *ngIf="runtimeText">
+            
+            <span class="detail-badge badge-runtime progressive-fade-in" *ngIf="runtimeText">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z" />
               </svg>
               {{ runtimeText }}
             </span>
-            <span class="detail-badge badge-rating" *ngIf="rating">
+            <span class="detail-badge skeleton-badge skeleton-shimmer" style="width: 65px;" *ngIf="!runtimeText && loadingEnrichment"></span>
+
+            <span class="detail-badge badge-rating progressive-fade-in" *ngIf="rating">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
               </svg>
               {{ rating | number:'1.1-1' }}
             </span>
+            <span class="detail-badge skeleton-badge skeleton-shimmer" style="width: 50px;" *ngIf="!rating && loadingEnrichment"></span>
+
             <span class="detail-badge badge-quality" *ngIf="qualityBadge">{{ qualityBadge }}</span>
           </div>
 
@@ -80,17 +91,26 @@
           <h1 class="movie-detail-title">{{ cleanTitle }}</h1>
 
           <!-- Tagline -->
-          <p class="movie-tagline" *ngIf="enrichment?.tagline">"{{ enrichment?.tagline }}"</p>
+          <p class="movie-tagline progressive-fade-in" *ngIf="enrichment?.tagline">"{{ enrichment?.tagline }}"</p>
+          <div class="skeleton-tagline skeleton-shimmer" *ngIf="!enrichment?.tagline && loadingEnrichment"></div>
 
           <!-- Genres -->
-          <div class="movie-genres-row" *ngIf="genres.length > 0">
+          <div class="movie-genres-row progressive-fade-in" *ngIf="genres.length > 0">
             <span class="genre-tag" *ngFor="let g of genres">{{ g }}</span>
+          </div>
+          <div class="skeleton-genres-row" *ngIf="genres.length === 0 && loadingEnrichment">
+            <span class="genre-tag skeleton-genre skeleton-shimmer" style="width: 70px;"></span>
+            <span class="genre-tag skeleton-genre skeleton-shimmer" style="width: 90px;"></span>
+            <span class="genre-tag skeleton-genre skeleton-shimmer" style="width: 65px;"></span>
           </div>
 
           <!-- Director (compact in hero) -->
-          <div class="hero-director" *ngIf="director">
+          <div class="hero-director progressive-fade-in" *ngIf="director">
             <span class="hero-director-label">Directed by</span>
             <span class="hero-director-name">{{ director }}</span>
+          </div>
+          <div class="skeleton-director-row" *ngIf="!director && loadingEnrichment">
+            <span class="skeleton-line skeleton-shimmer" style="width: 170px; height: 16px;"></span>
           </div>
 
           <!-- Synopsis -->
@@ -104,6 +124,11 @@
               (click)="toggleSynopsis()">
               {{ isSynopsisExpanded ? 'Show less' : 'Read more' }}
             </button>
+          </div>
+          <div class="skeleton-synopsis-box" *ngIf="!synopsis && loadingEnrichment">
+            <div class="skeleton-line skeleton-shimmer" style="width: 100%;"></div>
+            <div class="skeleton-line skeleton-shimmer" style="width: 90%;"></div>
+            <div class="skeleton-line skeleton-shimmer" style="width: 65%;"></div>
           </div>
 
           <!-- Actions Row -->
@@ -120,7 +145,7 @@
             </button>
 
             <!-- VERSIONS DROPDOWN (Watch Now | Versions (N) ▾) -->
-            <div class="versions-dropdown-container" *ngIf="versions.length > 0">
+            <div class="versions-dropdown-container progressive-fade-in" *ngIf="versions.length > 0">
               <button 
                 class="btn-detail-versions" 
                 [class.active]="showVersionsMenu" 
@@ -172,6 +197,8 @@
                 </div>
               </div>
             </div>
+            <!-- Versions skeleton placeholder while loading versions -->
+            <div class="skeleton-button skeleton-shimmer" style="width: 62px; height: 42px;" *ngIf="loadingVersions && versions.length === 0"></div>
 
             <button 
               type="button"
@@ -188,13 +215,14 @@
 
             <button 
               *ngIf="trailer" 
-              class="btn-detail-secondary btn-trailer" 
+              class="btn-detail-secondary btn-trailer progressive-fade-in" 
               (click)="openTrailer()">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M10,16.5V7.5L16,12M20,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V6A2,2 0 0,0 20,4Z" />
               </svg>
               <span>Watch Trailer</span>
             </button>
+            <div class="skeleton-button skeleton-shimmer" style="width: 130px; height: 42px;" *ngIf="!trailer && loadingEnrichment"></div>
           </div>
 
         </div>
@@ -205,7 +233,7 @@
   <!-- ========================================== -->
   <!-- 2. CAST                                    -->
   <!-- ========================================== -->
-  <section class="movie-body-section" *ngIf="cast.length > 0">
+  <section class="movie-body-section" *ngIf="cast.length > 0 || loadingEnrichment">
     <div class="section-block detail-section-flat">
       <h3 class="section-heading">
         <svg viewBox="0 0 24 24" fill="currentColor" class="section-icon">
@@ -213,7 +241,9 @@
         </svg>
         Cast
       </h3>
-      <div class="cast-track" appDragScroll>
+
+      <!-- Real Cast Track -->
+      <div class="cast-track progressive-fade-in" appDragScroll *ngIf="cast.length > 0">
         <div class="cast-card" *ngFor="let member of cast">
           <div class="cast-avatar-wrap">
             <img 
@@ -221,7 +251,7 @@
               [src]="getActorPhoto(member.profilePath)" 
               (error)="onCastImageError(member.id)" 
               alt="{{ member.name }}" 
-              class="cast-avatar-img" 
+              class="cast-avatar-img progressive-fade-in" 
               draggable="false" />
             <div *ngIf="!member.profilePath || isCastImageBroken(member.id)" class="cast-avatar-fallback">
               <svg viewBox="0 0 24 24" fill="currentColor">
@@ -235,19 +265,28 @@
           </div>
         </div>
       </div>
+
+      <!-- Skeleton Cast Track -->
+      <div class="cast-track skeleton-track" *ngIf="cast.length === 0 && loadingEnrichment">
+        <div class="cast-card skeleton-cast-card" *ngFor="let _ of skeletonCastPlaceholders">
+          <div class="cast-avatar-wrap skeleton-avatar skeleton-shimmer"></div>
+          <div class="skeleton-line skeleton-shimmer cast-name-skeleton"></div>
+          <div class="skeleton-line skeleton-shimmer cast-role-skeleton"></div>
+        </div>
+      </div>
     </div>
   </section>
 
   <!-- ========================================== -->
   <!-- 3. MORE LIKE THIS                          -->
   <!-- ========================================== -->
-  <section class="movie-body-section" *ngIf="similarMovies.length > 0">
+  <section class="movie-body-section" *ngIf="similarMovies.length > 0 || loadingSimilar">
     <div class="section-block detail-section-flat">
       <div class="section-header-row">
         <h3 class="section-heading">
           More Like This
         </h3>
-        <div class="carousel-nav-buttons">
+        <div class="carousel-nav-buttons" *ngIf="similarMovies.length > 0">
           <button class="carousel-arrow-btn" (click)="scrollSimilar('left')" title="Scroll left">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" />
@@ -261,7 +300,8 @@
         </div>
       </div>
 
-      <div #similarTrack class="row-track" appDragScroll>
+      <!-- Real Similar Track -->
+      <div #similarTrack class="row-track progressive-fade-in" appDragScroll *ngIf="similarMovies.length > 0">
         <div 
           *ngFor="let item of similarMovies" 
           class="media-card" 
@@ -273,7 +313,7 @@
               *ngIf="getSimilarArtwork(item)" 
               [src]="getSimilarArtwork(item)" 
               alt="{{ getSimilarTitle(item.name) }}" 
-              class="poster-img" 
+              class="poster-img progressive-fade-in" 
               draggable="false"
               loading="lazy" />
             
@@ -305,6 +345,17 @@
             <div class="card-meta-line d-flex align-items-center gap-2" *ngIf="getSimilarYear(item)">
               <span class="meta-year">{{ getSimilarYear(item) }}</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skeleton Similar Track -->
+      <div class="row-track skeleton-track" *ngIf="similarMovies.length === 0 && loadingSimilar">
+        <div class="media-card skeleton-media-card" *ngFor="let _ of skeletonSimilarPlaceholders">
+          <div class="poster-container skeleton-poster skeleton-shimmer"></div>
+          <div class="card-info mt-2">
+            <div class="skeleton-line skeleton-shimmer card-title-skeleton"></div>
+            <div class="skeleton-line skeleton-shimmer card-year-skeleton"></div>
           </div>
         </div>
       </div>
@@ -340,4 +391,102 @@
     </div>
   </div>
 
+</div>
+
+<!-- ========================================== -->
+<!-- FULL SCREEN SKELETON (BEFORE MOVIE LOADS)   -->
+<!-- ========================================== -->
+<div class="movie-detail-container skeleton-detail-page" *ngIf="!movie">
+  <!-- Back button -->
+  <button type="button" class="lh-back-btn detail-back-btn" (click)="goBack()" title="Go back" aria-label="Go back">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  </button>
+
+  <!-- Hero Skeleton -->
+  <section class="movie-hero-banner">
+    <div class="movie-backdrop-wrap">
+      <div class="skeleton-backdrop skeleton-shimmer"></div>
+      <div class="movie-backdrop-gradient"></div>
+      <div class="movie-backdrop-vignette"></div>
+    </div>
+
+    <div class="movie-hero-content">
+      <div class="hero-inner">
+        <div class="hero-poster-col">
+          <div class="movie-poster-card">
+            <div class="skeleton-poster skeleton-shimmer"></div>
+          </div>
+        </div>
+
+        <div class="hero-info-col">
+          <div class="hero-badges">
+            <span class="detail-badge badge-type">MOVIE</span>
+            <span class="detail-badge skeleton-badge skeleton-shimmer" style="width: 55px;"></span>
+            <span class="detail-badge skeleton-badge skeleton-shimmer" style="width: 65px;"></span>
+            <span class="detail-badge skeleton-badge skeleton-shimmer" style="width: 50px;"></span>
+          </div>
+
+          <div class="skeleton-title skeleton-shimmer"></div>
+          <div class="skeleton-tagline skeleton-shimmer"></div>
+
+          <div class="skeleton-genres-row">
+            <span class="genre-tag skeleton-genre skeleton-shimmer" style="width: 75px;"></span>
+            <span class="genre-tag skeleton-genre skeleton-shimmer" style="width: 90px;"></span>
+            <span class="genre-tag skeleton-genre skeleton-shimmer" style="width: 65px;"></span>
+          </div>
+
+          <div class="skeleton-synopsis-box">
+            <div class="skeleton-line skeleton-shimmer" style="width: 100%;"></div>
+            <div class="skeleton-line skeleton-shimmer" style="width: 90%;"></div>
+            <div class="skeleton-line skeleton-shimmer" style="width: 65%;"></div>
+          </div>
+
+          <div class="movie-actions-row">
+            <div class="skeleton-button skeleton-shimmer" style="width: 140px; height: 44px;"></div>
+            <div class="skeleton-button skeleton-shimmer" style="width: 72px; height: 42px;"></div>
+            <div class="skeleton-button skeleton-shimmer" style="width: 42px; height: 42px; border-radius: 50%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Cast Skeleton -->
+  <section class="movie-body-section">
+    <div class="section-block detail-section-flat">
+      <h3 class="section-heading">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="section-icon">
+          <path d="M16,13C15.71,13 15.38,13 15.03,13.05C16.19,13.89 17,15 17,16.5V19H23V16.5C23,14.17 18.33,13 16,13M8,13C5.67,13 1,14.17 1,16.5V19H15V16.5C15,14.17 10.33,13 8,13M8,11A3,3 0 0,0 11,8A3,3 0 0,0 8,5A3,3 0 0,0 5,8A3,3 0 0,0 8,11M16,11A3,3 0 0,0 19,8A3,3 0 0,0 16,5A3,3 0 0,0 13,8A3,3 0 0,0 16,11Z" />
+        </svg>
+        Cast
+      </h3>
+      <div class="cast-track skeleton-track">
+        <div class="cast-card skeleton-cast-card" *ngFor="let _ of skeletonCastPlaceholders">
+          <div class="cast-avatar-wrap skeleton-avatar skeleton-shimmer"></div>
+          <div class="skeleton-line skeleton-shimmer cast-name-skeleton"></div>
+          <div class="skeleton-line skeleton-shimmer cast-role-skeleton"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Similar Movies Skeleton -->
+  <section class="movie-body-section">
+    <div class="section-block detail-section-flat">
+      <div class="section-header-row">
+        <h3 class="section-heading">More Like This</h3>
+      </div>
+      <div class="row-track skeleton-track">
+        <div class="media-card skeleton-media-card" *ngFor="let _ of skeletonSimilarPlaceholders">
+          <div class="poster-container skeleton-poster skeleton-shimmer"></div>
+          <div class="card-info mt-2">
+            <div class="skeleton-line skeleton-shimmer card-title-skeleton"></div>
+            <div class="skeleton-line skeleton-shimmer card-year-skeleton"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
