@@ -120,6 +120,87 @@ body {
   font-family: "Roboto", sans-serif;
 }
 
+/* Shared detail-page tooltips */
+.detail-tooltip-trigger {
+  position: relative;
+}
+
+.detail-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 1000;
+  display: block;
+  width: max-content;
+  max-width: min(16rem, calc(100vw - 2rem));
+  padding: 0.42rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.5rem;
+  background: rgba(14, 18, 27, 0.78);
+  box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 0.3rem);
+  transition: opacity 160ms ease, transform 160ms ease, visibility 0s linear 160ms;
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.detail-tooltip-trigger:hover .detail-tooltip,
+.detail-tooltip-trigger:focus-visible .detail-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition-delay: 45ms, 45ms, 0s;
+}
+
+.detail-tooltip--below-start {
+  top: calc(100% + 10px);
+  bottom: auto;
+  left: 0;
+  transform: translateY(-0.3rem);
+}
+
+.detail-tooltip-trigger:hover .detail-tooltip--below-start,
+.detail-tooltip-trigger:focus-visible .detail-tooltip--below-start {
+  transform: translateY(0);
+}
+
+.detail-tooltip--start {
+  left: 0;
+  transform: translate(0, 0.3rem);
+}
+
+.detail-tooltip-trigger:hover .detail-tooltip--start,
+.detail-tooltip-trigger:focus-visible .detail-tooltip--start {
+  transform: translate(0, 0);
+}
+
+.detail-tooltip--end {
+  right: 0;
+  left: auto;
+  transform: translate(0, 0.3rem);
+}
+
+.detail-tooltip-trigger:hover .detail-tooltip--end,
+.detail-tooltip-trigger:focus-visible .detail-tooltip--end {
+  transform: translate(0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detail-tooltip {
+    transition: none;
+  }
+}
+
 /* ==========================================================================
    MINIMAL FLOATING VERTICAL PAGE SCROLLBAR (1CM PILL, ZERO-LAG)
    ========================================================================== */

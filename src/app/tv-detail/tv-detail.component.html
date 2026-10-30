@@ -1,10 +1,11 @@
 <div class="movie-detail-container" *ngIf="show">
   
   <!-- BACK BUTTON -->
-  <button type="button" class="lh-back-btn detail-back-btn" (click)="goBack()" title="Go back" aria-label="Go back">
+  <button type="button" class="lh-back-btn detail-back-btn detail-tooltip-trigger" (click)="goBack()" aria-label="Go back">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M15 18l-6-6 6-6" />
     </svg>
+    <span class="detail-tooltip detail-tooltip--below-start" role="tooltip">Go back</span>
   </button>
 
   <!-- EMBEDDED VIDEO HOST (THEATER & FULLSCREEN IN-APP PLAYER) -->
@@ -157,14 +158,15 @@
             <!-- VERSIONS DROPDOWN (Watch Now | Versions (N) ▾) -->
             <div class="versions-dropdown-container progressive-fade-in" *ngIf="versions.length > 0">
               <button 
-                class="btn-detail-versions" 
+                class="btn-detail-versions detail-tooltip-trigger" 
                 [class.active]="showVersionsMenu" 
                 (click)="toggleVersionsMenu($event)"
-                title="Select version ({{ versions.length }} available)">
+                [attr.aria-label]="'Select version (' + versions.length + ' available)'">
                 <svg viewBox="0 0 24 24" fill="currentColor" class="versions-icon">
                   <path d="M12,16L19.36,10.27L21,9L12,2L3,9L4.63,10.27L12,16M12,18.54L4.62,12.81L3,14.07L12,21.07L21,14.07L19.37,12.8L12,18.54Z" />
                 </svg>
                 <span>{{ versions.length }}</span>
+                <span class="detail-tooltip" role="tooltip">Select version</span>
               </button>
 
               <!-- Dropdown Menu -->
@@ -261,16 +263,17 @@
         <div class="season-dropdown-container progressive-fade-in" *ngIf="seasons.length > 0 && !loadingSeasons">
           <button 
             type="button" 
-            class="season-dropdown-btn" 
+            class="season-dropdown-btn detail-tooltip-trigger" 
             [class.active]="showSeasonMenu"
             (click)="toggleSeasonMenu($event)"
-            title="Select season"
+            aria-label="Select season"
             aria-haspopup="true"
             [attr.aria-expanded]="showSeasonMenu">
             <span class="season-dropdown-label">{{ selectedSeason?.name || 'Season 1' }}</span>
             <svg class="season-dropdown-chevron" [class.rotated]="showSeasonMenu" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" />
             </svg>
+            <span class="detail-tooltip" role="tooltip">Select season</span>
           </button>
 
           <div class="season-dropdown-menu" *ngIf="showSeasonMenu" (click)="$event.stopPropagation()">
@@ -321,8 +324,7 @@
           *ngFor="let ep of enrichedEpisodes" 
           class="episode-card" 
           [class.highlighted]="isEpisodeHighlighted(ep)"
-          (click)="playEpisode(ep)"
-          title="Play {{ ep.title }}">
+          (click)="playEpisode(ep)">
           
           <!-- Episode Thumbnail -->
           <div class="episode-thumb-wrap">
@@ -449,15 +451,17 @@
           More Like This
         </h3>
         <div class="carousel-nav-buttons" *ngIf="similarShows.length > 0">
-          <button class="carousel-arrow-btn" (click)="scrollSimilar('left')" title="Scroll left">
+          <button class="carousel-arrow-btn detail-tooltip-trigger" (click)="scrollSimilar('left')" aria-label="Scroll left">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" />
             </svg>
+            <span class="detail-tooltip detail-tooltip--start" role="tooltip">Previous</span>
           </button>
-          <button class="carousel-arrow-btn" (click)="scrollSimilar('right')" title="Scroll right">
+          <button class="carousel-arrow-btn detail-tooltip-trigger" (click)="scrollSimilar('right')" aria-label="Scroll right">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" />
             </svg>
+            <span class="detail-tooltip detail-tooltip--end" role="tooltip">Next</span>
           </button>
         </div>
       </div>
@@ -566,10 +570,11 @@
 <!-- ========================================== -->
 <div class="movie-detail-container skeleton-detail-page" *ngIf="!show">
   <!-- Back button -->
-  <button type="button" class="lh-back-btn detail-back-btn" (click)="goBack()" title="Go back" aria-label="Go back">
+  <button type="button" class="lh-back-btn detail-back-btn detail-tooltip-trigger" (click)="goBack()" aria-label="Go back">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M15 18l-6-6 6-6" />
     </svg>
+    <span class="detail-tooltip detail-tooltip--below-start" role="tooltip">Go back</span>
   </button>
 
   <!-- Hero Skeleton -->
